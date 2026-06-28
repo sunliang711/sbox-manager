@@ -96,8 +96,8 @@ sboxctl [--base-dir DIR] [--service-manager auto|systemd|launchd] service logs|l
 - `start/restart` 调服务管理器前必须执行完整生成、`sing-box check` 和 runtime plan apply。
 - `start` 用于确保目标服务运行，no-change 时不改写 generated 或 manifest，但仍可调用服务管理器 start。
 - `restart` 用于强制重启目标服务，no-change 时不改写 generated 或 manifest，但仍调用服务管理器 restart。
-- `service install` 写 instance 的 systemd unit 或 launchd plist，同时写 traffic timer service/timer 或 plist；不启用、不启动服务或 timer。
-- `service uninstall` 只删除 instance 的 systemd unit 或 launchd plist，不启动服务。
+- `service install` 在 systemd 下写单个 `sbox@.service` 模板 unit，在 launchd 下写每个 instance 的 plist；同时写 traffic timer service/timer 或 plist；不启用、不启动服务或 timer。
+- `service uninstall` 在 systemd 下删除 `sbox@.service` 模板 unit，在 launchd 下删除 instance plist；不启动服务。
 
 ### 3.5 安装、订阅、备份与诊断
 

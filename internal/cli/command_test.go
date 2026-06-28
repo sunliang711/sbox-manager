@@ -385,7 +385,7 @@ func TestSboxctlStopDoesNotWriteRuntime(t *testing.T) {
 	}
 }
 
-// TestSboxctlServiceInstallDoesNotStart 验证 service install 写实例服务和 traffic timer 文件并 reload，不启动服务。
+// TestSboxctlServiceInstallDoesNotStart 验证 service install 写 systemd 模板服务和 traffic timer 文件并 reload，不启动服务。
 func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	unitDir := filepath.Join(t.TempDir(), "units")
@@ -395,11 +395,18 @@ func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: unitDir, Runner: runner})
 	}
 
-	if _, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "service", "install"); err != nil {
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "auto", "service", "install")
+	if err != nil {
 		t.Fatalf("execute service install: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); err != nil {
-		t.Fatalf("unit should be written: %v", err)
+	if !strings.Contains(output, "service install 完成: systemd") {
+		t.Fatalf("service install should print resolved manager, got %q", output)
+	}
+	if _, err := os.Stat(filepath.Join(unitDir, "sbox@.service")); err != nil {
+		t.Fatalf("template unit should be written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); !os.IsNotExist(err) {
+		t.Fatalf("per-instance unit should not be written, stat err: %v", err)
 	}
 	for _, period := range service.TrafficPeriods() {
 		for _, name := range []string{
@@ -460,8 +467,8 @@ func TestSboxctlUninstallPurgeStopsServicesAndRemovesBaseDir(t *testing.T) {
 	if _, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "uninstall", "all", "--purge"); err != nil {
 		t.Fatalf("execute uninstall purge: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); !os.IsNotExist(err) {
-		t.Fatalf("service file should be removed, stat err: %v", err)
+	if _, err := os.Stat(filepath.Join(unitDir, "sbox@.service")); !os.IsNotExist(err) {
+		t.Fatalf("template service file should be removed, stat err: %v", err)
 	}
 	for _, period := range service.TrafficPeriods() {
 		for _, name := range []string{
@@ -487,6 +494,13 @@ func TestSboxctlUninstallPurgeStopsServicesAndRemovesBaseDir(t *testing.T) {
 	}
 	if stopIndex > disableIndex {
 		t.Fatalf("instance stop should run before timer cleanup, got %q", got)
+	}
+	runner.calls = nil
+	if _, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "uninstall", "all", "--purge"); err != nil {
+		t.Fatalf("execute second uninstall purge: %v", err)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("second uninstall purge should not rerun service commands, got %q", got)
 	}
 }
 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -326,7 +327,7 @@ func newSboxctlServiceActionCommand(action string) *cobra.Command {
 func newSboxctlServiceCommand() *cobra.Command {
 	serviceCommand := &cobra.Command{
 		Use:   "service",
-		Short: "管理实例 systemd unit 或 launchd plist",
+		Short: "管理实例 systemd 模板 unit 或 launchd plist",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -354,14 +355,14 @@ func newSboxctlServiceInstallCommand() *cobra.Command {
 		Short: "安装实例服务文件",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options, set, manager, err := loadServiceCommandContext(cmd)
+			_, set, manager, err := loadServiceCommandContext(cmd)
 			if err != nil {
 				return err
 			}
 			if err := installSboxctlServiceFiles(cmd, manager, set, optionalArg(args)); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "service install 完成: %s\n", options.serviceManager)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "service install 完成: %s\n", manager.Kind())
 			return err
 		},
 	}
@@ -484,11 +485,11 @@ func newResourceCommand(use string, short string) *cobra.Command {
 			sha256Text, _ := cmd.Flags().GetString("sha256")
 			member, _ := cmd.Flags().GetString("archive-member")
 			purge, _ := cmd.Flags().GetBool("purge")
-			set, err := config.LoadAgentConfigSet(options.baseDir)
+			purgeAll := use == installer.OperationUninstall && purge && args[0] == installer.ResourceAll
+			set, err := loadResourceCommandConfigSet(options.baseDir, purgeAll)
 			if err != nil {
 				return err
 			}
-			purgeAll := use == installer.OperationUninstall && purge && args[0] == installer.ResourceAll
 			var manager *service.Manager
 			if use == installer.OperationUninstall && purge {
 				manager, err = newSboxctlServiceManager(options)
@@ -540,16 +541,64 @@ func newResourceCommand(use string, short string) *cobra.Command {
 	return cmd
 }
 
+// loadResourceCommandConfigSet 加载资源命令配置，允许全量 purge 重复执行时配置已不存在。
+func loadResourceCommandConfigSet(baseDir string, allowPurgedBaseDir bool) (*config.AgentConfigSet, error) {
+	set, err := config.LoadAgentConfigSet(baseDir)
+	if err == nil {
+		return set, nil
+	}
+	if !allowPurgedBaseDir || !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return defaultAgentConfigSetForPurgedBaseDir(baseDir)
+}
+
+// defaultAgentConfigSetForPurgedBaseDir 返回 base-dir 已被删除后的默认空配置集合。
+func defaultAgentConfigSetForPurgedBaseDir(baseDir string) (*config.AgentConfigSet, error) {
+	resolvedBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("清理 base-dir %s: %w", baseDir, err)
+	}
+	resolvedBase = filepath.Clean(resolvedBase)
+	global := domain.DefaultGlobalConfig()
+	if err := config.NormalizeGlobalPaths(resolvedBase, &global); err != nil {
+		return nil, err
+	}
+	return &config.AgentConfigSet{
+		BaseDir:   resolvedBase,
+		Global:    global,
+		Instances: nil,
+	}, nil
+}
+
 // purgeAgentBaseDir 删除 agent base-dir，并拒绝清理明显危险的根路径。
 func purgeAgentBaseDir(baseDir string) error {
 	cleaned := filepath.Clean(baseDir)
 	if cleaned == "." || cleaned == string(os.PathSeparator) {
 		return fmt.Errorf("拒绝清理危险 base-dir %s", cleaned)
 	}
+	exists, err := pathExists(cleaned)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
 	if err := os.RemoveAll(cleaned); err != nil {
 		return fmt.Errorf("清理 agent base-dir %s: %w", cleaned, err)
 	}
 	return nil
+}
+
+// pathExists 判断 CLI 清理路径是否存在，路径不存在时不视为错误。
+func pathExists(path string) (bool, error) {
+	if _, err := os.Lstat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+	}
+	return true, nil
 }
 
 func runSboxctlRuntimeLifecycle(cmd *cobra.Command, action string, args []string) error {

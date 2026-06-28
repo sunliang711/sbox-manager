@@ -123,11 +123,29 @@ func PurgeManaged(global domain.GlobalConfig) error {
 		global.Paths.Downloads,
 		global.Paths.Runtime,
 	} {
+		exists, err := pathExists(path)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("清理受管目录 %s: %w", path, err)
 		}
 	}
 	return nil
+}
+
+// pathExists 使用 Lstat 判断受管资源路径是否存在，路径不存在时返回 false。
+func pathExists(path string) (bool, error) {
+	if _, err := os.Lstat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+	}
+	return true, nil
 }
 
 func expandResources(resource string) ([]string, error) {
@@ -673,6 +691,13 @@ func uninstallSingBox(binDir string) error {
 }
 
 func uninstallRules(rulesDir string) error {
+	exists, err := pathExists(rulesDir)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
 	marker := filepath.Join(rulesDir, rulesManagedMarker)
 	if err := rejectUnmanagedSymlink(rulesDir, marker); err != nil {
 		return err

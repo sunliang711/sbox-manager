@@ -11,15 +11,16 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
 
-// TestRenderSystemdUnitFields 验证 systemd unit 关键字段符合数据规格。
-func TestRenderSystemdUnitFields(t *testing.T) {
+// TestRenderSystemdTemplateUnitFields 验证 systemd 模板 unit 关键字段符合数据规格。
+func TestRenderSystemdTemplateUnitFields(t *testing.T) {
 	baseDir := t.TempDir()
-	data := string(RenderSystemdUnit(baseDir, filepath.Join(baseDir, "bin"), filepath.Join(baseDir, "runtime", "generated"), filepath.Join(baseDir, "traffic"), filepath.Join(baseDir, "logs"), "edge-us"))
+	data := string(RenderSystemdTemplateUnit(baseDir, filepath.Join(baseDir, "bin"), filepath.Join(baseDir, "runtime", "generated"), filepath.Join(baseDir, "traffic"), filepath.Join(baseDir, "logs")))
 
 	for _, want := range []string{
+		"Description=sbox-manager instance %i",
 		"User=sbox",
 		"Group=sbox",
-		"ExecStart=" + filepath.Join(baseDir, "bin", "sing-box") + " run -c " + filepath.Join(baseDir, "runtime", "generated", "sing-box", "edge-us.json"),
+		"ExecStart=" + filepath.Join(baseDir, "bin", "sing-box") + " run -c " + filepath.Join(baseDir, "runtime", "generated", "sing-box", "%i.json"),
 		"WorkingDirectory=" + baseDir,
 		"Restart=on-failure",
 		"NoNewPrivileges=true",
@@ -27,7 +28,7 @@ func TestRenderSystemdUnitFields(t *testing.T) {
 		"ProtectHome=true",
 		"PrivateTmp=true",
 		"ReadWritePaths=" + filepath.Join(baseDir, "runtime") + " " + filepath.Join(baseDir, "traffic") + " " + filepath.Join(baseDir, "logs"),
-		"SyslogIdentifier=sbox-edge-us",
+		"SyslogIdentifier=sbox-%i",
 	} {
 		if !strings.Contains(data, want) {
 			t.Fatalf("unit missing %q:\n%s", want, data)
@@ -144,8 +145,8 @@ func TestRenderTrafficTimerFiles(t *testing.T) {
 	}
 }
 
-// TestInstallSystemdWritesUnitAndOnlyReloads 验证 service install 写 unit 且不启动服务。
-func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
+// TestInstallSystemdWritesTemplateUnitAndOnlyReloads 验证 service install 写模板 unit 且不启动服务。
+func TestInstallSystemdWritesTemplateUnitAndOnlyReloads(t *testing.T) {
 	baseDir := t.TempDir()
 	unitDir := filepath.Join(baseDir, "units")
 	runner := &recordingRunner{}
@@ -155,16 +156,25 @@ func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	}
 	global := serviceFixtureGlobal(baseDir)
 	instances := []domain.Instance{{Name: "edge-us", Enabled: true}}
+	if err := os.MkdirAll(unitDir, 0750); err != nil {
+		t.Fatalf("mkdir unit dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unitDir, "sbox@edge-us.service"), []byte("legacy"), 0644); err != nil {
+		t.Fatalf("write legacy unit: %v", err)
+	}
 
 	if err := manager.Install(context.Background(), baseDir, global, instances, ""); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(unitDir, "sbox@edge-us.service"))
+	data, err := os.ReadFile(filepath.Join(unitDir, "sbox@.service"))
 	if err != nil {
 		t.Fatalf("read unit: %v", err)
 	}
-	if !strings.Contains(string(data), "ExecStart="+filepath.Join(baseDir, "bin", "sing-box")) {
+	if !strings.Contains(string(data), filepath.Join(baseDir, "runtime", "generated", "sing-box", "%i.json")) {
 		t.Fatalf("unexpected unit:\n%s", data)
+	}
+	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); !os.IsNotExist(err) {
+		t.Fatalf("per-instance systemd unit should not be written, stat err: %v", err)
 	}
 	got := runner.joined()
 	for _, want := range []string{
@@ -179,6 +189,27 @@ func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	}
 	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("service install should not start service, got %q", got)
+	}
+}
+
+// TestUninstallInstancesSkipsMissingFiles 验证实例服务文件不存在时卸载不调用 stop 或 daemon-reload。
+func TestUninstallInstancesSkipsMissingFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	instances := []domain.Instance{{Name: "edge-us", Enabled: true}}
+
+	if err := manager.StopInstancesForUninstall(context.Background(), instances); err != nil {
+		t.Fatalf("stop instances for uninstall: %v", err)
+	}
+	if err := manager.UninstallInstances(context.Background(), instances); err != nil {
+		t.Fatalf("uninstall instances: %v", err)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("missing service files should not run commands, got %q", got)
 	}
 }
 
@@ -216,6 +247,23 @@ func TestInstallSubscriptionSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	}
 	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("subscription service install should not start service, got %q", got)
+	}
+}
+
+// TestUninstallSubscriptionSkipsMissingFile 验证订阅服务文件不存在时卸载不调用 daemon-reload。
+func TestUninstallSubscriptionSkipsMissingFile(t *testing.T) {
+	baseDir := t.TempDir()
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if err := manager.UninstallSubscription(context.Background()); err != nil {
+		t.Fatalf("uninstall subscription: %v", err)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("missing subscription service file should not run commands, got %q", got)
 	}
 }
 
@@ -258,6 +306,23 @@ func TestInstallTrafficTimersWritesFilesAndOnlyReloads(t *testing.T) {
 	}
 	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("traffic timer install should not start service, got %q", got)
+	}
+}
+
+// TestUninstallTrafficTimersSkipsMissingFiles 验证 traffic timer 文件不存在时卸载不调用 disable 或 daemon-reload。
+func TestUninstallTrafficTimersSkipsMissingFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if err := manager.UninstallTrafficTimers(context.Background()); err != nil {
+		t.Fatalf("uninstall traffic timers: %v", err)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("missing traffic timer files should not run commands, got %q", got)
 	}
 }
 

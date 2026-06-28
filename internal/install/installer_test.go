@@ -228,6 +228,19 @@ func TestUninstallPurgeRemovesManagedResourceDirs(t *testing.T) {
 	}
 }
 
+// TestUninstallPurgeSkipsMissingManagedResourceDirs 验证 purge 遇到已不存在的受管目录时保持幂等。
+func TestUninstallPurgeSkipsMissingManagedResourceDirs(t *testing.T) {
+	global := installerFixtureGlobal(t)
+
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationUninstall,
+		Resource:  ResourceAll,
+		Purge:     true,
+	}); err != nil {
+		t.Fatalf("uninstall purge with missing dirs: %v", err)
+	}
+}
+
 func installerFixtureGlobal(t *testing.T) domain.GlobalConfig {
 	t.Helper()
 	baseDir := t.TempDir()

@@ -15,7 +15,7 @@ const (
 	systemdServiceGroup = "sbox"
 )
 
-// Install 写入目标 instance 的 systemd unit 或 launchd plist，且不启动服务。
+// Install 写入 systemd 模板 unit 或目标 instance 的 launchd plist，且不启动服务。
 func (m *Manager) Install(ctx context.Context, baseDir string, global domain.GlobalConfig, instances []domain.Instance, target string) error {
 	targets, err := SelectInstances(instances, target)
 	if err != nil {
@@ -25,15 +25,23 @@ func (m *Manager) Install(ctx context.Context, baseDir string, global domain.Glo
 		if err := m.prepareSystemdServiceEnvironment(ctx, baseDir); err != nil {
 			return err
 		}
+		path := m.TemplateUnitPath()
+		data := RenderSystemdTemplateUnit(baseDir, global.Paths.Bin, global.Paths.Generated, global.Paths.Traffic, global.Paths.Logs)
+		if err := WriteFileAtomic(path, data, systemdUnitMode); err != nil {
+			return fmt.Errorf("安装 systemd unit %s: %w", path, err)
+		}
+		for _, instance := range targets {
+			if _, err := removeFileIfExists(m.UnitPath(instance.Name)); err != nil {
+				return fmt.Errorf("清理旧 systemd unit %s: %w", m.UnitPath(instance.Name), err)
+			}
+		}
+		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+		}
+		return nil
 	}
 	for _, instance := range targets {
 		switch m.kind {
-		case KindSystemd:
-			path := m.UnitPath(instance.Name)
-			data := RenderSystemdUnit(baseDir, global.Paths.Bin, global.Paths.Generated, global.Paths.Traffic, global.Paths.Logs, instance.Name)
-			if err := WriteFileAtomic(path, data, systemdUnitMode); err != nil {
-				return fmt.Errorf("安装 systemd unit %s: %w", path, err)
-			}
 		case KindLaunchd:
 			path := m.PlistPath(instance.Name)
 			data := RenderLaunchdPlist(baseDir, global.Paths.Bin, global.Paths.Generated, global.Paths.Logs, instance.Name)
@@ -42,11 +50,6 @@ func (m *Manager) Install(ctx context.Context, baseDir string, global domain.Glo
 			}
 		default:
 			return fmt.Errorf("不支持的 service-manager %q", m.kind)
-		}
-	}
-	if m.kind == KindSystemd && len(targets) > 0 {
-		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
 		}
 	}
 	return nil
@@ -64,6 +67,13 @@ func (m *Manager) Uninstall(ctx context.Context, instances []domain.Instance, ta
 // StopInstancesForUninstall 在 purge 删除服务文件前尽量停止实例服务，忽略未加载服务。
 func (m *Manager) StopInstancesForUninstall(ctx context.Context, instances []domain.Instance) error {
 	for _, instance := range instances {
+		exists, err := m.instanceServiceFileExists(instance.Name)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
 		serviceName := ServiceNameForKind(m.kind, instance.Name)
 		output, err := m.runOne(ctx, "stop", serviceName, false)
 		if err != nil && !isServiceNotLoaded(output, err) {
@@ -75,26 +85,59 @@ func (m *Manager) StopInstancesForUninstall(ctx context.Context, instances []dom
 
 // UninstallInstances 删除给定实例集合的服务文件，且不启动服务。
 func (m *Manager) UninstallInstances(ctx context.Context, instances []domain.Instance) error {
+	if m.kind != KindSystemd && m.kind != KindLaunchd {
+		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+	}
+	removed := false
+	seen := map[string]struct{}{}
 	for _, instance := range instances {
-		var path string
-		switch m.kind {
-		case KindSystemd:
-			path = m.UnitPath(instance.Name)
-		case KindLaunchd:
-			path = m.PlistPath(instance.Name)
-		default:
-			return fmt.Errorf("不支持的 service-manager %q", m.kind)
-		}
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("卸载服务文件 %s: %w", path, err)
+		for _, path := range m.instanceServiceFilePaths(instance.Name) {
+			if _, exists := seen[path]; exists {
+				continue
+			}
+			seen[path] = struct{}{}
+			deleted, err := removeFileIfExists(path)
+			if err != nil {
+				return fmt.Errorf("卸载服务文件 %s: %w", path, err)
+			}
+			removed = removed || deleted
 		}
 	}
-	if m.kind == KindSystemd && len(instances) > 0 {
+	if m.kind == KindSystemd && removed {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
 		}
 	}
 	return nil
+}
+
+// instanceServiceFilePaths 返回 instance 在当前服务管理器下可能存在的服务文件路径。
+func (m *Manager) instanceServiceFilePaths(instance string) []string {
+	switch m.kind {
+	case KindSystemd:
+		return []string{m.TemplateUnitPath(), m.UnitPath(instance)}
+	case KindLaunchd:
+		return []string{m.PlistPath(instance)}
+	default:
+		return nil
+	}
+}
+
+// instanceServiceFileExists 判断 instance 在当前服务管理器下是否存在可管理服务文件。
+func (m *Manager) instanceServiceFileExists(instance string) (bool, error) {
+	for _, path := range m.instanceServiceFilePaths(instance) {
+		exists, err := pathExists(path)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	if m.kind != KindSystemd && m.kind != KindLaunchd {
+		return false, fmt.Errorf("不支持的 service-manager %q", m.kind)
+	}
+	return false, nil
 }
 
 // InstallSubscription 写入 sboxsub 的 systemd unit 或 launchd plist，且不启动服务。
@@ -136,15 +179,42 @@ func (m *Manager) UninstallSubscription(ctx context.Context) error {
 	default:
 		return fmt.Errorf("不支持的 service-manager %q", m.kind)
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	deleted, err := removeFileIfExists(path)
+	if err != nil {
 		return fmt.Errorf("卸载服务文件 %s: %w", path, err)
 	}
-	if m.kind == KindSystemd {
+	if m.kind == KindSystemd && deleted {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
 		}
 	}
 	return nil
+}
+
+// pathExists 使用 Lstat 判断路径是否存在，保留 symlink 自身的存在性语义。
+func pathExists(path string) (bool, error) {
+	if _, err := os.Lstat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+	}
+	return true, nil
+}
+
+// removeFileIfExists 删除文件或 symlink；路径不存在时视为已完成。
+func removeFileIfExists(path string) (bool, error) {
+	exists, err := pathExists(path)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	if err := os.Remove(path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // prepareSystemdServiceEnvironment 确保 systemd unit 使用的 sbox 用户和目录权限已就绪。

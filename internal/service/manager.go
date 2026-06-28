@@ -118,9 +118,19 @@ func (m *Manager) UnitPath(instance string) string {
 	return filepath.Join(m.unitDir, SystemdServiceName(instance))
 }
 
+// TemplateUnitPath 返回 systemd instance 模板 unit 路径。
+func (m *Manager) TemplateUnitPath() string {
+	return filepath.Join(m.unitDir, SystemdTemplateServiceName())
+}
+
 // PlistPath 返回 launchd instance plist 路径。
 func (m *Manager) PlistPath(instance string) string {
 	return filepath.Join(m.launchAgentDir, LaunchdLabel(instance)+".plist")
+}
+
+// SystemdTemplateServiceName 返回 instance 的 systemd 模板服务名。
+func SystemdTemplateServiceName() string {
+	return "sbox@.service"
 }
 
 // SystemdServiceName 返回 instance 的 systemd 服务名。
@@ -205,12 +215,12 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// RenderSystemdUnit 生成 instance systemd unit 内容。
-func RenderSystemdUnit(baseDir string, binDir string, generatedDir string, trafficDir string, logsDir string, instance string) []byte {
-	generatedPath := filepath.Join(generatedDir, "sing-box", instance+".json")
+// RenderSystemdTemplateUnit 生成 instance systemd 模板 unit 内容。
+func RenderSystemdTemplateUnit(baseDir string, binDir string, generatedDir string, trafficDir string, logsDir string) []byte {
+	generatedPath := filepath.Join(generatedDir, "sing-box", "%i.json")
 	var buffer bytes.Buffer
 	fmt.Fprintf(&buffer, "[Unit]\n")
-	fmt.Fprintf(&buffer, "Description=sbox-manager instance %s\n", instance)
+	fmt.Fprintf(&buffer, "Description=sbox-manager instance %%i\n")
 	fmt.Fprintf(&buffer, "After=network-online.target\n")
 	fmt.Fprintf(&buffer, "Wants=network-online.target\n\n")
 	fmt.Fprintf(&buffer, "[Service]\n")
@@ -225,7 +235,7 @@ func RenderSystemdUnit(baseDir string, binDir string, generatedDir string, traff
 	fmt.Fprintf(&buffer, "ProtectHome=true\n")
 	fmt.Fprintf(&buffer, "PrivateTmp=true\n")
 	fmt.Fprintf(&buffer, "ReadWritePaths=%s %s %s\n", filepath.Clean(filepath.Dir(generatedDir)), trafficDir, logsDir)
-	fmt.Fprintf(&buffer, "SyslogIdentifier=sbox-%s\n\n", instance)
+	fmt.Fprintf(&buffer, "SyslogIdentifier=sbox-%%i\n\n")
 	fmt.Fprintf(&buffer, "[Install]\n")
 	fmt.Fprintf(&buffer, "WantedBy=multi-user.target\n")
 	return buffer.Bytes()

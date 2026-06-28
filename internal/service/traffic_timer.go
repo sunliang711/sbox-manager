@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -145,19 +144,32 @@ func (m *Manager) InstallTrafficTimers(ctx context.Context, baseDir string, traf
 func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 	switch m.kind {
 	case KindSystemd:
+		removed := false
 		for _, period := range TrafficPeriods() {
-			output, err := m.runner.Run(ctx, "systemctl", "disable", "--now", TrafficSystemdTimerName(period))
-			if err != nil && !isServiceNotLoaded(output, err) {
-				return fmt.Errorf("停用 traffic timer %s: %w", period, err)
+			timerPath := filepath.Join(m.unitDir, TrafficSystemdTimerName(period))
+			timerExists, err := pathExists(timerPath)
+			if err != nil {
+				return err
+			}
+			if timerExists {
+				output, err := m.runner.Run(ctx, "systemctl", "disable", "--now", TrafficSystemdTimerName(period))
+				if err != nil && !isServiceNotLoaded(output, err) {
+					return fmt.Errorf("停用 traffic timer %s: %w", period, err)
+				}
 			}
 			for _, path := range []string{
 				filepath.Join(m.unitDir, TrafficSystemdServiceName(period)),
-				filepath.Join(m.unitDir, TrafficSystemdTimerName(period)),
+				timerPath,
 			} {
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				deleted, err := removeFileIfExists(path)
+				if err != nil {
 					return fmt.Errorf("删除 traffic 服务文件 %s: %w", path, err)
 				}
+				removed = removed || deleted
 			}
+		}
+		if !removed {
+			return nil
 		}
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
@@ -167,12 +179,19 @@ func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 		domain := launchdDomain()
 		for _, period := range TrafficPeriods() {
 			label := TrafficLaunchdLabel(period)
+			path := filepath.Join(m.launchAgentDir, label+".plist")
+			exists, err := pathExists(path)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				continue
+			}
 			output, err := m.runner.Run(ctx, "launchctl", "bootout", domain+"/"+label)
 			if err != nil && !isServiceNotLoaded(output, err) {
 				return fmt.Errorf("卸载 traffic launchd %s: %w", label, err)
 			}
-			path := filepath.Join(m.launchAgentDir, label+".plist")
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			if _, err := removeFileIfExists(path); err != nil {
 				return fmt.Errorf("删除 traffic plist %s: %w", path, err)
 			}
 		}
