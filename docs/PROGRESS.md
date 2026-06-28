@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 当前实施状态：T04 实例生命周期与安装已完成并通过复审。
+- 当前实施状态：T07 诊断、ipinfo、备份已完成并通过复审。
 - 范围：覆盖两个参考项目的功能点，不兼容旧格式。
 - 二进制命名：`sboxctl`、`sboxsub`。
 - 功能参考：`/Users/eagle/Sync/proxy/proxystack-go` 和 `/Users/eagle/.local/apps/init/tools/xray/traffic`。
@@ -38,9 +38,9 @@
 | T02 配置模型与校验 | 已完成 |
 | T03 sing-box 生成器与 Runtime | 已完成 |
 | T04 实例生命周期与安装 | 已完成 |
-| T05 订阅服务 | 未开始 |
-| T06 流量统计 | 未开始 |
-| T07 诊断、ipinfo、备份 | 未开始 |
+| T05 订阅服务 | 已完成 |
+| T06 流量统计 | 已完成 |
+| T07 诊断、ipinfo、备份 | 已完成 |
 | T08 测试与验收 | 未开始 |
 | T09 Release、安装脚本与 Makefile | 未开始 |
 

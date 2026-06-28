@@ -41,10 +41,10 @@ func newSboxctlCommand() *cobra.Command {
 		newSboxctlUninstallCommand(),
 		newVersionCommand("version [sing-box|rules]", true),
 		newSboxctlSubCommand(),
-		newStubCommand("export", "导出 agent 配置备份"),
-		newStubCommand("import BACKUP", "导入 agent 配置备份"),
-		newStubCommand("doctor", "执行 agent 诊断检查"),
-		newStubCommand("ipinfo INSTANCE", "查询实例 IP 信息"),
+		newSboxctlExportCommandT07(),
+		newSboxctlImportCommandT07(),
+		newSboxctlDoctorCommandT07(),
+		newSboxctlIPInfoCommandT07(),
 		newSboxctlTrafficCommand(),
 	)
 
@@ -116,16 +116,16 @@ func newSboxctlUninstallCommand() *cobra.Command {
 
 // newSboxctlSubCommand 创建 agent 侧订阅导出命令组。
 func newSboxctlSubCommand() *cobra.Command {
-	return newStubGroup(
-		"sub",
-		"导出和校验 agent 订阅输入",
-		newStubCommand("export [INSTANCE]", "导出订阅 bundle"),
-		newStubCommand("validate-inputs", "校验订阅 inputs"),
-	)
+	return newSboxctlSubCommandT05()
 }
 
 // newSboxctlTrafficCommand 创建流量统计命令树。
 func newSboxctlTrafficCommand() *cobra.Command {
+	return newSboxctlTrafficCommandT06()
+}
+
+// newSboxctlTrafficCommandStub 创建 T01/T05 使用的流量统计占位命令树。
+func newSboxctlTrafficCommandStub() *cobra.Command {
 	traffic := newStubGroup(
 		"traffic",
 		"采集、查询、导出和维护流量统计数据",

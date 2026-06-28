@@ -3,7 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,11 +65,19 @@ func TestSboxsubVersionOutput(t *testing.T) {
 	}
 }
 
-// TestStubCommandReturnsNotImplemented 验证占位命令返回统一未实现错误。
-func TestStubCommandReturnsNotImplemented(t *testing.T) {
-	_, err := executeCommand(newSboxctlCommand(), "doctor")
-	if !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("expected ErrNotImplemented, got %v", err)
+// TestSboxctlDoctorReturnsNonZeroOnIssue 验证 doctor 发现 ISSUE 时返回非零。
+func TestSboxctlDoctorReturnsNonZeroOnIssue(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "doctor")
+	if err == nil {
+		t.Fatal("expected doctor issue error")
+	}
+	if !strings.Contains(output, "ISSUE") {
+		t.Fatalf("expected ISSUE output, got %s", output)
+	}
+	if !strings.Contains(err.Error(), "doctor found ISSUE") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -118,6 +126,98 @@ func TestSboxctlRenderCommands(t *testing.T) {
 		if !strings.Contains(subOutput, want) {
 			t.Fatalf("render sub output missing %q: %s", want, subOutput)
 		}
+	}
+}
+
+// TestSboxctlSubExportDryRunAndSummaryDoNotWritePublish 验证 dry-run 和 summary 不写 publish。
+func TestSboxctlSubExportDryRunAndSummaryDoNotWritePublish(t *testing.T) {
+	for _, args := range [][]string{
+		{"sub", "export", "--dry-run"},
+		{"sub", "export", "--summary"},
+	} {
+		baseDir := writeAgentFixture(t)
+		restoreNow(t)
+		cliNow = func() time.Time {
+			return time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+		}
+
+		commandArgs := append([]string{"--base-dir", baseDir}, args...)
+		output, err := executeCommand(newSboxctlCommand(), commandArgs...)
+		if err != nil {
+			t.Fatalf("execute %v: %v\n%s", args, err, output)
+		}
+		if !strings.Contains(output, "bundle summary") {
+			t.Fatalf("expected summary output, got %s", output)
+		}
+		if _, err := os.Stat(filepath.Join(baseDir, "publish")); !os.IsNotExist(err) {
+			t.Fatalf("%v should not create publish, stat err: %v", args, err)
+		}
+	}
+}
+
+// TestSboxsubServiceInstallDoesNotStart 验证 sboxsub service install 只写自身服务文件并 reload。
+func TestSboxsubServiceInstallDoesNotStart(t *testing.T) {
+	baseDir := t.TempDir()
+	unitDir := filepath.Join(t.TempDir(), "units")
+	runner := &cliRecordingRunner{}
+	restoreSboxsubServiceManager(t)
+	newSboxsubServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: unitDir, Runner: runner})
+	}
+
+	if _, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "service", "install"); err != nil {
+		t.Fatalf("execute sboxsub service install: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(unitDir, "sboxsub.service"))
+	if err != nil {
+		t.Fatalf("read sboxsub unit: %v", err)
+	}
+	if !strings.Contains(string(data), "--base-dir "+baseDir+" serve") {
+		t.Fatalf("unit should start sboxsub serve with sub base dir:\n%s", data)
+	}
+	if got := runner.joined(); got != "systemctl daemon-reload" {
+		t.Fatalf("service install should not start service, got %q", got)
+	}
+}
+
+// TestSboxsubConfigShowMasksSecrets 验证 config show 默认脱敏，show-secrets 才显示敏感字段。
+func TestSboxsubConfigShowMasksSecrets(t *testing.T) {
+	baseDir := writeSubConfigFixture(t, "super-secret-token")
+
+	output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "config", "show")
+	if err != nil {
+		t.Fatalf("execute config show: %v", err)
+	}
+	if strings.Contains(output, "super-secret-token") {
+		t.Fatalf("config show leaked token: %s", output)
+	}
+	if !strings.Contains(output, "[REDACTED]") {
+		t.Fatalf("config show should redact token: %s", output)
+	}
+
+	output, err = executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "config", "show", "--show-secrets")
+	if err != nil {
+		t.Fatalf("execute config show --show-secrets: %v", err)
+	}
+	if !strings.Contains(output, "super-secret-token") {
+		t.Fatalf("show-secrets should reveal token: %s", output)
+	}
+}
+
+// TestSboxsubInputEditUsesEditorAndValidates 验证 input edit 通过草稿编辑后写回。
+func TestSboxsubInputEditUsesEditorAndValidates(t *testing.T) {
+	baseDir := writeSubInputFixture(t)
+	editor := writeReplaceEditor(t, "US VMess", "US Edited")
+
+	if _, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "input", "edit", "edge-us.json", "--editor", editor); err != nil {
+		t.Fatalf("execute input edit: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, "inputs", "edge-us.json"))
+	if err != nil {
+		t.Fatalf("read edited input: %v", err)
+	}
+	if !strings.Contains(string(data), "US Edited") {
+		t.Fatalf("input edit did not apply editor:\n%s", data)
 	}
 }
 
@@ -300,13 +400,32 @@ func TestListenAddressPortRange(t *testing.T) {
 	}
 }
 
-// TestTrafficExportAcceptsDateFlag 验证 traffic export 周期命令接受规格中的 date 参数。
-func TestTrafficExportAcceptsDateFlag(t *testing.T) {
+// TestTrafficExportDateFlagOutputsCSV 验证 traffic export 周期命令接受规格中的 date 参数。
+func TestTrafficExportDateFlagOutputsCSV(t *testing.T) {
 	for _, period := range []string{"hourly", "daily", "monthly"} {
-		_, err := executeCommand(newSboxctlCommand(), "traffic", "export", period, "--date", "2026-06-28", "--instance", "ALL")
-		if !errors.Is(err, ErrNotImplemented) {
-			t.Fatalf("traffic export %s should parse --date and return ErrNotImplemented, got %v", period, err)
+		baseDir := writeAgentFixture(t)
+		output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "traffic", "export", period, "--date", "2026-06-28", "--instance", "ALL")
+		if err != nil {
+			t.Fatalf("traffic export %s should parse --date and output CSV: %v\n%s", period, err, output)
 		}
+		if !strings.Contains(output, "instance,server,period,start_time,end_time,scope,name,direction,bytes,created_at") {
+			t.Fatalf("traffic export %s missing CSV header: %s", period, output)
+		}
+	}
+}
+
+// TestTrafficShowDoesNotCreateDBWhenNoRecords 验证只读查询不会隐式创建 traffic DB。
+func TestTrafficShowDoesNotCreateDBWhenNoRecords(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "traffic", "show", "hourly", "--instance", "ALL", "--date", "2026-06-28")
+	if err != nil {
+		t.Fatalf("traffic show hourly should succeed without DB: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "No records found") {
+		t.Fatalf("expected empty result output, got %s", output)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "traffic", "traffic.db")); !os.IsNotExist(err) {
+		t.Fatalf("traffic show should not create DB, stat err: %v", err)
 	}
 }
 
@@ -425,6 +544,87 @@ func restoreResourceInstaller(t *testing.T) {
 	t.Cleanup(func() {
 		newResourceInstaller = original
 	})
+}
+
+// restoreSboxsubServiceManager 在测试结束后恢复订阅服务管理器注入点。
+func restoreSboxsubServiceManager(t *testing.T) {
+	t.Helper()
+
+	original := newSboxsubServiceManager
+	t.Cleanup(func() {
+		newSboxsubServiceManager = original
+	})
+}
+
+// writeSubConfigFixture 写入 sboxsub config show 测试所需配置。
+func writeSubConfigFixture(t *testing.T, token string) string {
+	t.Helper()
+
+	baseDir := t.TempDir()
+	content := fmt.Sprintf(`version: 1
+listen: 127.0.0.1:3003
+access:
+  type: token
+  token: %s
+templates_dir: templates
+watch_interval: 2s
+watch_debounce: 300ms
+managed_config:
+  enabled: true
+  interval: 86400
+  strict: true
+`, token)
+	if err := os.WriteFile(filepath.Join(baseDir, "config.yaml"), []byte(content), 0640); err != nil {
+		t.Fatalf("write sub config: %v", err)
+	}
+	return baseDir
+}
+
+// writeSubInputFixture 写入 sboxsub input 编辑测试所需文件。
+func writeSubInputFixture(t *testing.T) string {
+	t.Helper()
+
+	baseDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(baseDir, "inputs"), 0750); err != nil {
+		t.Fatalf("mkdir inputs: %v", err)
+	}
+	data := []byte(`{
+  "input_schema": "sbox.subscription-input",
+  "input_version": 1,
+  "source": "edge-us",
+  "generated_at": "2026-06-28T12:00:00Z",
+  "external_host": "proxy.example.com",
+  "nodes": [
+    {
+      "id": "edge-us:alice:vmess-main",
+      "user": "alice",
+      "protocol": "vmess",
+      "server": "proxy.example.com",
+      "port": 24100,
+      "tag": "edge-us-vmess-main",
+      "remark": "US VMess",
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "network": "tcp"
+    }
+  ]
+}
+`)
+	if err := os.WriteFile(filepath.Join(baseDir, "inputs", "edge-us.json"), data, 0640); err != nil {
+		t.Fatalf("write sub input: %v", err)
+	}
+	return baseDir
+}
+
+// writeReplaceEditor 写入一个把文件内容中 old 替换为 new 的测试 editor。
+func writeReplaceEditor(t *testing.T, old string, new string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "replace-editor.sh")
+	script := fmt.Sprintf("#!/bin/sh\nsed 's/%s/%s/g' \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"\n", old, new)
+	if err := os.WriteFile(path, []byte(script), 0750); err != nil {
+		t.Fatalf("write editor: %v", err)
+	}
+	return path
 }
 
 type cliFakeChecker struct {

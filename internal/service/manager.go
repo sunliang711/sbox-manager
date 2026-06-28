@@ -20,6 +20,9 @@ const (
 
 	systemdUnitMode os.FileMode = 0644
 	launchdMode     os.FileMode = 0644
+
+	// SubscriptionInstanceName 是 service.Manager 内部复用 launchd 逻辑时的订阅服务名称。
+	SubscriptionInstanceName = "sboxsub"
 )
 
 // Runner 表示不经 shell 的外部命令执行器。
@@ -125,9 +128,19 @@ func SystemdServiceName(instance string) string {
 	return "sbox@" + instance + ".service"
 }
 
+// SubscriptionSystemdServiceName 返回 sboxsub 的 systemd 服务名。
+func SubscriptionSystemdServiceName() string {
+	return "sboxsub.service"
+}
+
 // LaunchdLabel 返回 instance 的 launchd label。
 func LaunchdLabel(instance string) string {
 	return "com.sbox-manager." + instance
+}
+
+// SubscriptionLaunchdLabel 返回 sboxsub 的 launchd label。
+func SubscriptionLaunchdLabel() string {
+	return LaunchdLabel(SubscriptionInstanceName)
 }
 
 // InstanceFromServiceName 从 systemd 服务名或 launchd label 还原 instance 名称。
@@ -147,6 +160,14 @@ func ServiceNameForKind(kind string, instance string) string {
 		return LaunchdLabel(instance)
 	}
 	return SystemdServiceName(instance)
+}
+
+// SubscriptionServiceNameForKind 根据目标服务管理器返回 sboxsub 服务标识。
+func SubscriptionServiceNameForKind(kind string) string {
+	if kind == KindLaunchd {
+		return SubscriptionLaunchdLabel()
+	}
+	return SubscriptionSystemdServiceName()
 }
 
 // WriteFileAtomic 以固定权限原子写入服务文件。
@@ -235,6 +256,60 @@ func RenderLaunchdPlist(baseDir string, binDir string, generatedDir string, logs
 	buffer.WriteString("\t<key>RunAtLoad</key>\n\t<false/>\n")
 	writePlistString(&buffer, "StandardOutPath", filepath.Join(logsDir, label+".out.log"))
 	writePlistString(&buffer, "StandardErrorPath", filepath.Join(logsDir, label+".err.log"))
+	buffer.WriteString("</dict>\n</plist>\n")
+	return buffer.Bytes()
+}
+
+// RenderSubscriptionSystemdUnit 生成 sboxsub systemd unit 内容。
+func RenderSubscriptionSystemdUnit(baseDir string, binary string) []byte {
+	var buffer bytes.Buffer
+	fmt.Fprintf(&buffer, "[Unit]\n")
+	fmt.Fprintf(&buffer, "Description=sbox-manager subscription service\n")
+	fmt.Fprintf(&buffer, "After=network-online.target\n")
+	fmt.Fprintf(&buffer, "Wants=network-online.target\n\n")
+	fmt.Fprintf(&buffer, "[Service]\n")
+	fmt.Fprintf(&buffer, "Type=simple\n")
+	fmt.Fprintf(&buffer, "User=sbox\n")
+	fmt.Fprintf(&buffer, "Group=sbox\n")
+	fmt.Fprintf(&buffer, "ExecStart=%s --base-dir %s serve\n", binary, baseDir)
+	fmt.Fprintf(&buffer, "WorkingDirectory=%s\n", baseDir)
+	fmt.Fprintf(&buffer, "Restart=on-failure\n")
+	fmt.Fprintf(&buffer, "NoNewPrivileges=true\n")
+	fmt.Fprintf(&buffer, "ProtectSystem=strict\n")
+	fmt.Fprintf(&buffer, "ProtectHome=true\n")
+	fmt.Fprintf(&buffer, "PrivateTmp=true\n")
+	fmt.Fprintf(&buffer, "ReadWritePaths=%s\n", baseDir)
+	fmt.Fprintf(&buffer, "SyslogIdentifier=sboxsub\n\n")
+	fmt.Fprintf(&buffer, "[Install]\n")
+	fmt.Fprintf(&buffer, "WantedBy=multi-user.target\n")
+	return buffer.Bytes()
+}
+
+// RenderSubscriptionLaunchdPlist 生成 sboxsub launchd plist 内容。
+func RenderSubscriptionLaunchdPlist(baseDir string, binary string) []byte {
+	label := SubscriptionLaunchdLabel()
+	arguments := []string{
+		binary,
+		"--base-dir",
+		baseDir,
+		"serve",
+	}
+	var buffer bytes.Buffer
+	buffer.WriteString(xml.Header)
+	buffer.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
+	buffer.WriteString(`<plist version="1.0">` + "\n<dict>\n")
+	writePlistString(&buffer, "Label", label)
+	buffer.WriteString("\t<key>ProgramArguments</key>\n\t<array>\n")
+	for _, argument := range arguments {
+		buffer.WriteString("\t\t<string>")
+		xml.EscapeText(&buffer, []byte(argument))
+		buffer.WriteString("</string>\n")
+	}
+	buffer.WriteString("\t</array>\n")
+	writePlistString(&buffer, "WorkingDirectory", baseDir)
+	buffer.WriteString("\t<key>RunAtLoad</key>\n\t<false/>\n")
+	writePlistString(&buffer, "StandardOutPath", filepath.Join(baseDir, "logs", "sboxsub.out.log"))
+	writePlistString(&buffer, "StandardErrorPath", filepath.Join(baseDir, "logs", "sboxsub.err.log"))
 	buffer.WriteString("</dict>\n</plist>\n")
 	return buffer.Bytes()
 }
@@ -329,7 +404,11 @@ func (m *Manager) runLaunchd(ctx context.Context, action string, serviceName str
 	case "disable":
 		return m.runner.Run(ctx, "launchctl", "disable", target)
 	case "logs", "log":
-		predicate := fmt.Sprintf(`process == "sing-box" && eventMessage CONTAINS "%s"`, label)
+		processName := "sing-box"
+		if instance == SubscriptionInstanceName {
+			processName = "sboxsub"
+		}
+		predicate := fmt.Sprintf(`process == "%s" && eventMessage CONTAINS "%s"`, processName, label)
 		args := []string{"show", "--style", "compact", "--predicate", predicate, "--last", "1h"}
 		if follow {
 			args[0] = "stream"

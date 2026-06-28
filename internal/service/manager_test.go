@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,88 @@ func TestRenderLaunchdPlistFields(t *testing.T) {
 	}
 }
 
+// TestRenderSubscriptionServiceFiles 验证 sboxsub 服务文件关键字段符合数据规格。
+func TestRenderSubscriptionServiceFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	binary := filepath.Join(baseDir, "bin", "sboxsub")
+	unit := string(RenderSubscriptionSystemdUnit(baseDir, binary))
+	for _, want := range []string{
+		"User=sbox",
+		"Group=sbox",
+		"ExecStart=" + binary + " --base-dir " + baseDir + " serve",
+		"WorkingDirectory=" + baseDir,
+		"ReadWritePaths=" + baseDir,
+		"SyslogIdentifier=sboxsub",
+	} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("subscription unit missing %q:\n%s", want, unit)
+		}
+	}
+
+	plist := string(RenderSubscriptionLaunchdPlist(baseDir, binary))
+	for _, want := range []string{
+		"<string>com.sbox-manager.sboxsub</string>",
+		"<string>" + binary + "</string>",
+		"<string>--base-dir</string>",
+		"<string>" + baseDir + "</string>",
+		"<string>serve</string>",
+		"<string>" + filepath.Join(baseDir, "logs", "sboxsub.out.log") + "</string>",
+		"<string>" + filepath.Join(baseDir, "logs", "sboxsub.err.log") + "</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("subscription plist missing %q:\n%s", want, plist)
+		}
+	}
+	if strings.Contains(plist, "KeepAlive") {
+		t.Fatalf("subscription plist should not contain KeepAlive:\n%s", plist)
+	}
+}
+
+// TestRenderTrafficTimerFiles 验证 traffic timer 服务文件关键字段符合数据规格。
+func TestRenderTrafficTimerFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	binary := filepath.Join(baseDir, "bin", "sboxctl")
+	unit := string(RenderTrafficSystemdService(baseDir, filepath.Join(baseDir, "traffic"), filepath.Join(baseDir, "logs"), binary, "hourly"))
+	for _, want := range []string{
+		"Type=oneshot",
+		"User=sbox",
+		"Group=sbox",
+		"ExecStart=" + binary + " --base-dir " + baseDir + " traffic collect hourly --instance ALL",
+		"ReadWritePaths=" + filepath.Join(baseDir, "traffic") + " " + filepath.Join(baseDir, "logs"),
+	} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("traffic systemd service missing %q:\n%s", want, unit)
+		}
+	}
+
+	timer := string(RenderTrafficSystemdTimer("monthly"))
+	for _, want := range []string{"OnCalendar=*-*-01 00:30:00", "Persistent=true", "AccuracySec=1min", "WantedBy=timers.target"} {
+		if !strings.Contains(timer, want) {
+			t.Fatalf("traffic systemd timer missing %q:\n%s", want, timer)
+		}
+	}
+
+	plist := string(RenderTrafficLaunchdPlist(baseDir, filepath.Join(baseDir, "logs"), binary, "daily"))
+	for _, want := range []string{
+		"<string>com.sbox-manager.traffic.daily</string>",
+		"<string>" + binary + "</string>",
+		"<string>--base-dir</string>",
+		"<string>" + baseDir + "</string>",
+		"<string>traffic</string>",
+		"<string>collect</string>",
+		"<string>daily</string>",
+		"<key>StartCalendarInterval</key>",
+		"<key>Hour</key>",
+		"<integer>0</integer>",
+		"<key>Minute</key>",
+		"<integer>10</integer>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Fatalf("traffic launchd plist missing %q:\n%s", want, plist)
+		}
+	}
+}
+
 // TestInstallSystemdWritesUnitAndOnlyReloads 验证 service install 写 unit 且不启动服务。
 func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	baseDir := t.TempDir()
@@ -85,6 +168,119 @@ func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	}
 	if got := runner.joined(); got != "systemctl daemon-reload" {
 		t.Fatalf("service install should only daemon-reload, got %q", got)
+	}
+}
+
+// TestInstallSubscriptionSystemdWritesUnitAndOnlyReloads 验证 sboxsub service install 只写服务文件并 reload。
+func TestInstallSubscriptionSystemdWritesUnitAndOnlyReloads(t *testing.T) {
+	baseDir := t.TempDir()
+	unitDir := filepath.Join(baseDir, "units")
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: unitDir, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	binary := filepath.Join(baseDir, "bin", "sboxsub")
+
+	if err := manager.InstallSubscription(context.Background(), baseDir, binary); err != nil {
+		t.Fatalf("install subscription: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(unitDir, "sboxsub.service"))
+	if err != nil {
+		t.Fatalf("read unit: %v", err)
+	}
+	if !strings.Contains(string(data), "ExecStart="+binary+" --base-dir "+baseDir+" serve") {
+		t.Fatalf("unexpected subscription unit:\n%s", data)
+	}
+	if got := runner.joined(); got != "systemctl daemon-reload" {
+		t.Fatalf("subscription service install should only daemon-reload, got %q", got)
+	}
+}
+
+// TestInstallTrafficTimersWritesFilesAndOnlyReloads 验证 timer install 只写文件和 daemon-reload。
+func TestInstallTrafficTimersWritesFilesAndOnlyReloads(t *testing.T) {
+	baseDir := t.TempDir()
+	unitDir := filepath.Join(baseDir, "units")
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: unitDir, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	binary := filepath.Join(baseDir, "bin", "sboxctl")
+
+	if err := manager.InstallTrafficTimers(context.Background(), baseDir, filepath.Join(baseDir, "traffic"), filepath.Join(baseDir, "logs"), binary); err != nil {
+		t.Fatalf("install traffic timers: %v", err)
+	}
+	for _, name := range []string{
+		"sbox-traffic-hourly.service",
+		"sbox-traffic-hourly.timer",
+		"sbox-traffic-daily.service",
+		"sbox-traffic-daily.timer",
+		"sbox-traffic-monthly.service",
+		"sbox-traffic-monthly.timer",
+	} {
+		if _, err := os.Stat(filepath.Join(unitDir, name)); err != nil {
+			t.Fatalf("traffic timer file %s should be written: %v", name, err)
+		}
+	}
+	if got := runner.joined(); got != "systemctl daemon-reload" {
+		t.Fatalf("traffic timer install should only daemon-reload, got %q", got)
+	}
+}
+
+// TestTrafficTimerEnableUsesEnableNow 验证 systemd timer enable 使用 enable --now。
+func TestTrafficTimerEnableUsesEnableNow(t *testing.T) {
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if _, err := manager.RunTrafficTimers(context.Background(), "enable", false); err != nil {
+		t.Fatalf("enable traffic timers: %v", err)
+	}
+	for _, want := range []string{
+		"systemctl enable --now sbox-traffic-hourly.timer",
+		"systemctl enable --now sbox-traffic-daily.timer",
+		"systemctl enable --now sbox-traffic-monthly.timer",
+	} {
+		if !strings.Contains(runner.joined(), want) {
+			t.Fatalf("traffic timer enable missing %q: %q", want, runner.joined())
+		}
+	}
+}
+
+// TestUninstallTrafficTimersIgnoresMissingTimer 验证未加载的 timer 不阻塞受管文件删除。
+func TestUninstallTrafficTimersIgnoresMissingTimer(t *testing.T) {
+	baseDir := t.TempDir()
+	unitDir := filepath.Join(baseDir, "units")
+	if err := os.MkdirAll(unitDir, 0750); err != nil {
+		t.Fatalf("mkdir unit dir: %v", err)
+	}
+	for _, period := range TrafficPeriods() {
+		for _, name := range []string{TrafficSystemdServiceName(period), TrafficSystemdTimerName(period)} {
+			if err := os.WriteFile(filepath.Join(unitDir, name), []byte("managed"), 0644); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+		}
+	}
+	runner := &missingTimerRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, UnitDir: unitDir, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if err := manager.UninstallTrafficTimers(context.Background()); err != nil {
+		t.Fatalf("uninstall traffic timers: %v", err)
+	}
+	for _, period := range TrafficPeriods() {
+		for _, name := range []string{TrafficSystemdServiceName(period), TrafficSystemdTimerName(period)} {
+			if _, err := os.Stat(filepath.Join(unitDir, name)); !os.IsNotExist(err) {
+				t.Fatalf("traffic timer file %s should be removed, stat err: %v", name, err)
+			}
+		}
+	}
+	if !strings.Contains(runner.joined(), "systemctl daemon-reload") {
+		t.Fatalf("uninstall should daemon-reload, got %q", runner.joined())
 	}
 }
 
@@ -170,6 +366,32 @@ func TestLaunchdEnableBootstrapsThenEnables(t *testing.T) {
 	}
 }
 
+// TestLaunchdTrafficTimerDisableDisablesAndBootsOut 验证 launchd disable 会停止已加载 job。
+func TestLaunchdTrafficTimerDisableDisablesAndBootsOut(t *testing.T) {
+	baseDir := t.TempDir()
+	plistDir := filepath.Join(baseDir, "plist")
+	runner := &recordingRunner{}
+	manager, err := NewManager(Options{Kind: KindLaunchd, LaunchAgentDir: plistDir, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.RunTrafficTimers(context.Background(), "disable", false); err != nil {
+		t.Fatalf("disable traffic timers: %v", err)
+	}
+	got := runner.joined()
+	for _, want := range []string{
+		"launchctl disable gui/",
+		"/com.sbox-manager.traffic.hourly",
+		"launchctl bootout gui/",
+		"/com.sbox-manager.traffic.monthly",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("launchd traffic disable missing %q: %q", want, got)
+		}
+	}
+}
+
 func serviceFixtureGlobal(baseDir string) domain.GlobalConfig {
 	global := domain.DefaultGlobalConfig()
 	global.Paths.Bin = filepath.Join(baseDir, "bin")
@@ -195,4 +417,17 @@ func (r *recordingRunner) Run(ctx context.Context, name string, args ...string) 
 
 func (r *recordingRunner) joined() string {
 	return strings.Join(r.calls, "\n")
+}
+
+type missingTimerRunner struct {
+	recordingRunner
+}
+
+func (r *missingTimerRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	call := strings.Join(append([]string{name}, args...), " ")
+	r.calls = append(r.calls, call)
+	if strings.Contains(call, "disable --now sbox-traffic-") {
+		return []byte("Unit not loaded"), errors.New("unit not found")
+	}
+	return nil, nil
 }

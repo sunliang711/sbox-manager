@@ -15,22 +15,22 @@ func newSboxsubCommand() *cobra.Command {
 	)
 
 	root.AddCommand(
-		newStubCommand("init", "初始化订阅服务环境目录和默认配置"),
+		newSboxsubInitCommandT05(),
 		newVersionCommand("version", false),
 		newSboxsubConfigCommand(),
-		newStubCommand("import BUNDLE", "导入订阅 bundle"),
-		newStubCommand("clear", "清空订阅服务数据"),
+		newSboxsubImportCommandT05(),
+		newSboxsubClearCommandT05(),
 		newSboxsubInputCommand(),
 		newSboxsubServeCommand(),
 		newSboxsubServiceCommand(),
-		newStubCommand("start", "启动订阅服务"),
-		newStubCommand("stop", "停止订阅服务"),
-		newStubCommand("restart", "重启订阅服务"),
-		newStubCommand("status", "查看订阅服务状态"),
-		newStubCommand("logs", "查看订阅服务日志"),
-		newStubCommand("enable", "启用订阅服务"),
-		newStubCommand("disable", "禁用订阅服务"),
-		newStubCommand("doctor", "执行订阅服务诊断检查"),
+		newSboxsubServiceActionCommand("start"),
+		newSboxsubServiceActionCommand("stop"),
+		newSboxsubServiceActionCommand("restart"),
+		newSboxsubServiceActionCommand("status"),
+		newSboxsubServiceActionCommand("logs"),
+		newSboxsubServiceActionCommand("enable"),
+		newSboxsubServiceActionCommand("disable"),
+		newSboxsubDoctorCommandT05(),
 	)
 
 	addSboxsubFlags(root)
@@ -48,49 +48,20 @@ func addSboxsubFlags(root *cobra.Command) {
 
 // newSboxsubConfigCommand 创建订阅服务配置命令组。
 func newSboxsubConfigCommand() *cobra.Command {
-	return newStubGroup(
-		"config",
-		"编辑、展示或检查订阅服务配置",
-		newStubCommand("show", "展示订阅服务配置"),
-		newStubCommand("check", "检查订阅服务配置"),
-	)
+	return newSboxsubConfigCommandT05()
 }
 
 // newSboxsubInputCommand 创建订阅 input 管理命令组。
 func newSboxsubInputCommand() *cobra.Command {
-	input := newStubGroup(
-		"input",
-		"管理订阅服务输入源",
-		newStubCommand("list", "列出输入源"),
-		newStubCommand("show SOURCE", "展示输入源"),
-		newStubCommand("validate [SOURCE]", "校验输入源"),
-		newStubCommand("edit SOURCE", "编辑输入源"),
-		newStubCommand("clone SOURCE TARGET", "克隆输入源"),
-		newStubCommand("set-host HOST [SOURCE]", "设置输入源 external host"),
-		newStubCommand("remove SOURCE", "移除输入源"),
-	)
-	mustCommand(input, "show").Flags().Bool("raw", false, "输出原始内容")
-	mustCommand(input, "show").Flags().Bool("show-secrets", false, "显示敏感字段明文")
-	mustCommand(input, "edit").Flags().String("editor", "", "指定编辑器命令")
-	mustCommand(input, "clone").Flags().String("editor", "", "指定编辑器命令")
-	mustCommand(input, "set-host").Flags().Bool("all", false, "应用到全部输入源")
-	return input
+	return newSboxsubInputCommandT05()
 }
 
 // newSboxsubServeCommand 创建订阅 HTTP 服务命令。
 func newSboxsubServeCommand() *cobra.Command {
-	serve := newStubCommand("serve", "启动订阅 HTTP 服务")
-	serve.Flags().String("host", "", "覆盖 HTTP 监听 host")
-	serve.Flags().Int("port", 0, "覆盖 HTTP 监听 port")
-	return serve
+	return newSboxsubServeCommandT05()
 }
 
 // newSboxsubServiceCommand 创建订阅服务文件命令组。
 func newSboxsubServiceCommand() *cobra.Command {
-	return newStubGroup(
-		"service",
-		"管理订阅服务 systemd unit 或 launchd plist",
-		newStubCommand("install", "安装订阅服务文件"),
-		newStubCommand("uninstall", "卸载订阅服务文件"),
-	)
+	return newSboxsubServiceCommandT05()
 }

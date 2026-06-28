@@ -95,6 +95,9 @@ func LoadSubscriptionInput(path string) (*domain.SubscriptionInput, error) {
 	if err := loadStrictFile(path, "SubscriptionInput", &input); err != nil {
 		return nil, err
 	}
+	if err := domain.ValidateSubscriptionInput(input); err != nil {
+		return nil, fmt.Errorf("SubscriptionInput %s: %w", path, err)
+	}
 	return &input, nil
 }
 
@@ -113,6 +116,9 @@ func LoadBundleManifest(path string) (*domain.BundleManifest, error) {
 	if err := loadStrictFile(path, "BundleManifest", &manifest); err != nil {
 		return nil, err
 	}
+	if err := domain.ValidateBundleManifest(manifest); err != nil {
+		return nil, fmt.Errorf("BundleManifest %s: %w", path, err)
+	}
 	return &manifest, nil
 }
 
@@ -121,6 +127,9 @@ func LoadBackupManifest(path string) (*domain.BackupManifest, error) {
 	var manifest domain.BackupManifest
 	if err := loadStrictFile(path, "BackupManifest", &manifest); err != nil {
 		return nil, err
+	}
+	if err := domain.ValidateBackupManifest(manifest); err != nil {
+		return nil, fmt.Errorf("BackupManifest %s: %w", path, err)
 	}
 	return &manifest, nil
 }

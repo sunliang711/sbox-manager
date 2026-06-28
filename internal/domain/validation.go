@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 )
 
 var safeNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var sha256Pattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 // ValidateGlobalConfig 校验 agent 全局配置。
 func ValidateGlobalConfig(config GlobalConfig) error {
@@ -109,6 +112,94 @@ func ValidateSubConfig(config SubConfig) error {
 	return errs.ErrOrNil()
 }
 
+// ValidateSubscriptionInput 校验单个订阅 input 的 schema 和节点规则。
+func ValidateSubscriptionInput(input SubscriptionInput) error {
+	var errs ValidationErrors
+	validateSubscriptionInput("input", input, &errs)
+	validateSubscriptionMergeRules([]SubscriptionInput{input}, &errs)
+	return errs.ErrOrNil()
+}
+
+// ValidateSubscriptionInputs 校验多个订阅 input 的单文件规则和合并约束。
+func ValidateSubscriptionInputs(inputs []SubscriptionInput) error {
+	var errs ValidationErrors
+	for index, input := range inputs {
+		validateSubscriptionInput(fmt.Sprintf("inputs[%d]", index), input, &errs)
+	}
+	validateSubscriptionMergeRules(inputs, &errs)
+	return errs.ErrOrNil()
+}
+
+// ValidateSubscriptionInputFilename 校验订阅 input 文件名只能是安全 basename 和受支持扩展名。
+func ValidateSubscriptionInputFilename(name string) error {
+	var errs ValidationErrors
+	validateSubscriptionInputFilename("filename", name, &errs)
+	return errs.ErrOrNil()
+}
+
+// ValidateBundleManifest 校验订阅 bundle manifest 的 schema、hash 和 access 约束。
+func ValidateBundleManifest(manifest BundleManifest) error {
+	var errs ValidationErrors
+	if manifest.BundleSchema != "sbox.sub-bundle" {
+		errs.Add("bundle_schema", "必须是 sbox.sub-bundle")
+	}
+	if manifest.BundleVersion != defaultVersion {
+		errs.Add("bundle_version", "只能为 1")
+	}
+	if strings.TrimSpace(manifest.Source) == "" {
+		errs.Add("source", "不能为空")
+	}
+	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
+		errs.Add("generated_at", "必须是 RFC3339 时间")
+	}
+	if len(manifest.InputsSHA256) == 0 {
+		errs.Add("inputs_sha256", "不能为空")
+	}
+	for name, hash := range manifest.InputsSHA256 {
+		validateSubscriptionInputFilename("inputs_sha256."+name, name, &errs)
+		if !sha256Pattern.MatchString(hash) {
+			errs.Add("inputs_sha256."+name, "必须是 SHA-256 hex")
+		}
+	}
+	if strings.TrimSpace(manifest.TemplateVersion) == "" {
+		errs.Add("template_version", "不能为空")
+	}
+	if manifest.Access.Type != "none" {
+		errs.Add("access.type", "bundle access 当前只能为 none")
+	}
+	if strings.TrimSpace(manifest.Access.Token) != "" {
+		errs.Add("access.token", "bundle 不允许携带 token")
+	}
+	return errs.ErrOrNil()
+}
+
+// ValidateBackupManifest 校验 agent 备份 manifest 的 schema、hash 和成员路径约束。
+func ValidateBackupManifest(manifest BackupManifest) error {
+	var errs ValidationErrors
+	if manifest.BackupSchema != "sbox.agent-backup" {
+		errs.Add("backup_schema", "必须是 sbox.agent-backup")
+	}
+	if manifest.BackupVersion != defaultVersion {
+		errs.Add("backup_version", "只能为 1")
+	}
+	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
+		errs.Add("generated_at", "必须是 RFC3339 时间")
+	}
+	if len(manifest.FilesSHA256) == 0 {
+		errs.Add("files_sha256", "不能为空")
+	}
+	if _, ok := manifest.FilesSHA256["config.yaml"]; !ok {
+		errs.Add("files_sha256.config.yaml", "必须包含 config.yaml")
+	}
+	for name, hash := range manifest.FilesSHA256 {
+		validateBackupFileName("files_sha256."+name, name, &errs)
+		if !sha256Pattern.MatchString(hash) {
+			errs.Add("files_sha256."+name, "必须是 SHA-256 hex")
+		}
+	}
+	return errs.ErrOrNil()
+}
+
 // ValidateTrafficConfig 校验独立 traffic 配置。
 func ValidateTrafficConfig(config TrafficConfig) error {
 	var errs ValidationErrors
@@ -124,6 +215,13 @@ func ValidateTrafficConfig(config TrafficConfig) error {
 		TimeoutSeconds:         config.TimeoutSeconds,
 		Timer:                  config.Timer,
 	}, &errs)
+	return errs.ErrOrNil()
+}
+
+// ValidateBackupFileName 校验 agent backup 成员只能是 config.yaml 或 instances 下配置文件。
+func ValidateBackupFileName(name string) error {
+	var errs ValidationErrors
+	validateBackupFileName("filename", name, &errs)
 	return errs.ErrOrNil()
 }
 
@@ -265,6 +363,194 @@ func validateSafeName(path string, value string, errs *ValidationErrors) {
 	if !safeNamePattern.MatchString(value) || value == "." || value == ".." || strings.Contains(value, "..") {
 		errs.Add(path, "必须是安全 basename")
 	}
+}
+
+// validateSubscriptionInput 校验单个订阅 input 的字段完整性。
+func validateSubscriptionInput(path string, input SubscriptionInput, errs *ValidationErrors) {
+	if input.InputSchema != "sbox.subscription-input" {
+		errs.Add(path+".input_schema", "必须是 sbox.subscription-input")
+	}
+	if input.InputVersion != defaultVersion {
+		errs.Add(path+".input_version", "只能为 1")
+	}
+	if strings.TrimSpace(input.Source) == "" {
+		errs.Add(path+".source", "不能为空")
+	} else {
+		validateSafeName(path+".source", input.Source, errs)
+	}
+	if _, err := time.Parse(time.RFC3339, input.GeneratedAt); err != nil {
+		errs.Add(path+".generated_at", "必须是 RFC3339 时间")
+	}
+	if err := validateExternalHost(input.ExternalHost); err != nil {
+		errs.Add(path+".external_host", "%v", err)
+	}
+	if input.Nodes == nil {
+		errs.Add(path+".nodes", "不能为空")
+		return
+	}
+	for index, node := range input.Nodes {
+		validateSubscriptionNode(fmt.Sprintf("%s.nodes[%d]", path, index), input.ExternalHost, node, errs)
+	}
+}
+
+// validateSubscriptionNode 校验单个订阅节点的协议字段和通用字段。
+func validateSubscriptionNode(path string, inputExternalHost string, node SubscriptionNode, errs *ValidationErrors) {
+	if strings.TrimSpace(node.ID) == "" {
+		errs.Add(path+".id", "不能为空")
+	}
+	if strings.TrimSpace(node.User) == "" {
+		errs.Add(path+".user", "不能为空")
+	} else {
+		validateSafeName(path+".user", node.User, errs)
+	}
+	if !allowedValue(node.Protocol, "vmess", "shadowsocks", "socks5", "http", "sing-box") {
+		errs.Add(path+".protocol", "不支持的 protocol %q", node.Protocol)
+		return
+	}
+	if strings.TrimSpace(node.Server) == "" && strings.TrimSpace(inputExternalHost) == "" {
+		errs.Add(path+".server", "为空时文件级 external_host 不能为空")
+	}
+	if strings.TrimSpace(node.Server) != "" {
+		if err := validateExternalHost(node.Server); err != nil {
+			errs.Add(path+".server", "%v", err)
+		}
+	}
+	validatePort(path+".port", node.Port, errs)
+	if strings.TrimSpace(node.Tag) == "" {
+		errs.Add(path+".tag", "不能为空")
+	} else {
+		validateSafeName(path+".tag", node.Tag, errs)
+	}
+	if strings.TrimSpace(node.Remark) == "" {
+		errs.Add(path+".remark", "不能为空")
+	}
+	if node.Region != "" && !regexp.MustCompile(`^[A-Z]{2}$`).MatchString(node.Region) {
+		errs.Add(path+".region", "必须是两位大写字母")
+	}
+
+	switch node.Protocol {
+	case "vmess":
+		if strings.TrimSpace(node.UUID) == "" {
+			errs.Add(path+".uuid", "vmess 节点必须配置 uuid")
+		} else if !uuidPattern.MatchString(node.UUID) {
+			errs.Add(path+".uuid", "必须是 UUID")
+		}
+		if strings.TrimSpace(node.Network) == "" {
+			errs.Add(path+".network", "vmess 节点必须配置 network")
+		}
+	case "shadowsocks":
+		if strings.TrimSpace(node.Method) == "" {
+			errs.Add(path+".method", "shadowsocks 节点必须配置 method")
+		}
+		if strings.TrimSpace(node.Password) == "" {
+			errs.Add(path+".password", "shadowsocks 节点必须配置 password")
+		}
+	case "socks5", "http":
+		validateSubscriptionAuth(path+".auth", node.Auth, errs)
+	case "sing-box":
+		if len(node.Native) == 0 {
+			errs.Add(path+".native", "sing-box 节点必须配置 native")
+		}
+	}
+}
+
+// validateSubscriptionAuth 校验 socks5/http 订阅节点认证字段。
+func validateSubscriptionAuth(path string, auth AuthConfig, errs *ValidationErrors) {
+	if !allowedValue(auth.Type, "noauth", "password") {
+		errs.Add(path+".type", "不支持的 auth type %q", auth.Type)
+		return
+	}
+	if auth.Type != "password" {
+		return
+	}
+	if strings.TrimSpace(auth.Username) == "" {
+		errs.Add(path+".username", "password 鉴权必须配置 username")
+	}
+	if strings.TrimSpace(auth.Password) == "" {
+		errs.Add(path+".password", "password 鉴权必须配置 password")
+	}
+}
+
+// validateSubscriptionMergeRules 校验多 input 合并后的唯一性约束。
+func validateSubscriptionMergeRules(inputs []SubscriptionInput, errs *ValidationErrors) {
+	ids := make(map[string]string)
+	tags := make(map[string]string)
+	remarksByUser := make(map[string]map[string]string)
+	for inputIndex, input := range inputs {
+		for nodeIndex, node := range input.Nodes {
+			path := fmt.Sprintf("inputs[%d].nodes[%d]", inputIndex, nodeIndex)
+			if previous, exists := ids[node.ID]; exists && strings.TrimSpace(node.ID) != "" {
+				errs.Add(path+".id", "节点 id 重复，已在 %s 使用", previous)
+			} else if strings.TrimSpace(node.ID) != "" {
+				ids[node.ID] = path
+			}
+			if previous, exists := tags[node.Tag]; exists && strings.TrimSpace(node.Tag) != "" {
+				errs.Add(path+".tag", "节点 tag 重复，已在 %s 使用", previous)
+			} else if strings.TrimSpace(node.Tag) != "" {
+				tags[node.Tag] = path
+			}
+			if strings.TrimSpace(node.User) == "" || strings.TrimSpace(node.Remark) == "" {
+				continue
+			}
+			if remarksByUser[node.User] == nil {
+				remarksByUser[node.User] = make(map[string]string)
+			}
+			if previous, exists := remarksByUser[node.User][node.Remark]; exists {
+				errs.Add(path+".remark", "同一 user 下订阅展示名重复，已在 %s 使用", previous)
+			} else {
+				remarksByUser[node.User][node.Remark] = path
+			}
+		}
+	}
+}
+
+// validateSubscriptionInputFilename 校验单个订阅 input 文件名。
+func validateSubscriptionInputFilename(path string, name string, errs *ValidationErrors) {
+	if strings.TrimSpace(name) == "" {
+		errs.Add(path, "不能为空")
+		return
+	}
+	if filepath.Base(name) != name || filepath.IsAbs(name) || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		errs.Add(path, "必须是安全 basename")
+		return
+	}
+	extension := strings.ToLower(filepath.Ext(name))
+	if !allowedValue(extension, ".yaml", ".yml", ".json") {
+		errs.Add(path, "不支持的订阅 input 扩展名")
+		return
+	}
+	base := strings.TrimSuffix(name, extension)
+	validateSafeName(path, base, errs)
+}
+
+// validateBackupFileName 校验单个 agent backup 成员路径。
+func validateBackupFileName(field string, name string, errs *ValidationErrors) {
+	if strings.TrimSpace(name) == "" {
+		errs.Add(field, "不能为空")
+		return
+	}
+	if strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name {
+		errs.Add(field, "路径不安全")
+		return
+	}
+	if name == "config.yaml" {
+		return
+	}
+	if !strings.HasPrefix(name, "instances/") {
+		errs.Add(field, "只能是 config.yaml 或 instances/*")
+		return
+	}
+	base := strings.TrimPrefix(name, "instances/")
+	if base == "" || strings.Contains(base, "/") {
+		errs.Add(field, "instances 成员必须是安全 basename")
+		return
+	}
+	extension := strings.ToLower(path.Ext(base))
+	if !allowedValue(extension, ".yaml", ".yml", ".json") {
+		errs.Add(field, "instance 配置扩展名必须是 .yaml、.yml 或 .json")
+		return
+	}
+	validateSafeName(field, strings.TrimSuffix(base, extension), errs)
 }
 
 // validateInbounds 校验所有 inbound。

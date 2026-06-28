@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
@@ -61,6 +62,53 @@ func (m *Manager) Uninstall(ctx context.Context, instances []domain.Instance, ta
 		}
 	}
 	if m.kind == KindSystemd && len(targets) > 0 {
+		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+		}
+	}
+	return nil
+}
+
+// InstallSubscription 写入 sboxsub 的 systemd unit 或 launchd plist，且不启动服务。
+func (m *Manager) InstallSubscription(ctx context.Context, baseDir string, binary string) error {
+	switch m.kind {
+	case KindSystemd:
+		path := filepath.Join(m.unitDir, SubscriptionSystemdServiceName())
+		data := RenderSubscriptionSystemdUnit(baseDir, binary)
+		if err := WriteFileAtomic(path, data, systemdUnitMode); err != nil {
+			return fmt.Errorf("安装 systemd unit %s: %w", path, err)
+		}
+		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+		}
+		return nil
+	case KindLaunchd:
+		path := filepath.Join(m.launchAgentDir, SubscriptionLaunchdLabel()+".plist")
+		data := RenderSubscriptionLaunchdPlist(baseDir, binary)
+		if err := WriteFileAtomic(path, data, launchdMode); err != nil {
+			return fmt.Errorf("安装 launchd plist %s: %w", path, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+	}
+}
+
+// UninstallSubscription 删除 sboxsub 的服务文件，且不停止服务。
+func (m *Manager) UninstallSubscription(ctx context.Context) error {
+	var path string
+	switch m.kind {
+	case KindSystemd:
+		path = filepath.Join(m.unitDir, SubscriptionSystemdServiceName())
+	case KindLaunchd:
+		path = filepath.Join(m.launchAgentDir, SubscriptionLaunchdLabel()+".plist")
+	default:
+		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("卸载服务文件 %s: %w", path, err)
+	}
+	if m.kind == KindSystemd {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
 		}
