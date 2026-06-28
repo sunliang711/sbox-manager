@@ -429,6 +429,94 @@ func TestTrafficShowDoesNotCreateDBWhenNoRecords(t *testing.T) {
 	}
 }
 
+// TestReadOnlyCommandsDoNotWriteManagedOutputs 验证 validate/render/doctor 不写 runtime、publish 或 traffic 数据。
+func TestReadOnlyCommandsDoNotWriteManagedOutputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantError string
+		wantText  string
+	}{
+		{name: "validate", args: []string{"validate"}, wantText: "配置校验通过"},
+		{name: "render model", args: []string{"render", "model"}, wantText: `"instances"`},
+		{name: "render sing-box", args: []string{"render", "sing-box", "edge-us"}, wantText: `"inbounds"`},
+		{name: "render sub", args: []string{"render", "sub"}, wantText: `"input_schema": "sbox.subscription-input"`},
+		{name: "doctor issue", args: []string{"doctor"}, wantError: "doctor found ISSUE", wantText: "ISSUE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseDir := writeAgentFixture(t)
+			commandArgs := append([]string{"--base-dir", baseDir, "--service-manager", "systemd"}, tt.args...)
+			output, err := executeCommand(newSboxctlCommand(), commandArgs...)
+			if tt.wantError == "" && err != nil {
+				t.Fatalf("read-only command failed: %v\n%s", err, output)
+			}
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("expected error %q, got %v\n%s", tt.wantError, err, output)
+				}
+			}
+			if !strings.Contains(output, tt.wantText) {
+				t.Fatalf("output missing %q:\n%s", tt.wantText, output)
+			}
+			assertNoManagedOutputs(t, baseDir)
+		})
+	}
+}
+
+// TestSboxctlE2EFakeLifecycle 覆盖 init/add/check/start/status/logs/stop 的 fake 端到端路径。
+func TestSboxctlE2EFakeLifecycle(t *testing.T) {
+	baseDir := t.TempDir()
+	runner := &cliRecordingRunner{}
+	checker := &cliFakeChecker{}
+	restoreRuntimeHooks(t)
+	newRuntimeConfigChecker = func(*rootOptions, domain.GlobalConfig) runtimeplan.ConfigChecker {
+		return checker
+	}
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	}
+
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init", "--external-host", "proxy.example.com"); err != nil {
+		t.Fatalf("init failed: %v\n%s", err, output)
+	}
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "add", "edge-us", "--no-edit"); err != nil {
+		t.Fatalf("add failed: %v\n%s", err, output)
+	}
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "check"); err != nil {
+		t.Fatalf("check failed: %v\n%s", err, output)
+	}
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "start"); err != nil {
+		t.Fatalf("start failed: %v\n%s", err, output)
+	}
+	for _, args := range [][]string{
+		{"status"},
+		{"logs"},
+		{"stop"},
+	} {
+		commandArgs := append([]string{"--base-dir", baseDir, "--service-manager", "systemd"}, args...)
+		if output, err := executeCommand(newSboxctlCommand(), commandArgs...); err != nil {
+			t.Fatalf("%v failed: %v\n%s", args, err, output)
+		}
+	}
+	if checker.calls != 1 {
+		t.Fatalf("start should run sing-box check once, got %d", checker.calls)
+	}
+	for _, want := range []string{
+		"systemctl start sbox@edge-us.service",
+		"systemctl status --no-pager sbox@edge-us.service",
+		"journalctl -u sbox@edge-us.service",
+		"systemctl stop sbox@edge-us.service",
+	} {
+		if !strings.Contains(runner.joined(), want) {
+			t.Fatalf("fake lifecycle missing %q:\n%s", want, runner.joined())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "runtime", "manifest.json")); err != nil {
+		t.Fatalf("start should write runtime manifest in fake e2e: %v", err)
+	}
+}
+
 // TestRootHelpShowsResponsibilities 验证根命令 help 能区分 agent 与 sub 职责。
 func TestRootHelpShowsResponsibilities(t *testing.T) {
 	sboxctlHelp, err := executeCommand(newSboxctlCommand(), "--help")
@@ -625,6 +713,22 @@ func writeReplaceEditor(t *testing.T, old string, new string) string {
 		t.Fatalf("write editor: %v", err)
 	}
 	return path
+}
+
+// assertNoManagedOutputs 验证只读命令没有创建运行、发布或统计输出。
+func assertNoManagedOutputs(t *testing.T, baseDir string) {
+	t.Helper()
+
+	for _, target := range []string{
+		filepath.Join(baseDir, "runtime", "manifest.json"),
+		filepath.Join(baseDir, "runtime", "generated"),
+		filepath.Join(baseDir, "publish"),
+		filepath.Join(baseDir, "traffic", "traffic.db"),
+	} {
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Fatalf("read-only command should not create %s, stat err: %v", target, err)
+		}
+	}
 }
 
 type cliFakeChecker struct {

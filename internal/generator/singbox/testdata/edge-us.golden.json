@@ -1,0 +1,80 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "local",
+        "address": "local"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "type": "vmess",
+      "tag": "vmess-vmess-main",
+      "listen": "0.0.0.0",
+      "listen_port": 24100,
+      "users": [
+        {
+          "name": "alice",
+          "uuid": "11111111-1111-4111-8111-111111111111"
+        }
+      ]
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "proxy-a",
+      "server": "server.example.com",
+      "server_port": 443,
+      "password": "change-me",
+      "method": "2022-blake3-aes-256-gcm"
+    },
+    {
+      "type": "urltest",
+      "tag": "auto",
+      "outbounds": [
+        "proxy-a",
+        "direct"
+      ],
+      "url": "http://www.gstatic.com/generate_204",
+      "interval": "300s"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain_suffix": [
+          "google.com"
+        ],
+        "outbound": "auto"
+      }
+    ],
+    "final": "auto"
+  },
+  "experimental": {
+    "v2ray_api": {
+      "listen": "127.0.0.1:10085",
+      "stats": {
+        "enabled": true,
+        "inbounds": [
+          "vmess-vmess-main"
+        ],
+        "outbounds": [
+          "direct",
+          "proxy-a"
+        ],
+        "users": [
+          "alice"
+        ]
+      }
+    }
+  }
+}

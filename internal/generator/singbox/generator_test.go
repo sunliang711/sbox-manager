@@ -1,6 +1,8 @@
 package singbox
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,22 @@ func TestGenerateStableBytes(t *testing.T) {
 	assertOrder(t, output, `"inbounds"`, `"outbounds"`)
 	assertOrder(t, output, `"outbounds"`, `"route"`)
 	assertOrder(t, output, `"route"`, `"experimental"`)
+}
+
+// TestGenerateMatchesGolden 验证核心 edge 实例输出与 golden 文件保持一致。
+func TestGenerateMatchesGolden(t *testing.T) {
+	global, instance := testConfig()
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "edge-us.golden.json"))
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	if string(generated) != string(golden) {
+		t.Fatalf("generated output differs from golden\nwant:\n%s\ngot:\n%s", golden, generated)
+	}
 }
 
 // TestBuildSubscriptionInputsRequiresExternalHost 验证订阅渲染缺少 external_host 时失败。
