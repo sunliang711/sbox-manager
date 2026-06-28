@@ -78,10 +78,18 @@ prepare_work_dir() {
     trap 'rm -rf "$WORK_DIR"' EXIT
 }
 
+# 输出 dry-run 安装目标，适用于无需解压即可预览的场景。
+print_install_plan() {
+    log_info "Would install ${INSTALL_DIR}/sboxctl"
+    log_info "Would install ${INSTALL_DIR}/sboxsub"
+}
+
 # 校验 tar 成员路径，适用于解压前阻止路径穿越和未知成员。
 validate_archive_members() {
     local asset="$1"
     local member
+    local has_sboxctl=0
+    local has_sboxsub=0
     while IFS= read -r member; do
         case "$member" in
         /* | *..* | *\\*) die "Unsafe archive member: $member" ;;
@@ -90,10 +98,14 @@ validate_archive_members() {
             continue
         fi
         case "$member" in
-        */bin/sboxctl | */bin/sboxsub | */README.md | */LICENSE | */templates/*) ;;
+        */bin/sboxctl) has_sboxctl=1 ;;
+        */bin/sboxsub) has_sboxsub=1 ;;
+        */README.md | */LICENSE | */templates/*) ;;
         *) die "Unknown archive member: $member" ;;
         esac
     done < <(tar -tzf "$asset")
+    [ "$has_sboxctl" -eq 1 ] || die "sboxctl not found in archive"
+    [ "$has_sboxsub" -eq 1 ] || die "sboxsub not found in archive"
 }
 
 # 从目录解析二进制路径，适用于 dist/bin 或解压后的 release 根目录。
@@ -127,6 +139,9 @@ install_binary() {
         return 0
     fi
     mkdir -p "$INSTALL_DIR"
+    if [ -d "$target" ]; then
+        die "Refuse to overwrite directory: $target"
+    fi
     if [ -e "$target" ] && [ "$FORCE" -ne 1 ]; then
         die "Refuse to overwrite existing file without --force: $target"
     fi
@@ -140,13 +155,17 @@ install_binary() {
 main() {
     parse_args "$@"
     validate_inputs
-    prepare_work_dir
 
     local source_dir=""
     if [ -d "$SOURCE" ]; then
         source_dir="$(find_binary_dir "$SOURCE")"
     else
         validate_archive_members "$SOURCE"
+        if [ "$DRY_RUN" -eq 1 ]; then
+            print_install_plan
+            return 0
+        fi
+        prepare_work_dir
         tar -xzf "$SOURCE" -C "$WORK_DIR"
         source_dir="$(find_binary_dir "$WORK_DIR")"
     fi

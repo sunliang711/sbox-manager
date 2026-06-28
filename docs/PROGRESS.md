@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-- 当前实施状态：T08 测试与验收已完成并通过复审。
+- 当前实施状态：T09 Release、安装脚本与 Makefile 已完成并通过验收。
 - 范围：覆盖两个参考项目的功能点，不兼容旧格式。
 - 二进制命名：`sboxctl`、`sboxsub`。
 - 功能参考：`/Users/eagle/Sync/proxy/proxystack-go` 和 `/Users/eagle/.local/apps/init/tools/xray/traffic`。
@@ -27,8 +27,8 @@
 | `sboxsub` 默认监听 loopback，公网部署需要显式配置监听和 token | 已确认 |
 | runtime manifest 使用新 schema 记录受管 generated 文件和服务映射 | 已确认 |
 | traffic 保留期按 hourly/daily/monthly 分层处理 | 已确认 |
-| tag push 自动构建 GitHub Release 并上传校验过的二进制资产 | 待实现 |
-| 安装脚本只安装二进制，不隐式初始化配置或安装服务 | 待实现 |
+| tag push 自动构建 GitHub Release 并上传校验过的二进制资产 | 已确认 |
+| 安装脚本只安装二进制，不隐式初始化配置或安装服务 | 已确认 |
 
 ## 任务状态
 
@@ -42,7 +42,7 @@
 | T06 流量统计 | 已完成 |
 | T07 诊断、ipinfo、备份 | 已完成 |
 | T08 测试与验收 | 已完成 |
-| T09 Release、安装脚本与 Makefile | 未开始 |
+| T09 Release、安装脚本与 Makefile | 已完成 |
 
 ## 开发入口
 

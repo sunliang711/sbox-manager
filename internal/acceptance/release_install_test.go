@@ -53,6 +53,7 @@ func TestInstallScriptDryRunDoesNotWrite(t *testing.T) {
 	requireCommand(t, "tar")
 
 	installDir := filepath.Join(t.TempDir(), "bin")
+	tmpDir := filepath.Join(t.TempDir(), "tmp")
 	output := runScript(t, root,
 		filepath.Join(root, "scripts", "install.sh"),
 		"--version", "v0.0.0",
@@ -60,7 +61,7 @@ func TestInstallScriptDryRunDoesNotWrite(t *testing.T) {
 		"--os", "linux",
 		"--arch", "amd64",
 		"--install-dir", installDir,
-		"--tmp-dir", filepath.Join(t.TempDir(), "tmp"),
+		"--tmp-dir", tmpDir,
 		"--dry-run",
 	)
 	for _, want := range []string{"Would download", "Would install sboxctl and sboxsub"} {
@@ -70,6 +71,9 @@ func TestInstallScriptDryRunDoesNotWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(installDir); !os.IsNotExist(err) {
 		t.Fatalf("dry-run should not create install dir, stat err: %v", err)
+	}
+	if _, err := os.Stat(tmpDir); !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not create tmp dir, stat err: %v", err)
 	}
 }
 
@@ -113,6 +117,50 @@ func TestInstallLocalRejectsUnsafeArchive(t *testing.T) {
 	installDir := filepath.Join(t.TempDir(), "bin")
 	command := exec.Command("bash", filepath.Join(root, "scripts", "install-local.sh"), "--from", archivePath, "--install-dir", installDir)
 	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected unsafe archive failure, output=%s", output)
+	}
+	if !strings.Contains(string(output), "Unsafe archive member") {
+		t.Fatalf("unexpected unsafe archive output:\n%s", output)
+	}
+	if _, err := os.Stat(installDir); !os.IsNotExist(err) {
+		t.Fatalf("unsafe archive should not create install dir, stat err: %v", err)
+	}
+}
+
+// TestInstallScriptRejectsUnsafeArchive 验证远程安装脚本拒绝路径穿越归档且不写入目标。
+func TestInstallScriptRejectsUnsafeArchive(t *testing.T) {
+	root := repoRoot(t)
+	requireCommand(t, "bash")
+	requireCommand(t, "tar")
+
+	tempDir := t.TempDir()
+	assetName := "sbox-manager_v0.0.0_linux_amd64.tar.gz"
+	assetPath := filepath.Join(tempDir, assetName)
+	writeTarGz(t, assetPath, map[string]string{
+		"sbox-manager_v0.0.0_linux_amd64/bin/sboxctl":       "ok",
+		"sbox-manager_v0.0.0_linux_amd64/templates/../evil": "bad",
+	})
+	fakeBin := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(fakeBin, 0750); err != nil {
+		t.Fatalf("mkdir fake bin: %v", err)
+	}
+	writeFakeCurl(t, filepath.Join(fakeBin, "curl"), assetPath, assetName)
+
+	installDir := filepath.Join(tempDir, "install")
+	tmpDir := filepath.Join(tempDir, "tmp")
+	command := exec.Command("bash", filepath.Join(root, "scripts", "install.sh"),
+		"--version", "v0.0.0",
+		"--repo", "owner/repo",
+		"--os", "linux",
+		"--arch", "amd64",
+		"--install-dir", installDir,
+		"--tmp-dir", tmpDir,
+		"--no-checksum",
+	)
+	command.Dir = root
+	command.Env = append(os.Environ(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	output, err := command.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected unsafe archive failure, output=%s", output)
