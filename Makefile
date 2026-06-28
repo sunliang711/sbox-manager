@@ -12,7 +12,7 @@ GOOS ?= $(shell go env GOOS 2>/dev/null || uname -s | tr A-Z a-z)
 GOARCH ?= $(shell go env GOARCH 2>/dev/null || uname -m)
 LDFLAGS := -X '$(MODULE)/internal/version.Version=$(VERSION)' -X '$(MODULE)/internal/version.Commit=$(COMMIT)' -X '$(MODULE)/internal/version.BuildTime=$(BUILD_TIME)'
 
-.PHONY: help fmt lint test build snapshot package checksums install-local clean
+.PHONY: help fmt lint test build build-linux snapshot package checksums install-local clean
 
 help: ; @printf '%s\n' \
 	'Targets:' \
@@ -20,6 +20,7 @@ help: ; @printf '%s\n' \
 	'  make lint            Run static checks when tools are available' \
 	'  make test            Run Go tests' \
 	'  make build           Build sboxctl and sboxsub for GOOS/GOARCH' \
+	'  make build-linux     Build Linux amd64 and arm64 binaries' \
 	'  make snapshot        Build package for current git state' \
 	'  make package         Build release tar.gz for GOOS/GOARCH' \
 	'  make checksums       Generate dist/release/checksums.txt' \
@@ -38,6 +39,10 @@ build:
 	@mkdir -p "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)"
 	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxctl" ./cmd/sboxctl
 	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxsub" ./cmd/sboxsub
+
+build-linux:
+	@$(MAKE) build GOOS=linux GOARCH=amd64
+	@$(MAKE) build GOOS=linux GOARCH=arm64
 
 snapshot: package
 

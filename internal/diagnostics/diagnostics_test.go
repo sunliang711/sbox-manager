@@ -16,6 +16,7 @@ import (
 
 	"github.com/sunliang711/sbox-manager/internal/config"
 	"github.com/sunliang711/sbox-manager/internal/domain"
+	instancemgr "github.com/sunliang711/sbox-manager/internal/instance"
 )
 
 // TestSelectInstanceProxyPrefersSocks 验证 ipinfo 优先选择 socks5 listener 且摘要不泄露密码。
@@ -130,6 +131,25 @@ func TestCheckSingBoxExecutesCommand(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "check -c") {
 		t.Fatalf("sing-box check was not executed: %s", data)
+	}
+}
+
+// TestAgentDoctorAfterInitHasNoIssue 验证刚 init 的空 agent 环境不会把未安装组件误判为故障。
+func TestAgentDoctorAfterInitHasNoIssue(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := instancemgr.Init(baseDir, instancemgr.InitOptions{}); err != nil {
+		t.Fatalf("init agent: %v", err)
+	}
+
+	checks := AgentDoctor(context.Background(), baseDir, "systemd")
+	if HasIssue(checks) {
+		t.Fatalf("init-only doctor should not report ISSUE: %+v", checks)
+	}
+	if check := findCheck(checks, "sing-box.binary"); check.Status != StatusOK {
+		t.Fatalf("expected sing-box.binary OK, got %+v", check)
+	}
+	if check := findCheck(checks, "traffic.db"); check.Status != StatusOK {
+		t.Fatalf("expected traffic.db OK, got %+v", check)
 	}
 }
 

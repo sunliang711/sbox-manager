@@ -81,6 +81,27 @@ func TestSboxctlDoctorReturnsNonZeroOnIssue(t *testing.T) {
 	}
 }
 
+// TestSboxctlDoctorAfterInitSucceeds 验证 init 后的空环境 doctor 不会把未安装组件当成故障。
+func TestSboxctlDoctorAfterInitSucceeds(t *testing.T) {
+	baseDir := t.TempDir()
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init"); err != nil {
+		t.Fatalf("init failed: %v\n%s", err, output)
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "doctor")
+	if err != nil {
+		t.Fatalf("doctor after init should succeed: %v\n%s", err, output)
+	}
+	if strings.Contains(output, "ISSUE") {
+		t.Fatalf("doctor after init should not contain ISSUE:\n%s", output)
+	}
+	for _, want := range []string{"sing-box.binary", "traffic.db", "traffic.timer.hourly"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestSboxctlCheckIsReadOnly 验证 check 输出 plan 且不写 runtime。
 func TestSboxctlCheckIsReadOnly(t *testing.T) {
 	baseDir := writeAgentFixture(t)

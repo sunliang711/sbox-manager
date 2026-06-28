@@ -290,6 +290,23 @@ func checkBinary(binary string) Check {
 
 // checkSingBox 渲染运行配置并实际执行 sing-box check。
 func checkSingBox(ctx context.Context, binary string, set *config.AgentConfigSet) []Check {
+	if len(enabledInstances(set.Instances)) == 0 {
+		if exists, err := pathExists(binary); err != nil {
+			return []Check{
+				issue("sing-box.binary", err.Error()),
+				ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+			}
+		} else if !exists {
+			return []Check{
+				ok("sing-box.binary", "没有启用的 instance，未要求安装 sing-box"),
+				ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+			}
+		}
+		return []Check{
+			checkBinary(binary),
+			ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+		}
+	}
 	binaryCheck := checkBinary(binary)
 	if binaryCheck.Status == StatusIssue {
 		return []Check{
@@ -314,6 +331,17 @@ func checkSingBox(ctx context.Context, binary string, set *config.AgentConfigSet
 		binaryCheck,
 		ok("sing-box.check", "sing-box check 通过"),
 	}
+}
+
+// enabledInstances 返回当前配置中启用的 instance 集合。
+func enabledInstances(instances []domain.Instance) []domain.Instance {
+	enabled := make([]domain.Instance, 0, len(instances))
+	for _, instance := range instances {
+		if instance.Enabled {
+			enabled = append(enabled, instance)
+		}
+	}
+	return enabled
 }
 
 // checkInstanceServiceFiles 检查每个启用实例对应服务文件是否存在。
@@ -371,7 +399,7 @@ func checkTrafficFiles(global domain.GlobalConfig, managerKind string) []Check {
 	} else if exists {
 		results = append(results, ok("traffic.db", dbPath))
 	} else {
-		results = append(results, issue("traffic.db", dbPath+" 不存在"))
+		results = append(results, ok("traffic.db", "尚未采集 traffic 数据"))
 	}
 	kind, err := service.ResolveKind(managerKind)
 	if err != nil {
@@ -379,11 +407,35 @@ func checkTrafficFiles(global domain.GlobalConfig, managerKind string) []Check {
 		return results
 	}
 	for _, period := range service.TrafficPeriods() {
-		for _, target := range trafficTimerPaths(kind, period) {
+		targets := trafficTimerPaths(kind, period)
+		exists, err := anyPathExists(targets)
+		if err != nil {
+			results = append(results, issue("traffic.timer."+period, err.Error()))
+			continue
+		}
+		if !exists {
+			results = append(results, ok("traffic.timer."+period, "traffic timer 未安装"))
+			continue
+		}
+		for _, target := range targets {
 			results = append(results, checkFile("traffic.timer."+period, target))
 		}
 	}
 	return results
+}
+
+// anyPathExists 判断给定路径中是否至少有一个存在。
+func anyPathExists(targets []string) (bool, error) {
+	for _, target := range targets {
+		exists, err := pathExists(target)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // checkSubscriptionServiceFile 检查订阅服务文件是否存在。
