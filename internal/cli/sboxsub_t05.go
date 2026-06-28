@@ -478,11 +478,12 @@ func newSboxsubInputCloneCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := subscription.DecodeInput(args[0], data); err != nil {
+			cloneData, err := retargetClonedInput(args[0], args[1], data)
+			if err != nil {
 				return err
 			}
 			editor, _ := cmd.Flags().GetString("editor")
-			if err := writeEditableInputClone(options.baseDir, args[1], data, editor); err != nil {
+			if err := writeEditableInputClone(options.baseDir, args[1], cloneData, editor); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 已克隆: %s -> %s\n", args[0], args[1])
@@ -646,6 +647,45 @@ func updateInputHost(baseDir string, name string, host string) error {
 		return err
 	}
 	return subscription.WriteFileAtomic(path, data, 0640)
+}
+
+// retargetClonedInput 将克隆 input 中依赖 source 的唯一字段改写为目标名称。
+func retargetClonedInput(sourceName string, targetName string, data []byte) ([]byte, error) {
+	input, err := subscription.DecodeInput(sourceName, data)
+	if err != nil {
+		return nil, err
+	}
+	source := input.Source
+	target := inputSourceFromFilename(targetName)
+	input.Source = target
+	for index := range input.Nodes {
+		input.Nodes[index].ID = retargetCloneValue(input.Nodes[index].ID, source+":", target+":")
+		input.Nodes[index].Tag = retargetCloneValue(input.Nodes[index].Tag, source+"-", target+"-")
+		input.Nodes[index].Remark = retargetCloneRemark(input.Nodes[index].Remark, source, target)
+	}
+	return subscription.MarshalStable(input)
+}
+
+// inputSourceFromFilename 从安全 input 文件名推导 source 值。
+func inputSourceFromFilename(name string) string {
+	extension := filepath.Ext(name)
+	return strings.TrimSuffix(filepath.Base(name), extension)
+}
+
+// retargetCloneValue 替换旧前缀；没有旧前缀时为避免冲突添加目标前缀。
+func retargetCloneValue(value string, oldPrefix string, newPrefix string) string {
+	if strings.HasPrefix(value, oldPrefix) {
+		return newPrefix + strings.TrimPrefix(value, oldPrefix)
+	}
+	return newPrefix + value
+}
+
+// retargetCloneRemark 为克隆 input 生成同 user 下不重复的展示名。
+func retargetCloneRemark(value string, source string, target string) string {
+	if value == "" || value == source {
+		return target
+	}
+	return target + " " + value
 }
 
 // editSubConfigCommand 编辑 sboxsub config 并在替换前严格校验。
@@ -813,15 +853,30 @@ type subConfigView struct {
 	ManagedConfig domain.ManagedConfig `json:"managed_config"`
 }
 
-const defaultSubConfigYAML = `version: 1
+const defaultSubConfigYAML = `# sboxsub subscription service config.
+# version: 配置版本，目前固定为 1。
+version: 1
+
+# listen: HTTP 监听地址。默认只监听本机；公网监听时建议设置 access.type=token。
 listen: 127.0.0.1:3003
+
+# access: 订阅访问控制。
+#   type: none 表示不鉴权；token 表示必须通过 /FORMAT/TOKEN/USER 或 ?token= 提供 token。
 access:
   type: none
+  # token: change-me
+
+# templates_dir: 自定义订阅模板目录；相对路径按 sboxsub base-dir 解析。
 templates_dir: templates
+
+# watch_interval/watch_debounce: input 文件轮询间隔和变更防抖时间。
 watch_interval: 2s
 watch_debounce: 300ms
+
+# managed_config: Surge Managed Config 输出参数。
 managed_config:
   enabled: true
+  # public_base_url: https://sub.example.com
   interval: 86400
   strict: true
 `

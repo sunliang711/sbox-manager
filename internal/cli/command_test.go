@@ -231,6 +231,26 @@ func TestSboxsubConfigShowMasksSecrets(t *testing.T) {
 	}
 }
 
+// TestSboxsubInitWritesCommentedConfig 验证 sboxsub init 生成带字段说明的配置文件。
+func TestSboxsubInitWritesCommentedConfig(t *testing.T) {
+	baseDir := t.TempDir()
+	if output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "init"); err != nil {
+		t.Fatalf("execute init: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read sub config: %v", err)
+	}
+	for _, want := range []string{"# listen:", "# access:", "# templates_dir:", "# managed_config:"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("sub config missing comment %q:\n%s", want, data)
+		}
+	}
+	if output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "config", "check"); err != nil {
+		t.Fatalf("commented config should pass check: %v\n%s", err, output)
+	}
+}
+
 // TestSboxsubInputEditUsesEditorAndValidates 验证 input edit 通过草稿编辑后写回。
 func TestSboxsubInputEditUsesEditorAndValidates(t *testing.T) {
 	baseDir := writeSubInputFixture(t)
@@ -245,6 +265,29 @@ func TestSboxsubInputEditUsesEditorAndValidates(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "US Edited") {
 		t.Fatalf("input edit did not apply editor:\n%s", data)
+	}
+}
+
+// TestSboxsubInputCloneRetargetsUniqueFields 验证 input clone 默认生成可通过整体验证的新 input。
+func TestSboxsubInputCloneRetargetsUniqueFields(t *testing.T) {
+	baseDir := writeSubInputFixture(t)
+
+	output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "input", "clone", "edge-us.json", "edge-copy.json", "--editor", "true")
+	if err != nil {
+		t.Fatalf("execute input clone: %v\n%s", err, output)
+	}
+	output, err = executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "input", "validate")
+	if err != nil {
+		t.Fatalf("validate cloned inputs: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, "inputs", "edge-copy.json"))
+	if err != nil {
+		t.Fatalf("read cloned input: %v", err)
+	}
+	for _, want := range []string{`"source": "edge-copy"`, `"id": "edge-copy:alice:vmess-main"`, `"tag": "edge-copy-vmess-main"`, `"remark": "edge-copy US VMess"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("cloned input missing %q:\n%s", want, data)
+		}
 	}
 }
 

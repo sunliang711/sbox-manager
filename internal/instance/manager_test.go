@@ -3,6 +3,7 @@ package instance
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,54 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/generator/singbox"
 	"github.com/sunliang711/sbox-manager/internal/subscription"
 )
+
+// TestInitWritesCommentedGlobalConfig 验证 init 生成的全局配置带字段说明且仍可加载。
+func TestInitWritesCommentedGlobalConfig(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	for _, want := range []string{"# version:", "# external_host:", "# paths:", "# port_ranges:"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("config missing comment %q:\n%s", want, data)
+		}
+	}
+	if _, err := config.LoadGlobalConfig(filepath.Join(baseDir, "config.yaml"), baseDir); err != nil {
+		t.Fatalf("load commented config: %v", err)
+	}
+}
+
+// TestAddWritesCommentedInstanceConfig 验证新增实例配置包含模板说明注释且仍可加载。
+func TestAddWritesCommentedInstanceConfig(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-smoke", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge: %v", err)
+	}
+	path := filepath.Join(baseDir, "instances", "edge-smoke.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read instance: %v", err)
+	}
+	for _, want := range []string{"# 可用模板:", "# api:", "# inbounds:", "# 订阅字段示例:"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("instance missing comment %q:\n%s", want, data)
+		}
+	}
+	global, err := config.LoadGlobalConfig(filepath.Join(baseDir, "config.yaml"), baseDir)
+	if err != nil {
+		t.Fatalf("load global: %v", err)
+	}
+	if _, err := config.LoadInstance(path, *global); err != nil {
+		t.Fatalf("load commented instance: %v", err)
+	}
+}
 
 // TestCloneAllocatesPortsWithoutMutatingSource 验证克隆重新分配端口不会污染源实例并触发自身冲突。
 func TestCloneAllocatesPortsWithoutMutatingSource(t *testing.T) {
@@ -53,6 +102,41 @@ func TestCloneAllocatesPortsWithoutMutatingSource(t *testing.T) {
 	}
 	if _, err := subscription.BuildBundle(inputs, generatedAt); err != nil {
 		t.Fatalf("build subscription bundle: %v", err)
+	}
+}
+
+// TestCloneAllocatesAPIPort 验证克隆启用 stats API 的实例时会重分配 API 端口。
+func TestCloneAllocatesAPIPort(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	edge, err := Add(baseDir, AddOptions{Name: "edge-api", Template: "edge", AllocatePorts: true})
+	if err != nil {
+		t.Fatalf("add edge: %v", err)
+	}
+	path := filepath.Join(baseDir, "instances", "edge-api.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read instance: %v", err)
+	}
+	updated := strings.Replace(string(data), "enabled: false", "enabled: true", 1)
+	if err := os.WriteFile(path, []byte(updated), 0640); err != nil {
+		t.Fatalf("enable api: %v", err)
+	}
+
+	cloned, err := Clone(baseDir, CloneOptions{Source: "edge-api", Target: "edge-api-copy", AllocatePorts: true})
+	if err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	if cloned.API.Listen == edge.API.Listen {
+		t.Fatalf("clone API listen should be reallocated, got %s", cloned.API.Listen)
+	}
+	if !strings.HasSuffix(cloned.API.Listen, ":10000") {
+		t.Fatalf("clone API listen = %s, want first API range port 10000", cloned.API.Listen)
+	}
+	if _, err := config.LoadAgentConfigSet(baseDir); err != nil {
+		t.Fatalf("load config set after clone: %v", err)
 	}
 }
 

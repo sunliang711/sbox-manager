@@ -4,10 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -69,7 +71,7 @@ func Init(baseDir string, options InitOptions) error {
 	if err := EnsureDirectories(normalized); err != nil {
 		return err
 	}
-	data, err := yaml.Marshal(global)
+	data, err := renderGlobalConfigYAML(global)
 	if err != nil {
 		return fmt.Errorf("编码默认配置: %w", err)
 	}
@@ -215,6 +217,17 @@ func allocatePorts(global domain.GlobalConfig, existing []domain.Instance, targe
 		target.Inbounds[index].Port = port
 		used[port] = struct{}{}
 	}
+	if target.API.Enabled {
+		_, _, err := splitListenAddress(target.API.Listen)
+		if err == nil {
+			apiPort, err := config.FirstAvailablePort(global.PortRanges.API, used)
+			if err != nil {
+				return err
+			}
+			target.API.Listen = replaceListenPort(target.API.Listen, apiPort)
+			used[apiPort] = struct{}{}
+		}
+	}
 	return nil
 }
 
@@ -226,8 +239,36 @@ func usedPorts(instances []domain.Instance) map[int]struct{} {
 				used[inbound.Port] = struct{}{}
 			}
 		}
+		if instance.API.Enabled {
+			_, port, err := splitListenAddress(instance.API.Listen)
+			if err == nil && port > 0 {
+				used[port] = struct{}{}
+			}
+		}
 	}
 	return used
+}
+
+// splitListenAddress 解析 HOST:PORT 监听地址，用于 clone 时判断 API 端口是否可重分配。
+func splitListenAddress(value string) (string, int, error) {
+	host, portText, err := net.SplitHostPort(value)
+	if err != nil {
+		return "", 0, err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", 0, err
+	}
+	return host, port, nil
+}
+
+// replaceListenPort 保留原 host 并替换监听端口。
+func replaceListenPort(value string, port int) string {
+	host, _, err := splitListenAddress(value)
+	if err != nil {
+		return value
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // Clone 克隆 instance 配置并可重新分配 inbound 端口。
@@ -311,7 +352,7 @@ func WriteInstance(global domain.GlobalConfig, existing []domain.Instance, insta
 	if err := os.MkdirAll(global.Paths.Instances, 0750); err != nil {
 		return fmt.Errorf("创建 instances 目录 %s: %w", global.Paths.Instances, err)
 	}
-	data, err := yaml.Marshal(instance)
+	data, err := renderInstanceConfigYAML(instance)
 	if err != nil {
 		return fmt.Errorf("编码 instance %s: %w", instance.Name, err)
 	}
@@ -379,6 +420,52 @@ func ListLines(instances []domain.Instance, verbose bool) []string {
 		lines = append(lines, fmt.Sprintf("%s\t%s\t%s", instance.Name, status, instance.Role))
 	}
 	return lines
+}
+
+// renderGlobalConfigYAML 为 init 生成带字段说明的 agent 全局配置。
+func renderGlobalConfigYAML(global domain.GlobalConfig) ([]byte, error) {
+	data, err := yaml.Marshal(global)
+	if err != nil {
+		return nil, err
+	}
+	header := `# sbox-manager agent global config.
+# version: 配置版本，目前固定为 1。
+# external_host: 对外访问域名或公网 IP；不要包含 scheme、路径、query。
+# paths: 受管目录，可使用相对路径，加载时会按 base-dir 解析。
+# port_ranges: 自动分配端口的闭区间范围，inbound/api 分别用于入口和 stats API。
+# defaults: 新实例继承的日志、API、Clash API 和 traffic 默认值。
+# security: socks/http 公开监听时的鉴权保护开关。
+
+`
+	return append([]byte(header), data...), nil
+}
+
+// renderInstanceConfigYAML 为新建或重写 instance 生成带模板说明的配置。
+func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
+	data, err := yaml.Marshal(instance)
+	if err != nil {
+		return nil, err
+	}
+	header := `# sbox-manager instance config.
+# 可用模板:
+#   sboxctl add <name> --template edge    # 入口节点，默认 vmess + direct
+#   sboxctl add <name> --template relay   # 中继节点，默认 shadowsocks + direct
+#   sboxctl add <name> --template urltest # 带 urltest group 的入口节点
+# 常用配置项:
+# name/role/enabled: 实例名称、模板角色和启停开关。
+# api: sing-box stats API；启用后 traffic 命令会读取该监听地址。
+# inbounds: 客户端入口。subscription.enabled=true 时会导出到 sboxsub。
+# outbounds/groups/route: 出站、选择组和默认路由。
+# traffic: 当前实例参与流量统计的开关和统计维度。
+# 订阅字段示例:
+#   subscription:
+#     enabled: true
+#     user: alice
+#     remark: edge-us
+#     region: US
+
+`
+	return append([]byte(header), data...), nil
 }
 
 // MemberList 返回 group 成员列表。
