@@ -67,7 +67,11 @@ func newSboxctlSetupCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{Operation: installer.OperationInstall, Resource: installer.ResourceAll}); err != nil {
+			if err := newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
+				Operation: installer.OperationInstall,
+				Resource:  installer.ResourceAll,
+				Progress:  installProgress(cmd),
+			}); err != nil {
 				return err
 			}
 			manager, err := newSboxctlServiceManager(options)
@@ -470,6 +474,7 @@ func newResourceCommand(use string, short string) *cobra.Command {
 				SHA256:        sha256Text,
 				ArchiveMember: member,
 				Purge:         purge,
+				Progress:      installProgress(cmd),
 			})
 			if err != nil {
 				return err
@@ -640,6 +645,13 @@ func serviceActionShort(action string) string {
 		return "禁用实例服务"
 	default:
 		return "管理实例服务"
+	}
+}
+
+// installProgress 将资源安装器的英文进度日志输出到 stderr。
+func installProgress(cmd *cobra.Command) installer.Progress {
+	return func(message string) {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), message)
 	}
 }
 

@@ -4,6 +4,16 @@ import "github.com/spf13/cobra"
 
 const sboxctlDefaultBaseDir = "/opt/sbox-manager"
 
+const (
+	sboxctlGroupConfig      = "config"
+	sboxctlGroupInstance    = "instance"
+	sboxctlGroupRender      = "render"
+	sboxctlGroupService     = "service"
+	sboxctlGroupResource    = "resource"
+	sboxctlGroupTraffic     = "traffic"
+	sboxctlGroupDiagnostics = "diagnostics"
+)
+
 // newSboxctlCommand 创建 sboxctl 的根命令树。
 func newSboxctlCommand() *cobra.Command {
 	root := newRootCommand(
@@ -48,8 +58,30 @@ func newSboxctlCommand() *cobra.Command {
 		newSboxctlTrafficCommand(),
 	)
 
+	addSboxctlCommandGroups(root)
 	addSboxctlFlags(root)
 	return root
+}
+
+// addSboxctlCommandGroups 设置 sboxctl 根命令 usage 的功能分组。
+func addSboxctlCommandGroups(root *cobra.Command) {
+	addCommandGroups(root,
+		&cobra.Group{ID: sboxctlGroupConfig, Title: "环境与配置"},
+		&cobra.Group{ID: sboxctlGroupInstance, Title: "实例管理"},
+		&cobra.Group{ID: sboxctlGroupRender, Title: "生成与订阅"},
+		&cobra.Group{ID: sboxctlGroupService, Title: "生命周期与服务"},
+		&cobra.Group{ID: sboxctlGroupResource, Title: "安装与资源"},
+		&cobra.Group{ID: sboxctlGroupTraffic, Title: "流量统计"},
+		&cobra.Group{ID: sboxctlGroupDiagnostics, Title: "诊断与备份"},
+		&cobra.Group{ID: commandGroupHelp, Title: "帮助"},
+	)
+	setCommandGroup(root, sboxctlGroupConfig, "init", "setup", "config", "example", "validate")
+	setCommandGroup(root, sboxctlGroupInstance, "add", "list", "clone", "member", "remove")
+	setCommandGroup(root, sboxctlGroupRender, "check", "render", "export-config", "sub")
+	setCommandGroup(root, sboxctlGroupService, "start", "stop", "restart", "status", "logs", "enable", "disable", "service")
+	setCommandGroup(root, sboxctlGroupResource, "install", "update", "uninstall", "version")
+	setCommandGroup(root, sboxctlGroupTraffic, "traffic")
+	setCommandGroup(root, sboxctlGroupDiagnostics, "doctor", "ipinfo", "export", "import")
 }
 
 // addSboxctlFlags 为 sboxctl 占位命令补充规格中的常用参数。

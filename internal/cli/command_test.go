@@ -356,6 +356,37 @@ func TestSboxctlUninstallPurgeRemovesServiceFileAndManagedDirs(t *testing.T) {
 	}
 }
 
+// TestSboxctlInstallPrintsProgress 验证资源安装命令会输出阶段性进度日志。
+func TestSboxctlInstallPrintsProgress(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	restoreResourceInstaller(t)
+	newResourceInstaller = func() resourceInstallerRunner {
+		return cliFakeInstaller{run: func(options installer.Options) error {
+			options.Progress("install: prepare sing-box")
+			options.Progress("download: start sing-box.tar.gz")
+			options.Progress("verify: passed sing-box.tar.gz")
+			options.Progress("install: complete sing-box")
+			return nil
+		}}
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "install", "all")
+	if err != nil {
+		t.Fatalf("execute install all: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"install: prepare sing-box",
+		"download: start sing-box.tar.gz",
+		"verify: passed sing-box.tar.gz",
+		"install: complete sing-box",
+		"install all 完成",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("install output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestSboxctlSetupOrder 验证 setup 依次执行 init、install all、service install。
 func TestSboxctlSetupOrder(t *testing.T) {
 	baseDir := writeAgentFixture(t)

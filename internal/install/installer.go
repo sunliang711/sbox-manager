@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,6 +50,9 @@ type SourceFile struct {
 	Path   string
 }
 
+// Progress 接收安装过程中的阶段性英文日志消息。
+type Progress func(message string)
+
 // Options 描述一次资源安装、更新或卸载操作。
 type Options struct {
 	Operation     string
@@ -58,6 +62,7 @@ type Options struct {
 	SHA256        string
 	ArchiveMember string
 	Purge         bool
+	Progress      Progress
 }
 
 // Installer 负责 sing-box 和规则资源的安全安装。
@@ -80,6 +85,7 @@ func (i *Installer) Run(ctx context.Context, global domain.GlobalConfig, options
 	if err != nil {
 		return err
 	}
+	emitProgress(options.Progress, "%s: start %s", options.Operation, options.Resource)
 	for _, resource := range resources {
 		next := options
 		next.Resource = resource
@@ -97,7 +103,14 @@ func (i *Installer) Run(ctx context.Context, global domain.GlobalConfig, options
 		}
 	}
 	if options.Operation == OperationUninstall && options.Purge {
-		return PurgeManaged(global)
+		emitProgress(options.Progress, "%s: purge managed directories", options.Operation)
+		if err := PurgeManaged(global); err != nil {
+			return err
+		}
+		emitProgress(options.Progress, "%s: purged managed directories", options.Operation)
+	}
+	if options.Resource == ResourceAll {
+		emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
 	}
 	return nil
 }
@@ -130,37 +143,88 @@ func expandResources(resource string) ([]string, error) {
 	}
 }
 
+// emitProgress 输出安装进度事件，供 CLI 层展示给用户。
+func emitProgress(progress Progress, format string, args ...interface{}) {
+	if progress == nil {
+		return
+	}
+	progress(fmt.Sprintf(format, args...))
+}
+
+// emitResolvedSource 输出解析后的 source 摘要，避免泄露 URL userinfo 和 query。
+func emitResolvedSource(progress Progress, resource string, source Source) {
+	if len(source.Files) == 0 {
+		emitProgress(progress, "source: resolved %s %s", resource, safeSourceSummary(source.URL))
+		return
+	}
+	emitProgress(progress, "source: resolved %s files=%d", resource, len(source.Files))
+	for _, file := range source.Files {
+		emitProgress(progress, "source: file %s %s", file.Path, safeSourceSummary(file.URL))
+	}
+}
+
+// safeSourceSummary 返回适合日志展示的 source 摘要。
+func safeSourceSummary(source string) string {
+	parsed, err := url.Parse(source)
+	if err != nil || parsed.Scheme == "" {
+		return source
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
 func (i *Installer) installOne(ctx context.Context, global domain.GlobalConfig, options Options) error {
+	emitProgress(options.Progress, "%s: prepare %s", options.Operation, options.Resource)
 	source, err := i.resolveSource(options)
 	if err != nil {
 		return err
 	}
+	emitResolvedSource(options.Progress, options.Resource, source)
 	if options.ArchiveMember != "" {
 		source.ArchiveMember = options.ArchiveMember
+		emitProgress(options.Progress, "%s: use archive member %s", options.Operation, source.ArchiveMember)
 	}
 	switch options.Resource {
 	case ResourceSingBox:
 		if len(source.Files) > 0 {
 			return fmt.Errorf("sing-box source 不支持 multi-file")
 		}
-		data, err := i.fetch(ctx, global.Paths.Downloads, source.URL, source.SHA256)
+		data, err := i.fetch(ctx, global.Paths.Downloads, source.URL, source.SHA256, options.Progress)
 		if err != nil {
 			return err
 		}
+		emitProgress(options.Progress, "%s: extract sing-box", options.Operation)
 		payload, err := extractSingBox(data, source.ArchiveMember)
 		if err != nil {
 			return err
 		}
-		return installSingBox(global.Paths.Bin, payload, hashBytes(payload))
+		emitProgress(options.Progress, "%s: write %s", options.Operation, filepath.Join(global.Paths.Bin, "sing-box"))
+		if err := installSingBox(global.Paths.Bin, payload, hashBytes(payload)); err != nil {
+			return err
+		}
+		emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
+		return nil
 	case ResourceRules:
 		if len(source.Files) > 0 {
-			return i.installRulesFiles(ctx, global.Paths.Downloads, global.Paths.Rules, source.Files)
+			if err := i.installRulesFiles(ctx, global.Paths.Downloads, global.Paths.Rules, source.Files, options.Operation, options.Progress); err != nil {
+				return err
+			}
+			emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
+			return nil
 		}
-		data, err := i.fetch(ctx, global.Paths.Downloads, source.URL, source.SHA256)
+		data, err := i.fetch(ctx, global.Paths.Downloads, source.URL, source.SHA256, options.Progress)
 		if err != nil {
 			return err
 		}
-		return installRules(global.Paths.Rules, data)
+		emitProgress(options.Progress, "%s: extract rules", options.Operation)
+		emitProgress(options.Progress, "%s: write %s", options.Operation, global.Paths.Rules)
+		if err := installRules(global.Paths.Rules, data); err != nil {
+			return err
+		}
+		emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
+		return nil
 	default:
 		return fmt.Errorf("不支持的资源 %q", options.Resource)
 	}
@@ -221,24 +285,34 @@ func validateTrustedSource(resource string, source Source) error {
 	return nil
 }
 
-func (i *Installer) fetch(ctx context.Context, downloadsDir string, source string, shaText string) ([]byte, error) {
+func (i *Installer) fetch(ctx context.Context, downloadsDir string, source string, shaText string, progress Progress) ([]byte, error) {
 	var data []byte
 	var err error
 	if isRemoteSource(source) {
+		emitProgress(progress, "download: start %s", safeSourceSummary(source))
 		data, err = i.fetchRemote(ctx, downloadsDir, source)
+		if err == nil {
+			emitProgress(progress, "download: complete %s bytes=%d", safeSourceSummary(source), len(data))
+		}
 	} else {
+		emitProgress(progress, "source: read local %s", source)
 		data, err = os.ReadFile(source)
 		if err != nil {
 			return nil, fmt.Errorf("读取 source %s: %w", source, err)
 		}
+		emitProgress(progress, "source: complete local %s bytes=%d", source, len(data))
 	}
 	if err != nil {
 		return nil, err
 	}
 	if shaText != "" {
+		emitProgress(progress, "verify: sha256 %s", safeSourceSummary(source))
 		if err := verifySHA256(data, shaText); err != nil {
 			return nil, err
 		}
+		emitProgress(progress, "verify: passed %s", safeSourceSummary(source))
+	} else {
+		emitProgress(progress, "verify: skipped %s", safeSourceSummary(source))
 	}
 	return data, nil
 }
@@ -482,7 +556,7 @@ func installRules(rulesDir string, archiveData []byte) error {
 	return replaceRulesDir(rulesDir, tempDir)
 }
 
-func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, rulesDir string, files []SourceFile) error {
+func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, rulesDir string, files []SourceFile, operation string, progress Progress) error {
 	parent := filepath.Dir(rulesDir)
 	if err := os.MkdirAll(parent, 0750); err != nil {
 		return fmt.Errorf("创建 rules 父目录 %s: %w", parent, err)
@@ -500,7 +574,8 @@ func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, 
 		if err := validateArchiveName(file.Path); err != nil {
 			return err
 		}
-		data, err := i.fetch(ctx, downloadsDir, file.URL, file.SHA256)
+		emitProgress(progress, "%s: prepare rules file %s", operation, file.Path)
+		data, err := i.fetch(ctx, downloadsDir, file.URL, file.SHA256, progress)
 		if err != nil {
 			return err
 		}
@@ -511,6 +586,7 @@ func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, 
 		if err := os.WriteFile(target, data, 0644); err != nil {
 			return fmt.Errorf("写入 rules 文件 %s: %w", target, err)
 		}
+		emitProgress(progress, "%s: staged rules file %s", operation, file.Path)
 		markerLines = append(markerLines, file.Path+" "+hashBytes(data))
 	}
 	if err := os.WriteFile(filepath.Join(tempDir, rulesManagedMarker), []byte(strings.Join(markerLines, "\n")+"\n"), 0640); err != nil {
@@ -564,14 +640,21 @@ func rejectUnmanagedSymlink(target string, markerPath string) error {
 }
 
 func (i *Installer) uninstallOne(global domain.GlobalConfig, options Options) error {
+	emitProgress(options.Progress, "%s: remove %s", options.Operation, options.Resource)
 	switch options.Resource {
 	case ResourceSingBox:
-		return uninstallSingBox(global.Paths.Bin)
+		if err := uninstallSingBox(global.Paths.Bin); err != nil {
+			return err
+		}
 	case ResourceRules:
-		return uninstallRules(global.Paths.Rules)
+		if err := uninstallRules(global.Paths.Rules); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("不支持的资源 %q", options.Resource)
 	}
+	emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
+	return nil
 }
 
 func uninstallSingBox(binDir string) error {

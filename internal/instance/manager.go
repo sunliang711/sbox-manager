@@ -16,6 +16,8 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
 
+var defaultEditorCommands = []string{"vim", "vi", "nvim", "nano"}
+
 // InitOptions 描述 agent 环境初始化参数。
 type InitOptions struct {
 	ExternalHost  string
@@ -461,12 +463,9 @@ func formatForPath(path string) (string, error) {
 
 // EditFileWithCommand 使用参数数组调用编辑器，调用方负责校验草稿内容。
 func EditFileWithCommand(path string, editor string) error {
-	editor = strings.TrimSpace(editor)
-	if editor == "" {
-		editor = strings.TrimSpace(os.Getenv("EDITOR"))
-	}
-	if editor == "" {
-		return fmt.Errorf("未指定 editor，请使用 --editor 或设置 EDITOR")
+	editor, err := resolveEditorCommand(editor)
+	if err != nil {
+		return err
 	}
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
@@ -481,6 +480,24 @@ func EditFileWithCommand(path string, editor string) error {
 		return fmt.Errorf("执行 editor %s: %w", parts[0], err)
 	}
 	return nil
+}
+
+// resolveEditorCommand 解析编辑器命令，未指定时按常见系统编辑器顺序自动查找。
+func resolveEditorCommand(editor string) (string, error) {
+	editor = strings.TrimSpace(editor)
+	if editor != "" {
+		return editor, nil
+	}
+	editor = strings.TrimSpace(os.Getenv("EDITOR"))
+	if editor != "" {
+		return editor, nil
+	}
+	for _, candidate := range defaultEditorCommands {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("未找到可用 editor，请使用 --editor、设置 EDITOR 或安装 vim/vi/nvim/nano")
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {

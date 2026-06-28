@@ -34,6 +34,10 @@ type rootOptions struct {
 
 type rootOptionsContextKey struct{}
 
+const (
+	commandGroupHelp = "help"
+)
+
 // RunSboxctl 执行 sboxctl 命令入口，适用于 cmd/sboxctl/main.go。
 func RunSboxctl() {
 	runAndExit(newSboxctlCommand())
@@ -105,6 +109,19 @@ func getRootOptions(cmd *cobra.Command) (*rootOptions, error) {
 		return nil, fmt.Errorf("读取 CLI 全局参数失败")
 	}
 	return options, nil
+}
+
+// addCommandGroups 为父命令注册 usage 中展示的功能分组。
+func addCommandGroups(parent *cobra.Command, groups ...*cobra.Group) {
+	parent.AddGroup(groups...)
+	parent.SetHelpCommandGroupID(commandGroupHelp)
+}
+
+// setCommandGroup 将指定子命令绑定到 usage 功能分组。
+func setCommandGroup(parent *cobra.Command, groupID string, names ...string) {
+	for _, name := range names {
+		mustCommand(parent, name).GroupID = groupID
+	}
 }
 
 // newLogger 创建 Zerolog 基础 logger，供后续任务从命令上下文中复用。

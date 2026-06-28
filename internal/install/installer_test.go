@@ -109,6 +109,42 @@ func TestInstallSingBoxWithSHA256AndArchiveMember(t *testing.T) {
 	}
 }
 
+// TestInstallerEmitsProgress 验证安装器会输出可见的阶段性进度。
+func TestInstallerEmitsProgress(t *testing.T) {
+	global := installerFixtureGlobal(t)
+	payload := []byte("#!/bin/sh\necho sing-box\n")
+	source := writeSource(t, payload)
+	progress := []string{}
+
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceSingBox,
+		Source:    source,
+		SHA256:    shaHex(payload),
+		Progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}); err != nil {
+		t.Fatalf("install sing-box: %v", err)
+	}
+
+	joined := strings.Join(progress, "\n")
+	for _, want := range []string{
+		"install: start sing-box",
+		"install: prepare sing-box",
+		"source: resolved sing-box",
+		"source: read local",
+		"verify: sha256",
+		"install: extract sing-box",
+		"install: write",
+		"install: complete sing-box",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("progress missing %q:\n%s", want, joined)
+		}
+	}
+}
+
 // TestFailedUpdatePreservesOldSingBox 验证更新失败不会破坏旧二进制。
 func TestFailedUpdatePreservesOldSingBox(t *testing.T) {
 	global := installerFixtureGlobal(t)

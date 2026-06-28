@@ -4,6 +4,14 @@ import "github.com/spf13/cobra"
 
 const sboxsubDefaultBaseDir = "/opt/sbox-sub"
 
+const (
+	sboxsubGroupConfig      = "config"
+	sboxsubGroupInput       = "input"
+	sboxsubGroupHTTP        = "http"
+	sboxsubGroupService     = "service"
+	sboxsubGroupDiagnostics = "diagnostics"
+)
+
 // newSboxsubCommand 创建 sboxsub 的根命令树。
 func newSboxsubCommand() *cobra.Command {
 	root := newRootCommand(
@@ -33,8 +41,26 @@ func newSboxsubCommand() *cobra.Command {
 		newSboxsubDoctorCommandT05(),
 	)
 
+	addSboxsubCommandGroups(root)
 	addSboxsubFlags(root)
 	return root
+}
+
+// addSboxsubCommandGroups 设置 sboxsub 根命令 usage 的功能分组。
+func addSboxsubCommandGroups(root *cobra.Command) {
+	addCommandGroups(root,
+		&cobra.Group{ID: sboxsubGroupConfig, Title: "环境与配置"},
+		&cobra.Group{ID: sboxsubGroupInput, Title: "输入与导入"},
+		&cobra.Group{ID: sboxsubGroupHTTP, Title: "HTTP 服务"},
+		&cobra.Group{ID: sboxsubGroupService, Title: "生命周期与服务"},
+		&cobra.Group{ID: sboxsubGroupDiagnostics, Title: "诊断"},
+		&cobra.Group{ID: commandGroupHelp, Title: "帮助"},
+	)
+	setCommandGroup(root, sboxsubGroupConfig, "init", "config", "clear", "version")
+	setCommandGroup(root, sboxsubGroupInput, "import", "input")
+	setCommandGroup(root, sboxsubGroupHTTP, "serve")
+	setCommandGroup(root, sboxsubGroupService, "start", "stop", "restart", "status", "logs", "enable", "disable", "service")
+	setCommandGroup(root, sboxsubGroupDiagnostics, "doctor")
 }
 
 // addSboxsubFlags 为 sboxsub 占位命令补充规格中的常用参数。
