@@ -208,6 +208,13 @@ traffic:
 - `internal/diagnostics`：doctor、ipinfo、health check。
 - `internal/backup`：新格式配置备份和恢复。
 
+辅助工程文件：
+
+- `Makefile`：本地测试、构建、打包和安装入口。
+- `.github/workflows/release.yml`：tag release 自动构建和上传资产。
+- `scripts/install.sh`：从 GitHub Release 安装二进制。
+- `scripts/install-local.sh`：从本地构建产物安装二进制。
+
 ## 8. 实例管理设计
 
 ### 8.1 生成流程
@@ -542,6 +549,7 @@ sing-box V2Ray API 作为统计数据源，但不依赖 reset 语义。
 6. 流量统计与 SQLite。
 7. doctor、ipinfo、备份恢复。
 8. 测试矩阵和端到端验收。
+9. Release、安装脚本与 Makefile。
 
 ## 17. 风险登记
 

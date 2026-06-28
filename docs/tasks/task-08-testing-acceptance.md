@@ -12,6 +12,8 @@
 - HTTP server 测试。
 - traffic fixture 测试。
 - systemd/launchd fake 测试。
+- release workflow 静态检查。
+- 安装脚本 dry-run 和归档安全测试。
 - e2e dry-run 测试。
 - Linux/systemd 和 macOS/launchd 真实 smoke checklist。
 
@@ -29,6 +31,8 @@
 - bundle 路径穿越和 hash mismatch 有测试。
 - traffic delta、reset_detected、ALL 小计、动态当前周期有测试。
 - HTTP 鉴权和 reload 失败有测试。
+- release workflow tag 触发、矩阵构建和权限配置有静态检查。
+- 安装脚本 checksum、路径穿越拒绝、dry-run 无副作用有测试。
 - e2e 覆盖 init/add/check/start/status/logs/stop 的 dry-run 路径。
 - Linux/systemd 和 macOS/launchd 的 service install/start/status/logs/stop 均有 fake 验收。
 - 真实 smoke checklist 覆盖 Linux/systemd 和 macOS/launchd 的 service install/start/status/logs/stop、traffic timer install/enable/disable/status/logs/run/uninstall。

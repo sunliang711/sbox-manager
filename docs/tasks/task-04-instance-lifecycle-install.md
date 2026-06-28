@@ -19,6 +19,8 @@
 - `service install/uninstall/start/stop/restart/status/logs/enable/disable`
 - `install/update/uninstall sing-box|rules|all`
 
+不包含本项目自身二进制 release 和安装脚本；该部分由 T09 负责。
+
 ## 技术方案
 
 同时支持 Linux/systemd 和 macOS/launchd。`--service-manager auto` 在 Linux 选择 systemd，在 macOS 选择 launchd。

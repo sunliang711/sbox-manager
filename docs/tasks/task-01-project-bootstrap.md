@@ -13,6 +13,7 @@
 - 接入 Zerolog 基础日志。
 - 提供 `version` 命令。
 - 接入全局 `--base-dir` 和 `--service-manager auto|systemd|launchd` 参数。
+- 创建根目录 `Makefile`，至少提供 `help`、`test`、`build`、`clean`。
 
 ## 技术方案
 
@@ -25,6 +26,7 @@
 - `sboxsub version` 输出版本、commit、build time。
 - 根命令 help 中清楚区分 agent 和 sub 职责。
 - help 命令展示的子命令结构与 `docs/cli-spec.md` 一致。
+- `make help` 不产生副作用，`make build` 能构建两个二进制。
 - 不创建任何运行时目录。
 
 ## 风险

@@ -27,6 +27,8 @@
 | `sboxsub` 默认监听 loopback，公网部署需要显式配置监听和 token | 已确认 |
 | runtime manifest 使用新 schema 记录受管 generated 文件和服务映射 | 已确认 |
 | traffic 保留期按 hourly/daily/monthly 分层处理 | 已确认 |
+| tag push 自动构建 GitHub Release 并上传校验过的二进制资产 | 待实现 |
+| 安装脚本只安装二进制，不隐式初始化配置或安装服务 | 待实现 |
 
 ## 任务状态
 
@@ -40,6 +42,7 @@
 | T06 流量统计 | 未开始 |
 | T07 诊断、ipinfo、备份 | 未开始 |
 | T08 测试与验收 | 未开始 |
+| T09 Release、安装脚本与 Makefile | 未开始 |
 
 ## 开发入口
 

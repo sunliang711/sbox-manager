@@ -134,3 +134,15 @@
 | 故障恢复 | 配置错误不会覆盖上一份可用 runtime |
 | Linux systemd | service install/start/status/logs/stop 覆盖 systemd |
 | macOS launchd | service install/start/status/logs/stop 覆盖 launchd |
+
+## 10. 发布与安装
+
+| 场景 | 验收标准 |
+| --- | --- |
+| Makefile | `help/test/build/package/checksums/install-local/clean` 可用，默认 target 不产生副作用 |
+| build metadata | release 和本地 build 均注入 version、commit、build time |
+| tag release | 推送 `v*.*.*` tag 后触发 GitHub Actions release workflow |
+| release assets | Linux/macOS amd64/arm64 压缩包和 `checksums.txt` 命名、结构、权限正确 |
+| checksum | 安装脚本默认校验 sha256，校验失败不安装 |
+| install.sh | 只安装 `sboxctl`、`sboxsub` 二进制，不初始化配置、不安装服务、不启动进程 |
+| install-local.sh | 支持从本地 tar.gz 或 `dist/bin` 安装 |

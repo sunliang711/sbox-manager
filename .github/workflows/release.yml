@@ -1,0 +1,86 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: make test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Package
+        run: make package GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" VERSION="${{ github.ref_name }}"
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/release/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist/release
+          merge-multiple: true
+      - name: Checksums
+        run: make checksums
+      - name: Refuse existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release already exists: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/release/*.tar.gz dist/release/checksums.txt --verify-tag --generate-notes --title "${GITHUB_REF_NAME}"

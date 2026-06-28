@@ -16,6 +16,7 @@
 - [总体架构方案](docs/architecture.md)
 - [CLI 命令规格](docs/cli-spec.md)
 - [配置与数据规格](docs/data-spec.md)
+- [发布、安装与 Makefile 规格](docs/release.md)
 - [开发规范](docs/conventions.md)
 - [验收矩阵](docs/acceptance-matrix.md)
 - [进度跟踪](docs/PROGRESS.md)
