@@ -28,8 +28,8 @@ func BuildConfig(global domain.GlobalConfig, instance domain.Instance) (Config, 
 		DNS: DNS{
 			Servers: []DNSServer{
 				{
-					Tag:     "local",
-					Address: "local",
+					Type: "local",
+					Tag:  "local",
 				},
 			},
 		},

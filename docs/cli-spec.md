@@ -41,7 +41,7 @@ sboxctl example [global|instance|inbound|outbound|group|route|traffic] [TYPE]
 ```
 
 - `init` 创建标准目录和默认 `config.yaml`，不下载、不安装服务，完成后输出下一步建议。
-- `setup` 依次执行幂等 `init`、`install all`、`service install`，传 `--start` 时继续执行 `start`；未传 `--start` 时完成后输出启动和 traffic timer 建议。
+- `setup` 依次执行幂等 `init`、`install all`、`service install`，传 `--start` 时继续执行 `start`；未传 `--start` 时完成后输出启动和 traffic timer enable 建议。
 - `config` 使用相邻草稿文件编辑全局配置或 instance 配置，校验失败不得覆盖原文件。
 - `example` 输出可复制的 YAML 片段到 stdout，不读取 `--base-dir`。
 
@@ -96,7 +96,8 @@ sboxctl [--base-dir DIR] [--service-manager auto|systemd|launchd] service logs|l
 - `start/restart` 调服务管理器前必须执行完整生成、`sing-box check` 和 runtime plan apply。
 - `start` 用于确保目标服务运行，no-change 时不改写 generated 或 manifest，但仍可调用服务管理器 start。
 - `restart` 用于强制重启目标服务，no-change 时不改写 generated 或 manifest，但仍调用服务管理器 restart。
-- `service install/uninstall` 只写 systemd unit 或 launchd plist，不启动服务。
+- `service install` 写 instance 的 systemd unit 或 launchd plist，同时写 traffic timer service/timer 或 plist；不启用、不启动服务或 timer。
+- `service uninstall` 只删除 instance 的 systemd unit 或 launchd plist，不启动服务。
 
 ### 3.5 安装、订阅、备份与诊断
 
@@ -118,6 +119,7 @@ sboxctl [--base-dir DIR] ipinfo INSTANCE [--family all|ipv4|ipv6] [--timeout SEC
 - `sub export` 生成订阅 bundle，缺少 `external_host` 时失败。
 - 顶层 `export/import` 只处理新格式 agent 配置备份，不接收订阅 bundle；备份包使用 `backup_manifest.json`，不包含 runtime manifest。
 - `install all` 和 `update all` 不包含 self update。
+- `uninstall all --purge` 会先停止实例服务，再删除实例 service、traffic timer service/timer 和整个 agent base-dir。
 - 内置 source 必须具备可信 checksum 元数据；自定义 `http(s)://` source 必须显式传 `--sha256`，本地文件可传 `--sha256` 做完整性校验。
 
 ### 3.6 流量统计
@@ -150,7 +152,7 @@ sboxctl [--base-dir DIR] traffic timer run hourly|daily|monthly
 - `summarize` 输出查询范围、instance、scope、name 和汇总表。
 - `export` 默认输出 CSV 到 stdout，指定 `--output` 时写文件。
 - `cleanup records --dry-run` 只输出将删除的记录数量，不删除数据；hourly/daily 使用 `retention_days`，monthly 使用 `monthly_retention_months`。
-- `traffic timer install` 写 systemd service/timer 或 launchd plist，不启用、不启动。
+- `traffic timer install` 写 systemd service/timer 或 launchd plist，不启用、不启动；`sboxctl service install` 也会同步写入这些 timer 文件。
 - `traffic timer enable` 启用并启动自动调度；`disable` 停止并禁用自动调度。
 - `traffic timer run` 不调用服务管理器，等价于立即执行对应 `collect ... --instance ALL`。
 

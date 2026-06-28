@@ -5,8 +5,8 @@
   "dns": {
     "servers": [
       {
-        "tag": "local",
-        "address": "local"
+        "type": "local",
+        "tag": "local"
       }
     ]
   },

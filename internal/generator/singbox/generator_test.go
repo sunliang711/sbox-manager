@@ -32,6 +32,12 @@ func TestGenerateStableBytes(t *testing.T) {
 			t.Fatalf("generated config missing %s: %s", want, output)
 		}
 	}
+	if strings.Contains(output, `"address": "local"`) {
+		t.Fatalf("generated config should use new DNS server format: %s", output)
+	}
+	if !strings.Contains(output, `"type": "local"`) {
+		t.Fatalf("generated config missing new local DNS server type: %s", output)
+	}
 	assertOrder(t, output, `"log"`, `"dns"`)
 	assertOrder(t, output, `"dns"`, `"inbounds"`)
 	assertOrder(t, output, `"inbounds"`, `"outbounds"`)

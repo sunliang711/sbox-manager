@@ -385,7 +385,7 @@ func TestSboxctlStopDoesNotWriteRuntime(t *testing.T) {
 	}
 }
 
-// TestSboxctlServiceInstallDoesNotStart 验证 service install 只写服务文件并 reload，不启动服务。
+// TestSboxctlServiceInstallDoesNotStart 验证 service install 写实例服务和 traffic timer 文件并 reload，不启动服务。
 func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	unitDir := filepath.Join(t.TempDir(), "units")
@@ -401,6 +401,16 @@ func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); err != nil {
 		t.Fatalf("unit should be written: %v", err)
 	}
+	for _, period := range service.TrafficPeriods() {
+		for _, name := range []string{
+			service.TrafficSystemdServiceName(period),
+			service.TrafficSystemdTimerName(period),
+		} {
+			if _, err := os.Stat(filepath.Join(unitDir, name)); err != nil {
+				t.Fatalf("traffic timer unit should be written %s: %v", name, err)
+			}
+		}
+	}
 	got := runner.joined()
 	for _, want := range []string{"getent group sbox", "id -u sbox", "chown -R sbox:sbox " + baseDir, "systemctl daemon-reload"} {
 		if !strings.Contains(got, want) {
@@ -410,10 +420,13 @@ func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("service install should not start service, got %q", got)
 	}
+	if strings.Contains(got, "systemctl enable --now") {
+		t.Fatalf("service install should not enable timer, got %q", got)
+	}
 }
 
-// TestSboxctlUninstallPurgeRemovesServiceFileAndManagedDirs 验证 uninstall --purge 删除服务文件和受管资源目录。
-func TestSboxctlUninstallPurgeRemovesServiceFileAndManagedDirs(t *testing.T) {
+// TestSboxctlUninstallPurgeStopsServicesAndRemovesBaseDir 验证 uninstall all --purge 停服务、删服务文件和 base-dir。
+func TestSboxctlUninstallPurgeStopsServicesAndRemovesBaseDir(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	unitDir := filepath.Join(t.TempDir(), "units")
 	runner := &cliRecordingRunner{}
@@ -423,6 +436,16 @@ func TestSboxctlUninstallPurgeRemovesServiceFileAndManagedDirs(t *testing.T) {
 	}
 	if _, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "service", "install"); err != nil {
 		t.Fatalf("execute service install: %v", err)
+	}
+	for _, period := range service.TrafficPeriods() {
+		for _, name := range []string{
+			service.TrafficSystemdServiceName(period),
+			service.TrafficSystemdTimerName(period),
+		} {
+			if err := os.WriteFile(filepath.Join(unitDir, name), []byte("unit"), 0644); err != nil {
+				t.Fatalf("write traffic unit %s: %v", name, err)
+			}
+		}
 	}
 	for _, dir := range []string{"bin", "rules", "downloads", "runtime"} {
 		path := filepath.Join(baseDir, dir)
@@ -440,17 +463,30 @@ func TestSboxctlUninstallPurgeRemovesServiceFileAndManagedDirs(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); !os.IsNotExist(err) {
 		t.Fatalf("service file should be removed, stat err: %v", err)
 	}
-	for _, dir := range []string{"bin", "rules", "downloads", "runtime"} {
-		path := filepath.Join(baseDir, dir)
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("managed dir should be removed %s, stat err: %v", path, err)
+	for _, period := range service.TrafficPeriods() {
+		for _, name := range []string{
+			service.TrafficSystemdServiceName(period),
+			service.TrafficSystemdTimerName(period),
+		} {
+			if _, err := os.Stat(filepath.Join(unitDir, name)); !os.IsNotExist(err) {
+				t.Fatalf("traffic service file should be removed %s, stat err: %v", name, err)
+			}
 		}
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, "config.yaml")); err != nil {
-		t.Fatalf("config should be preserved: %v", err)
+	if _, err := os.Stat(baseDir); !os.IsNotExist(err) {
+		t.Fatalf("base dir should be removed, stat err: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, "instances", "edge-us.yaml")); err != nil {
-		t.Fatalf("instance config should be preserved: %v", err)
+	got := runner.joined()
+	stopIndex := strings.Index(got, "systemctl stop sbox@edge-us.service")
+	disableIndex := strings.Index(got, "systemctl disable --now sbox-traffic-hourly.timer")
+	if stopIndex < 0 {
+		t.Fatalf("uninstall purge should stop instance service first, got %q", got)
+	}
+	if disableIndex < 0 {
+		t.Fatalf("uninstall purge should disable traffic timer, got %q", got)
+	}
+	if stopIndex > disableIndex {
+		t.Fatalf("instance stop should run before timer cleanup, got %q", got)
 	}
 }
 
@@ -511,7 +547,7 @@ func TestSboxctlSetupOrder(t *testing.T) {
 		t.Fatalf("execute setup: %v", err)
 	}
 	got := strings.Join(order, "|")
-	want := "install:all|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload"
+	want := "install:all|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload"
 	if got != want {
 		t.Fatalf("unexpected setup order: got %q want %q", got, want)
 	}

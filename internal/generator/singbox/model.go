@@ -22,8 +22,9 @@ type DNS struct {
 
 // DNSServer 表示 sing-box DNS server 条目。
 type DNSServer struct {
-	Tag     string `json:"tag"`
-	Address string `json:"address"`
+	Type   string `json:"type"`
+	Tag    string `json:"tag,omitempty"`
+	Server string `json:"server,omitempty"`
 }
 
 // Inbound 表示 sing-box inbound 通用配置。

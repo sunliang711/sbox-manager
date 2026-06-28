@@ -78,7 +78,7 @@ func newSboxctlSetupCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := manager.Install(cmd.Context(), set.BaseDir, set.Global, set.Instances, ""); err != nil {
+			if err := installSboxctlServiceFiles(cmd, manager, set, ""); err != nil {
 				return err
 			}
 			if start {
@@ -97,7 +97,7 @@ func sboxctlInitNextSteps(baseDir string) string {
 
 // sboxctlSetupNextSteps 返回 agent setup 后的下一步提示。
 func sboxctlSetupNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 为了自动采集 traffic，执行：sudo sboxctl --base-dir %s traffic timer install，然后执行：sudo sboxctl --base-dir %s traffic timer enable\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir, baseDir)
+	return fmt.Sprintf("下一步：\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 为了自动采集 traffic，执行：sudo sboxctl --base-dir %s traffic timer enable\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
 }
 
 // newSboxctlConfigCommand 创建 agent 配置命令。
@@ -358,13 +358,25 @@ func newSboxctlServiceInstallCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := manager.Install(cmd.Context(), set.BaseDir, set.Global, set.Instances, optionalArg(args)); err != nil {
+			if err := installSboxctlServiceFiles(cmd, manager, set, optionalArg(args)); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "service install 完成: %s\n", options.serviceManager)
 			return err
 		},
 	}
+}
+
+// installSboxctlServiceFiles 安装实例服务文件，并同步安装 traffic timer 服务文件。
+func installSboxctlServiceFiles(cmd *cobra.Command, manager *service.Manager, set *config.AgentConfigSet, target string) error {
+	if err := manager.Install(cmd.Context(), set.BaseDir, set.Global, set.Instances, target); err != nil {
+		return err
+	}
+	binary, err := trafficExecutablePath()
+	if err != nil {
+		return fmt.Errorf("解析 sboxctl 路径: %w", err)
+	}
+	return manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary)
 }
 
 func newSboxctlServiceUninstallCommand() *cobra.Command {
@@ -476,6 +488,19 @@ func newResourceCommand(use string, short string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			purgeAll := use == installer.OperationUninstall && purge && args[0] == installer.ResourceAll
+			var manager *service.Manager
+			if use == installer.OperationUninstall && purge {
+				manager, err = newSboxctlServiceManager(options)
+				if err != nil {
+					return err
+				}
+				if purgeAll {
+					if err := manager.StopInstancesForUninstall(cmd.Context(), set.Instances); err != nil {
+						return err
+					}
+				}
+			}
 			err = newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
 				Operation:     use,
 				Resource:      args[0],
@@ -490,11 +515,17 @@ func newResourceCommand(use string, short string) *cobra.Command {
 				return err
 			}
 			if use == installer.OperationUninstall && purge {
-				manager, err := newSboxctlServiceManager(options)
-				if err != nil {
-					return err
-				}
-				if err := manager.Uninstall(cmd.Context(), set.Instances, ""); err != nil {
+				if purgeAll {
+					if err := manager.UninstallTrafficTimers(cmd.Context()); err != nil {
+						return err
+					}
+					if err := manager.UninstallInstances(cmd.Context(), set.Instances); err != nil {
+						return err
+					}
+					if err := purgeAgentBaseDir(set.BaseDir); err != nil {
+						return err
+					}
+				} else if err := manager.Uninstall(cmd.Context(), set.Instances, ""); err != nil {
 					return err
 				}
 			}
@@ -507,6 +538,18 @@ func newResourceCommand(use string, short string) *cobra.Command {
 	cmd.Flags().String("sha256", "", "sha256 校验值")
 	cmd.Flags().String("archive-member", "", "归档内成员名称")
 	return cmd
+}
+
+// purgeAgentBaseDir 删除 agent base-dir，并拒绝清理明显危险的根路径。
+func purgeAgentBaseDir(baseDir string) error {
+	cleaned := filepath.Clean(baseDir)
+	if cleaned == "." || cleaned == string(os.PathSeparator) {
+		return fmt.Errorf("拒绝清理危险 base-dir %s", cleaned)
+	}
+	if err := os.RemoveAll(cleaned); err != nil {
+		return fmt.Errorf("清理 agent base-dir %s: %w", cleaned, err)
+	}
+	return nil
 }
 
 func runSboxctlRuntimeLifecycle(cmd *cobra.Command, action string, args []string) error {

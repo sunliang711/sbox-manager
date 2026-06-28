@@ -58,7 +58,24 @@ func (m *Manager) Uninstall(ctx context.Context, instances []domain.Instance, ta
 	if err != nil {
 		return err
 	}
-	for _, instance := range targets {
+	return m.UninstallInstances(ctx, targets)
+}
+
+// StopInstancesForUninstall 在 purge 删除服务文件前尽量停止实例服务，忽略未加载服务。
+func (m *Manager) StopInstancesForUninstall(ctx context.Context, instances []domain.Instance) error {
+	for _, instance := range instances {
+		serviceName := ServiceNameForKind(m.kind, instance.Name)
+		output, err := m.runOne(ctx, "stop", serviceName, false)
+		if err != nil && !isServiceNotLoaded(output, err) {
+			return fmt.Errorf("停止服务 %s: %w", serviceName, err)
+		}
+	}
+	return nil
+}
+
+// UninstallInstances 删除给定实例集合的服务文件，且不启动服务。
+func (m *Manager) UninstallInstances(ctx context.Context, instances []domain.Instance) error {
+	for _, instance := range instances {
 		var path string
 		switch m.kind {
 		case KindSystemd:
@@ -72,7 +89,7 @@ func (m *Manager) Uninstall(ctx context.Context, instances []domain.Instance, ta
 			return fmt.Errorf("卸载服务文件 %s: %w", path, err)
 		}
 	}
-	if m.kind == KindSystemd && len(targets) > 0 {
+	if m.kind == KindSystemd && len(instances) > 0 {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
 		}
