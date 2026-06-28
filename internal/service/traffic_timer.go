@@ -111,6 +111,9 @@ func RenderTrafficLaunchdPlist(baseDir string, logsDir string, binary string, pe
 func (m *Manager) InstallTrafficTimers(ctx context.Context, baseDir string, trafficDir string, logsDir string, binary string) error {
 	switch m.kind {
 	case KindSystemd:
+		if err := m.prepareSystemdServiceEnvironment(ctx, baseDir); err != nil {
+			return err
+		}
 		for _, period := range TrafficPeriods() {
 			servicePath := filepath.Join(m.unitDir, TrafficSystemdServiceName(period))
 			if err := WriteFileAtomic(servicePath, RenderTrafficSystemdService(baseDir, trafficDir, logsDir, binary, period), systemdUnitMode); err != nil {

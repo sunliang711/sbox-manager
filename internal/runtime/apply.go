@@ -3,13 +3,17 @@ package runtime
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/sunliang711/sbox-manager/internal/generator/singbox"
 )
 
 const managedFileMode os.FileMode = 0640
+const serviceOwnerName = "sbox"
 
 // DefaultClock 返回当前本地时间的 RFC3339 字符串。
 func DefaultClock() string {
@@ -158,10 +162,49 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.Rename(tempPath, path); err != nil {
 		return fmt.Errorf("替换文件 %s: %w", path, err)
 	}
+	if err := applyServiceOwnership(path); err != nil {
+		return err
+	}
 	if err := syncDir(dir); err != nil {
 		return err
 	}
 	return nil
+}
+
+// applyServiceOwnership 在 Linux root 场景下让 systemd sbox 用户可读取新生成的 runtime 文件。
+func applyServiceOwnership(path string) error {
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		return nil
+	}
+	uid, gid, ok := serviceOwnerIDs()
+	if !ok {
+		return nil
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chown(dir, uid, gid); err != nil {
+		return fmt.Errorf("设置 runtime 目录属主 %s: %w", dir, err)
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		return fmt.Errorf("设置 runtime 文件属主 %s: %w", path, err)
+	}
+	return nil
+}
+
+// serviceOwnerIDs 返回 systemd 服务用户的 uid/gid，用户不存在时表示无需处理。
+func serviceOwnerIDs() (int, int, bool) {
+	serviceUser, err := user.Lookup(serviceOwnerName)
+	if err != nil {
+		return 0, 0, false
+	}
+	uid, err := strconv.Atoi(serviceUser.Uid)
+	if err != nil {
+		return 0, 0, false
+	}
+	gid, err := strconv.Atoi(serviceUser.Gid)
+	if err != nil {
+		return 0, 0, false
+	}
+	return uid, gid, true
 }
 
 // syncDir fsync 目录，确保 rename 元数据尽量落盘。

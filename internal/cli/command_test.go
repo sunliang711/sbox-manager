@@ -196,7 +196,13 @@ func TestSboxsubServiceInstallDoesNotStart(t *testing.T) {
 	if !strings.Contains(string(data), "--base-dir "+baseDir+" serve") {
 		t.Fatalf("unit should start sboxsub serve with sub base dir:\n%s", data)
 	}
-	if got := runner.joined(); got != "systemctl daemon-reload" {
+	got := runner.joined()
+	for _, want := range []string{"getent group sbox", "id -u sbox", "chown -R sbox:sbox " + baseDir, "systemctl daemon-reload"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("service install missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("service install should not start service, got %q", got)
 	}
 }
@@ -309,7 +315,13 @@ func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(unitDir, "sbox@edge-us.service")); err != nil {
 		t.Fatalf("unit should be written: %v", err)
 	}
-	if got := runner.joined(); got != "systemctl daemon-reload" {
+	got := runner.joined()
+	for _, want := range []string{"getent group sbox", "id -u sbox", "chown -R sbox:sbox " + baseDir, "systemctl daemon-reload"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("service install missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("service install should not start service, got %q", got)
 	}
 }
@@ -413,7 +425,7 @@ func TestSboxctlSetupOrder(t *testing.T) {
 		t.Fatalf("execute setup: %v", err)
 	}
 	got := strings.Join(order, "|")
-	want := "install:all|systemctl daemon-reload"
+	want := "install:all|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload"
 	if got != want {
 		t.Fatalf("unexpected setup order: got %q want %q", got, want)
 	}

@@ -158,12 +158,14 @@ func templateInstance(global domain.GlobalConfig, name string, template string) 
 	switch instance.Role {
 	case "edge":
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
+		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "relay":
 		instance.Inbounds = []domain.Inbound{shadowsocksInbound("ss-main", 24000)}
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "urltest":
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
+		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Groups = []domain.Group{domain.DefaultGroup("auto", "urltest")}
 		instance.Groups[0].Outbounds = []string{"direct"}
 		instance.Route = domain.RouteConfig{Default: "auto"}
@@ -241,8 +243,9 @@ func Clone(baseDir string, options CloneOptions) (domain.Instance, error) {
 	if _, exists := set.FindInstance(options.Target); exists {
 		return domain.Instance{}, fmt.Errorf("instance %q 已存在", options.Target)
 	}
-	cloned := source
+	cloned := cloneInstanceValue(source)
 	cloned.Name = options.Target
+	updateClonedSubscriptionRemarks(&cloned, options.Source, options.Target)
 	if options.AllocatePorts {
 		if err := allocatePorts(set.Global, set.Instances, &cloned); err != nil {
 			return domain.Instance{}, err
@@ -252,6 +255,42 @@ func Clone(baseDir string, options CloneOptions) (domain.Instance, error) {
 		return domain.Instance{}, err
 	}
 	return cloned, nil
+}
+
+// updateClonedSubscriptionRemarks 将默认实例名 remark 更新为克隆目标名，保留用户自定义 remark。
+func updateClonedSubscriptionRemarks(instance *domain.Instance, sourceName string, targetName string) {
+	if instance == nil {
+		return
+	}
+	for index := range instance.Inbounds {
+		if !instance.Inbounds[index].Subscription.Enabled {
+			continue
+		}
+		if instance.Inbounds[index].Subscription.Remark == sourceName {
+			instance.Inbounds[index].Subscription.Remark = targetName
+		}
+	}
+}
+
+// cloneInstanceValue 复制 instance 中所有可变切片，避免克隆修改反向污染源实例。
+func cloneInstanceValue(source domain.Instance) domain.Instance {
+	cloned := source
+	cloned.Labels = append([]string(nil), source.Labels...)
+	cloned.Inbounds = append([]domain.Inbound(nil), source.Inbounds...)
+	for index := range cloned.Inbounds {
+		cloned.Inbounds[index].Users = append([]domain.InboundUser(nil), source.Inbounds[index].Users...)
+	}
+	cloned.Outbounds = append([]domain.Outbound(nil), source.Outbounds...)
+	cloned.Groups = append([]domain.Group(nil), source.Groups...)
+	for index := range cloned.Groups {
+		cloned.Groups[index].Outbounds = append([]string(nil), source.Groups[index].Outbounds...)
+	}
+	cloned.Route.Rules = append([]domain.RouteRule(nil), source.Route.Rules...)
+	for index := range cloned.Route.Rules {
+		cloned.Route.Rules[index].Values = append([]string(nil), source.Route.Rules[index].Values...)
+	}
+	cloned.Traffic.Scopes = append([]string(nil), source.Traffic.Scopes...)
+	return cloned
 }
 
 // WriteInstance 校验并写入 instance YAML。

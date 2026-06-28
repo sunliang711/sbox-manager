@@ -10,6 +10,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOOS ?= $(shell go env GOOS 2>/dev/null || uname -s | tr A-Z a-z)
 GOARCH ?= $(shell go env GOARCH 2>/dev/null || uname -m)
+CGO_ENABLED ?= 1
 LDFLAGS := -X '$(MODULE)/internal/version.Version=$(VERSION)' -X '$(MODULE)/internal/version.Commit=$(COMMIT)' -X '$(MODULE)/internal/version.BuildTime=$(BUILD_TIME)'
 
 .PHONY: help fmt lint test build build-linux snapshot package checksums install-local clean
@@ -37,8 +38,8 @@ build:
 	@test -d cmd/sboxctl || { echo 'cmd/sboxctl not found; complete T01 project bootstrap first' >&2; exit 1; }
 	@test -d cmd/sboxsub || { echo 'cmd/sboxsub not found; complete T01 project bootstrap first' >&2; exit 1; }
 	@mkdir -p "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)"
-	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxctl" ./cmd/sboxctl
-	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxsub" ./cmd/sboxsub
+	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED="$(CGO_ENABLED)" go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxctl" ./cmd/sboxctl
+	@GOOS="$(GOOS)" GOARCH="$(GOARCH)" CGO_ENABLED="$(CGO_ENABLED)" go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/bin/$(GOOS)_$(GOARCH)/sboxsub" ./cmd/sboxsub
 
 build-linux:
 	@$(MAKE) build GOOS=linux GOARCH=amd64

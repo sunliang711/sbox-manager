@@ -166,8 +166,19 @@ func TestInstallSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	if !strings.Contains(string(data), "ExecStart="+filepath.Join(baseDir, "bin", "sing-box")) {
 		t.Fatalf("unexpected unit:\n%s", data)
 	}
-	if got := runner.joined(); got != "systemctl daemon-reload" {
-		t.Fatalf("service install should only daemon-reload, got %q", got)
+	got := runner.joined()
+	for _, want := range []string{
+		"getent group sbox",
+		"id -u sbox",
+		"chown -R sbox:sbox " + baseDir,
+		"systemctl daemon-reload",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("service install missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "systemctl start") {
+		t.Fatalf("service install should not start service, got %q", got)
 	}
 }
 
@@ -192,8 +203,19 @@ func TestInstallSubscriptionSystemdWritesUnitAndOnlyReloads(t *testing.T) {
 	if !strings.Contains(string(data), "ExecStart="+binary+" --base-dir "+baseDir+" serve") {
 		t.Fatalf("unexpected subscription unit:\n%s", data)
 	}
-	if got := runner.joined(); got != "systemctl daemon-reload" {
-		t.Fatalf("subscription service install should only daemon-reload, got %q", got)
+	got := runner.joined()
+	for _, want := range []string{
+		"getent group sbox",
+		"id -u sbox",
+		"chown -R sbox:sbox " + baseDir,
+		"systemctl daemon-reload",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("subscription service install missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "systemctl start") {
+		t.Fatalf("subscription service install should not start service, got %q", got)
 	}
 }
 
@@ -223,8 +245,19 @@ func TestInstallTrafficTimersWritesFilesAndOnlyReloads(t *testing.T) {
 			t.Fatalf("traffic timer file %s should be written: %v", name, err)
 		}
 	}
-	if got := runner.joined(); got != "systemctl daemon-reload" {
-		t.Fatalf("traffic timer install should only daemon-reload, got %q", got)
+	got := runner.joined()
+	for _, want := range []string{
+		"getent group sbox",
+		"id -u sbox",
+		"chown -R sbox:sbox " + baseDir,
+		"systemctl daemon-reload",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("traffic timer install missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "systemctl start") {
+		t.Fatalf("traffic timer install should not start service, got %q", got)
 	}
 }
 
