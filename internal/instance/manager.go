@@ -161,13 +161,16 @@ func templateInstance(global domain.GlobalConfig, name string, template string) 
 	case "edge":
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
 		instance.Inbounds[0].Subscription.Remark = instance.Name
+		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "relay":
 		instance.Inbounds = []domain.Inbound{shadowsocksInbound("ss-main", 24000)}
+		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "urltest":
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
 		instance.Inbounds[0].Subscription.Remark = instance.Name
+		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Groups = []domain.Group{domain.DefaultGroup("auto", "urltest")}
 		instance.Groups[0].Outbounds = []string{"direct"}
 		instance.Route = domain.RouteConfig{Default: "auto"}
@@ -207,10 +210,26 @@ func shadowsocksInbound(name string, port int) domain.Inbound {
 	return inbound
 }
 
+// localProxyInbounds 返回模板默认附带的本地 HTTP/SOCKS 代理入口。
+func localProxyInbounds() []domain.Inbound {
+	return []domain.Inbound{
+		localProxyInbound("local-socks", "socks5", 17000),
+		localProxyInbound("local-http", "http", 18000),
+	}
+}
+
+// localProxyInbound 创建仅监听 loopback 的本地代理入口。
+func localProxyInbound(name string, inboundType string, port int) domain.Inbound {
+	inbound := domain.DefaultInbound(name, inboundType)
+	inbound.Listen = "127.0.0.1"
+	inbound.Port = port
+	return inbound
+}
+
 func allocatePorts(global domain.GlobalConfig, existing []domain.Instance, target *domain.Instance) error {
 	used := usedPorts(existing)
 	for index := range target.Inbounds {
-		port, err := config.FirstAvailablePort(global.PortRanges.Inbound, used)
+		port, err := config.FirstAvailablePort(portRangeForInbound(global, target.Inbounds[index]), used)
 		if err != nil {
 			return err
 		}
@@ -229,6 +248,34 @@ func allocatePorts(global domain.GlobalConfig, existing []domain.Instance, targe
 		}
 	}
 	return nil
+}
+
+// portRangeForInbound 根据 inbound 类型选择对应的自动分配端口段。
+func portRangeForInbound(global domain.GlobalConfig, inbound domain.Inbound) domain.PortRange {
+	switch inbound.Type {
+	case "socks5":
+		if !isLoopbackListen(inbound.Listen) {
+			return global.PortRanges.Inbound
+		}
+		return global.PortRanges.LocalSocks
+	case "http":
+		if !isLoopbackListen(inbound.Listen) {
+			return global.PortRanges.Inbound
+		}
+		return global.PortRanges.LocalHTTP
+	default:
+		return global.PortRanges.Inbound
+	}
+}
+
+// isLoopbackListen 判断 inbound listen 是否仅绑定本机地址。
+func isLoopbackListen(value string) bool {
+	host := strings.TrimSpace(value)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func usedPorts(instances []domain.Instance) map[int]struct{} {
@@ -432,7 +479,7 @@ func renderGlobalConfigYAML(global domain.GlobalConfig) ([]byte, error) {
 # version: 配置版本，目前固定为 1。
 # external_host: 对外访问域名或公网 IP；不要包含 scheme、路径、query。
 # paths: 受管目录，可使用相对路径，加载时会按 base-dir 解析。
-# port_ranges: 自动分配端口的闭区间范围，inbound/api 分别用于入口和 stats API。
+# port_ranges: 自动分配端口的闭区间范围，inbound/local_socks/local_http/api 分别用于入口、本地代理和 stats API。
 # defaults: 新实例继承的日志、API、Clash API 和 traffic 默认值。
 # security: socks/http 公开监听时的鉴权保护开关。
 
@@ -448,9 +495,9 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 	}
 	header := `# sbox-manager instance config.
 # 可用模板:
-#   sboxctl add <name> --template edge    # 入口节点，默认 vmess + direct
-#   sboxctl add <name> --template relay   # 中继节点，默认 shadowsocks + direct
-#   sboxctl add <name> --template urltest # 带 urltest group 的入口节点
+#   sboxctl add <name> --template edge    # 入口节点，默认 vmess + local socks/http + direct
+#   sboxctl add <name> --template relay   # 中继节点，默认 shadowsocks + local socks/http + direct
+#   sboxctl add <name> --template urltest # 带 urltest group 和 local socks/http 的入口节点
 # 常用配置项:
 # name/role/enabled: 实例名称、模板角色和启停开关。
 # api: sing-box stats API；启用后 traffic 命令会读取该监听地址。

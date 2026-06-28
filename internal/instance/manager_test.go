@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sunliang711/sbox-manager/internal/config"
+	"github.com/sunliang711/sbox-manager/internal/domain"
 	"github.com/sunliang711/sbox-manager/internal/generator/singbox"
 	"github.com/sunliang711/sbox-manager/internal/subscription"
 )
@@ -57,6 +58,62 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 	}
 	if _, err := config.LoadInstance(path, *global); err != nil {
 		t.Fatalf("load commented instance: %v", err)
+	}
+}
+
+// TestAddTemplatesIncludeLocalProxyInbounds 验证内置模板默认附带本地 socks/http 代理入口。
+func TestAddTemplatesIncludeLocalProxyInbounds(t *testing.T) {
+	for _, template := range []string{"edge", "relay", "urltest"} {
+		t.Run(template, func(t *testing.T) {
+			baseDir := t.TempDir()
+			if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+				t.Fatalf("init: %v", err)
+			}
+			instance, err := Add(baseDir, AddOptions{Name: template + "-smoke", Template: template, AllocatePorts: true})
+			if err != nil {
+				t.Fatalf("add %s: %v", template, err)
+			}
+
+			socks := findTestInbound(instance.Inbounds, "local-socks")
+			if socks == nil {
+				t.Fatalf("%s template missing local-socks inbound: %+v", template, instance.Inbounds)
+			}
+			if socks.Type != "socks5" || socks.Listen != "127.0.0.1" || socks.Port != 17000 {
+				t.Fatalf("unexpected local-socks inbound: %+v", *socks)
+			}
+			http := findTestInbound(instance.Inbounds, "local-http")
+			if http == nil {
+				t.Fatalf("%s template missing local-http inbound: %+v", template, instance.Inbounds)
+			}
+			if http.Type != "http" || http.Listen != "127.0.0.1" || http.Port != 18000 {
+				t.Fatalf("unexpected local-http inbound: %+v", *http)
+			}
+		})
+	}
+}
+
+// TestPortRangeForInboundKeepsPublicProxyInInboundRange 验证公开 socks/http 仍使用普通入口端口段。
+func TestPortRangeForInboundKeepsPublicProxyInInboundRange(t *testing.T) {
+	global := domain.DefaultGlobalConfig()
+	tests := []struct {
+		name    string
+		inbound domain.Inbound
+		want    domain.PortRange
+	}{
+		{name: "local socks", inbound: domain.Inbound{Type: "socks5", Listen: "127.0.0.1"}, want: global.PortRanges.LocalSocks},
+		{name: "local http", inbound: domain.Inbound{Type: "http", Listen: "::1"}, want: global.PortRanges.LocalHTTP},
+		{name: "public socks", inbound: domain.Inbound{Type: "socks5", Listen: "0.0.0.0"}, want: global.PortRanges.Inbound},
+		{name: "public http", inbound: domain.Inbound{Type: "http", Listen: "203.0.113.10"}, want: global.PortRanges.Inbound},
+		{name: "vmess", inbound: domain.Inbound{Type: "vmess", Listen: "0.0.0.0"}, want: global.PortRanges.Inbound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := portRangeForInbound(global, tt.inbound)
+			if got != tt.want {
+				t.Fatalf("port range = %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -164,6 +221,16 @@ func TestTemplateSubscriptionRemarksAreUnique(t *testing.T) {
 	if _, err := subscription.BuildBundle(inputs, generatedAt); err != nil {
 		t.Fatalf("build subscription bundle: %v", err)
 	}
+}
+
+// findTestInbound 按名称查找测试用 inbound。
+func findTestInbound(inbounds []domain.Inbound, name string) *domain.Inbound {
+	for index := range inbounds {
+		if inbounds[index].Name == name {
+			return &inbounds[index]
+		}
+	}
+	return nil
 }
 
 // TestEditFileWithCommandFindsDefaultEditor 验证未指定 editor 时按预设顺序查找系统编辑器。

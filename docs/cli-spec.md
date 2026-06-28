@@ -57,7 +57,7 @@ sboxctl [--base-dir DIR] member remove INSTANCE GROUP MEMBER
 sboxctl [--base-dir DIR] remove NAME [--purge]
 ```
 
-- `add`、`clone` 默认自动分配端口并打开编辑器，`--no-edit` 用于脚本化场景。
+- `add`、`clone` 默认自动分配端口并打开编辑器，`--no-edit` 用于脚本化场景；内置模板默认附带本地 `socks5` 和 `http` 代理入口。
 - `member` 只维护 `selector` 或 `urltest` group 的 outbound 成员，用于贴近参考项目的 auto 成员维护体验。
 - `remove` 默认只归档或删除 instance 配置；`--purge` 才清理 manifest 中关联的 generated 文件。
 
