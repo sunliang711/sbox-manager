@@ -10,7 +10,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOOS ?= $(shell go env GOOS 2>/dev/null || uname -s | tr A-Z a-z)
 GOARCH ?= $(shell go env GOARCH 2>/dev/null || uname -m)
-CGO_ENABLED ?= 1
+CGO_ENABLED ?= 0
 LDFLAGS := -X '$(MODULE)/internal/version.Version=$(VERSION)' -X '$(MODULE)/internal/version.Commit=$(COMMIT)' -X '$(MODULE)/internal/version.BuildTime=$(BUILD_TIME)'
 
 .PHONY: help fmt lint test build build-linux snapshot package checksums install-local clean

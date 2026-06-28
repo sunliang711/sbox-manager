@@ -414,7 +414,7 @@ func checkTrafficFiles(global domain.GlobalConfig, managerKind string) []Check {
 			continue
 		}
 		if !exists {
-			results = append(results, ok("traffic.timer."+period, "traffic timer 未安装"))
+			results = append(results, ok("traffic.timer."+period, "traffic timer 未安装；需要自动采集时执行 traffic timer install 和 traffic timer enable"))
 			continue
 		}
 		for _, target := range targets {

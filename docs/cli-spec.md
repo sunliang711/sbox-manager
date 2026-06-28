@@ -40,8 +40,8 @@ sboxctl [--base-dir DIR] config [INSTANCE] [--editor CMD] [--check-only]
 sboxctl example [global|instance|inbound|outbound|group|route|traffic] [TYPE]
 ```
 
-- `init` 创建标准目录和默认 `config.yaml`，不下载、不安装服务。
-- `setup` 依次执行幂等 `init`、`install all`、`service install`，传 `--start` 时继续执行 `start`。
+- `init` 创建标准目录和默认 `config.yaml`，不下载、不安装服务，完成后输出下一步建议。
+- `setup` 依次执行幂等 `init`、`install all`、`service install`，传 `--start` 时继续执行 `start`；未传 `--start` 时完成后输出启动和 traffic timer 建议。
 - `config` 使用相邻草稿文件编辑全局配置或 instance 配置，校验失败不得覆盖原文件。
 - `example` 输出可复制的 YAML 片段到 stdout，不读取 `--base-dir`。
 
@@ -196,6 +196,7 @@ sboxsub [--base-dir DIR] [--service-manager auto|systemd|launchd] doctor
 ```
 
 - `serve` 启动阶段 input 非法则失败；运行期 reload 失败保留上一份可用 index。
+- `sboxsub init` 创建订阅服务目录和默认配置，完成后输出导入 bundle、安装服务和 doctor 建议。
 - 订阅 HTTP 路由同时支持 `/clash/:user` 和 `/clash/:token/:user` 等形式；token 模式下 path token 优先，也允许 `?token=`。
 - `service install` 只安装订阅服务自身的 unit 或 plist。
 - 生命周期命令不得读取 agent 配置，不得读写 agent runtime。

@@ -40,7 +40,7 @@ func newSboxctlInitCommand() *cobra.Command {
 			if err := instancemgr.Init(options.baseDir, instancemgr.InitOptions{ExternalHost: externalHost, Force: force}); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "初始化完成: %s\n", options.baseDir)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "初始化完成: %s\n%s", options.baseDir, sboxctlInitNextSteps(options.baseDir))
 			return err
 		},
 	}
@@ -84,10 +84,20 @@ func newSboxctlSetupCommand() *cobra.Command {
 			if start {
 				return runSboxctlRuntimeLifecycle(cmd, "start", nil)
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "setup 完成")
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup 完成\n%s", sboxctlSetupNextSteps(options.baseDir))
 			return err
 		},
 	}
+}
+
+// sboxctlInitNextSteps 返回 agent 初始化后的下一步提示。
+func sboxctlInitNextSteps(baseDir string) string {
+	return fmt.Sprintf("下一步：\n- 为了创建实例配置，执行：sboxctl --base-dir %s add edge-us --template edge\n- 为了安装 sing-box、规则集和服务文件，执行：sudo sboxctl --base-dir %s setup\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
+}
+
+// sboxctlSetupNextSteps 返回 agent setup 后的下一步提示。
+func sboxctlSetupNextSteps(baseDir string) string {
+	return fmt.Sprintf("下一步：\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 为了自动采集 traffic，执行：sudo sboxctl --base-dir %s traffic timer install，然后执行：sudo sboxctl --base-dir %s traffic timer enable\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir, baseDir)
 }
 
 // newSboxctlConfigCommand 创建 agent 配置命令。

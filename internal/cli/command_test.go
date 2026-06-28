@@ -65,6 +65,46 @@ func TestSboxsubVersionOutput(t *testing.T) {
 	}
 }
 
+// TestSboxctlInitPrintsNextSteps 验证 agent init 后会提示下一步操作。
+func TestSboxctlInitPrintsNextSteps(t *testing.T) {
+	baseDir := t.TempDir()
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init")
+	if err != nil {
+		t.Fatalf("execute sboxctl init: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"初始化完成: " + baseDir,
+		"为了创建实例配置",
+		"sboxctl --base-dir " + baseDir + " add edge-us --template edge",
+		"sudo sboxctl --base-dir " + baseDir + " setup",
+		"sboxctl --base-dir " + baseDir + " doctor",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("init output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+// TestSboxsubInitPrintsNextSteps 验证订阅服务 init 后会提示下一步操作。
+func TestSboxsubInitPrintsNextSteps(t *testing.T) {
+	baseDir := t.TempDir()
+	output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "init")
+	if err != nil {
+		t.Fatalf("execute sboxsub init: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"初始化完成: " + baseDir,
+		"为了导入 agent 导出的订阅 bundle",
+		"sboxsub --base-dir " + baseDir + " import /path/to/sbox-sub-bundle.tar.gz",
+		"sudo sboxsub --base-dir " + baseDir + " service install",
+		"sudo sboxsub --base-dir " + baseDir + " start",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("sub init output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestSboxctlDoctorReturnsNonZeroOnIssue 验证 doctor 发现 ISSUE 时返回非零。
 func TestSboxctlDoctorReturnsNonZeroOnIssue(t *testing.T) {
 	baseDir := writeAgentFixture(t)
@@ -99,6 +139,9 @@ func TestSboxctlDoctorAfterInitSucceeds(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
+	}
+	if !strings.Contains(output, "traffic timer install 和 traffic timer enable") {
+		t.Fatalf("doctor output missing traffic timer hint:\n%s", output)
 	}
 }
 
