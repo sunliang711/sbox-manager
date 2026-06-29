@@ -482,7 +482,7 @@ func serviceFilePath(kind string, instance string) string {
 	if kind == service.KindLaunchd {
 		return launchAgentPath(service.LaunchdLabel(instance))
 	}
-	return filepath.Join("/etc/systemd/system", service.SystemdServiceName(instance))
+	return filepath.Join("/etc/systemd/system", service.SystemdTemplateServiceName())
 }
 
 // trafficTimerPaths 返回默认 traffic timer 文件路径集合。

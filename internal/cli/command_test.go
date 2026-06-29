@@ -42,6 +42,44 @@ func TestSboxctlVersionOutput(t *testing.T) {
 	}
 }
 
+// TestSboxctlComponentVersionOutput 验证 sboxctl version 可查询受管组件。
+func TestSboxctlComponentVersionOutput(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	binDir := filepath.Join(baseDir, "bin")
+	rulesDir := filepath.Join(baseDir, "rules")
+	if err := os.MkdirAll(binDir, 0750); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.MkdirAll(rulesDir, 0750); err != nil {
+		t.Fatalf("mkdir rules: %v", err)
+	}
+	singBox := filepath.Join(binDir, "sing-box")
+	if err := os.WriteFile(singBox, []byte("#!/bin/sh\necho 'sing-box test-version'\n"), 0755); err != nil {
+		t.Fatalf("write sing-box fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rulesDir, rulesManagedMarkerName), []byte("geoip.db abc123\n"), 0640); err != nil {
+		t.Fatalf("write rules marker: %v", err)
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "version", "sing-box")
+	if err != nil {
+		t.Fatalf("execute sboxctl version sing-box: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "sing-box test-version") {
+		t.Fatalf("sing-box version output missing fixture version: %s", output)
+	}
+
+	output, err = executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "version", "rules")
+	if err != nil {
+		t.Fatalf("execute sboxctl version rules: %v\n%s", err, output)
+	}
+	for _, want := range []string{"RulesDir: " + rulesDir, "geoip.db abc123"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("rules version output missing %q: %s", want, output)
+		}
+	}
+}
+
 // TestSboxsubVersionOutput 验证 sboxsub version 输出 ldflags 可注入字段。
 func TestSboxsubVersionOutput(t *testing.T) {
 	restoreVersion(t)
@@ -62,6 +100,100 @@ func TestSboxsubVersionOutput(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("version output missing %q: %s", want, output)
 		}
+	}
+}
+
+// TestSboxctlExampleUsesKindAndType 验证 example 会按 kind 和 TYPE 输出对应的完整注释片段。
+func TestSboxctlExampleUsesKindAndType(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    []string
+		notWant []string
+	}{
+		{
+			name: "global",
+			args: []string{"example", "global"},
+			want: []string{"paths:", "port_ranges:", "defaults:", "security:"},
+		},
+		{
+			name:    "inbound vmess",
+			args:    []string{"example", "inbound", "vmess"},
+			want:    []string{"# VMess inbound", "type: vmess", "uuid:", "subscription:"},
+			notWant: []string{"type: shadowsocks"},
+		},
+		{
+			name: "inbound shadowsocks22 alias",
+			args: []string{"example", "inbound", "shadowsocks22"},
+			want: []string{"type: shadowsocks", "2022-blake3-aes-256-gcm", "password:", "shadowsocks22 是示例别名"},
+		},
+		{
+			name: "outbound all protocols",
+			args: []string{"example", "outbound"},
+			want: []string{"type: direct", "type: block", "type: shadowsocks", "type: vmess", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+		},
+		{
+			name:    "outbound vmess",
+			args:    []string{"example", "outbound", "vmess"},
+			want:    []string{"# VMess outbound", "uuid:", "tls:", "network: tcp"},
+			notWant: []string{"type: shadowsocks"},
+		},
+		{
+			name: "outbound socks alias",
+			args: []string{"example", "outbound", "socks"},
+			want: []string{"type: socks5", "auth:", "username:", "password:"},
+		},
+		{
+			name: "group urltest",
+			args: []string{"example", "group", "urltest"},
+			want: []string{"type: urltest", "outbounds:", "url:", "tolerance:"},
+		},
+		{
+			name: "route geosite",
+			args: []string{"example", "route", "geosite"},
+			want: []string{"type: geosite", "category-ads-all", "outbound: auto"},
+		},
+		{
+			name:    "instance relay",
+			args:    []string{"example", "instance", "relay"},
+			want:    []string{"role: relay", "type: shadowsocks", "traffic:"},
+			notWant: []string{"role: edge"},
+		},
+		{
+			name: "traffic",
+			args: []string{"example", "traffic"},
+			want: []string{"retention_days:", "timer:", "scopes: [user, inbound, outbound]"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := executeCommand(newSboxctlCommand(), tt.args...)
+			if err != nil {
+				t.Fatalf("execute %v: %v\n%s", tt.args, err, output)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(output, want) {
+					t.Fatalf("example output missing %q:\n%s", want, output)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(output, notWant) {
+					t.Fatalf("example output should not contain %q:\n%s", notWant, output)
+				}
+			}
+		})
+	}
+}
+
+// TestSboxctlExampleRejectsUnsupportedType 验证未知 TYPE 会返回带支持列表的错误。
+func TestSboxctlExampleRejectsUnsupportedType(t *testing.T) {
+	output, err := executeCommand(newSboxctlCommand(), "example", "outbound", "wireguard")
+	if err == nil {
+		t.Fatalf("unsupported example type should fail:\n%s", output)
+	}
+	if !strings.Contains(err.Error(), "wireguard") || !strings.Contains(err.Error(), "shadowsocks22") {
+		t.Fatalf("unsupported example type error should include type and supported list, got %v\n%s", err, output)
 	}
 }
 

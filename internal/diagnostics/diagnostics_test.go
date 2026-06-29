@@ -17,6 +17,7 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/config"
 	"github.com/sunliang711/sbox-manager/internal/domain"
 	instancemgr "github.com/sunliang711/sbox-manager/internal/instance"
+	"github.com/sunliang711/sbox-manager/internal/service"
 )
 
 // TestSelectInstanceProxyPrefersSocks 验证 ipinfo 优先选择 socks5 listener 且摘要不泄露密码。
@@ -150,6 +151,15 @@ func TestAgentDoctorAfterInitHasNoIssue(t *testing.T) {
 	}
 	if check := findCheck(checks, "traffic.db"); check.Status != StatusOK {
 		t.Fatalf("expected traffic.db OK, got %+v", check)
+	}
+}
+
+// TestServiceFilePathUsesSystemdTemplate 验证 systemd doctor 按模板 unit 契约检查实例服务。
+func TestServiceFilePathUsesSystemdTemplate(t *testing.T) {
+	got := serviceFilePath(service.KindSystemd, "edge-us")
+	want := filepath.Join("/etc/systemd/system", service.SystemdTemplateServiceName())
+	if got != want {
+		t.Fatalf("service path = %q, want %q", got, want)
 	}
 }
 

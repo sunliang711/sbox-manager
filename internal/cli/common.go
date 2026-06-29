@@ -171,7 +171,7 @@ func newVersionCommand(use string, allowComponent bool) *cobra.Command {
 		Short: "输出当前二进制版本信息",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				return notImplementedError(cmd)
+				return runComponentVersion(cmd, args[0])
 			}
 
 			info := version.Get()
