@@ -13,7 +13,7 @@
 
 - 单 sing-box core 的多实例管理。
 - systemd 和 launchd 服务文件生成与生命周期管理。
-- VMess、Shadowsocks、Socks、HTTP、sing-box native 等订阅节点输入与输出。
+- VMess、VLESS、AnyTLS、Shadowsocks、Socks、HTTP、sing-box native 等订阅节点输入与输出。
 - Clash、Premium Clash、Surge、sing-box 订阅输出。
 - 基于 sing-box stats API 的流量采集、小时/日/月聚合、年度展示、CSV 导出和保留期清理。
 - `doctor`、`ipinfo`、配置备份与恢复。

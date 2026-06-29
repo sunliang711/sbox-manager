@@ -1084,9 +1084,13 @@ func inboundExampleSnippet(typeName string) (string, error) {
 	typeName = normalizeExampleType(typeName)
 	switch typeName {
 	case "", "all":
-		return inboundVmessExample() + "\n" + inboundShadowsocksExample() + "\n" + inboundSocks5Example() + "\n" + inboundHTTPExample(), nil
+		return inboundVmessExample() + "\n" + inboundVLESSExample() + "\n" + inboundAnyTLSExample() + "\n" + inboundShadowsocksExample() + "\n" + inboundSocks5Example() + "\n" + inboundHTTPExample(), nil
 	case "vmess":
 		return inboundVmessExample(), nil
+	case "vless":
+		return inboundVLESSExample(), nil
+	case "anytls":
+		return inboundAnyTLSExample(), nil
 	case "shadowsocks":
 		return inboundShadowsocksExample(), nil
 	case "socks5":
@@ -1094,7 +1098,7 @@ func inboundExampleSnippet(typeName string) (string, error) {
 	case "http":
 		return inboundHTTPExample(), nil
 	default:
-		return "", unsupportedExampleType("inbound", typeName, []string{"vmess", "shadowsocks", "shadowsocks22", "socks5", "http", "all"})
+		return "", unsupportedExampleType("inbound", typeName, []string{"vmess", "vless", "anytls", "shadowsocks", "shadowsocks22", "socks5", "http", "all"})
 	}
 }
 
@@ -1117,6 +1121,60 @@ func inboundVmessExample() string {
     server: proxy.example.com # 为空时使用 global.external_host。
     remark: US VMess # 启用时必填。
     region: US # 可选，两位大写地区码。`
+}
+
+// inboundVLESSExample 返回 VLESS inbound 示例片段。
+func inboundVLESSExample() string {
+	return `# VLESS inbound，可放入 instance.inbounds。
+- name: vless-main
+  type: vless
+  listen: 0.0.0.0
+  port: 24110
+  tag: vless-vless-main
+  udp: true
+  tls:
+    enabled: true # 可按需启用 TLS。
+  transport:
+    type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
+    path: /vless
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填 UUID。
+      flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+      remark: US VLESS
+      tag: edge-us-vless-main
+  subscription:
+    enabled: true
+    user: alice
+    server: proxy.example.com
+    remark: US VLESS
+    region: US`
+}
+
+// inboundAnyTLSExample 返回 AnyTLS inbound 示例片段。
+func inboundAnyTLSExample() string {
+	return `# AnyTLS inbound，可放入 instance.inbounds。
+- name: anytls-main
+  type: anytls
+  listen: 0.0.0.0
+  port: 24120
+  tag: anytls-anytls-main
+  udp: true
+  tls:
+    enabled: true # AnyTLS 必须启用 TLS。
+  users:
+    - name: alice
+      password: change-me # AnyTLS 用户必填密码。
+      remark: US AnyTLS
+      tag: edge-us-anytls-main
+  subscription:
+    enabled: true
+    user: alice
+    server: proxy.example.com
+    remark: US AnyTLS
+    region: US`
 }
 
 func inboundShadowsocksExample() string {
@@ -1186,7 +1244,7 @@ func outboundExampleSnippet(typeName string) (string, error) {
 	typeName = normalizeExampleType(typeName)
 	switch typeName {
 	case "", "all":
-		return outboundDirectExample() + "\n" + outboundBlockExample() + "\n" + outboundShadowsocksExample() + "\n" + outboundVMessExample() + "\n" + outboundTrojanExample() + "\n" + outboundHysteria2Example() + "\n" + outboundSocks5Example() + "\n" + outboundHTTPExample(), nil
+		return outboundDirectExample() + "\n" + outboundBlockExample() + "\n" + outboundShadowsocksExample() + "\n" + outboundVMessExample() + "\n" + outboundVLESSExample() + "\n" + outboundAnyTLSExample() + "\n" + outboundTrojanExample() + "\n" + outboundHysteria2Example() + "\n" + outboundSocks5Example() + "\n" + outboundHTTPExample(), nil
 	case "direct":
 		return outboundDirectExample(), nil
 	case "block":
@@ -1195,6 +1253,10 @@ func outboundExampleSnippet(typeName string) (string, error) {
 		return outboundShadowsocksExample(), nil
 	case "vmess":
 		return outboundVMessExample(), nil
+	case "vless":
+		return outboundVLESSExample(), nil
+	case "anytls":
+		return outboundAnyTLSExample(), nil
 	case "trojan":
 		return outboundTrojanExample(), nil
 	case "hysteria2":
@@ -1204,7 +1266,7 @@ func outboundExampleSnippet(typeName string) (string, error) {
 	case "http":
 		return outboundHTTPExample(), nil
 	default:
-		return "", unsupportedExampleType("outbound", typeName, []string{"direct", "block", "shadowsocks", "shadowsocks22", "vmess", "trojan", "hysteria2", "socks5", "http", "all"})
+		return "", unsupportedExampleType("outbound", typeName, []string{"direct", "block", "shadowsocks", "shadowsocks22", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http", "all"})
 	}
 }
 
@@ -1241,7 +1303,41 @@ func outboundVMessExample() string {
   uuid: 22222222-2222-4222-8222-222222222222 # VMess 必填。
   tls:
     enabled: true # 是否启用 TLS。
-  network: tcp # 可选；tcp、ws 等，非 tcp 时生成同名 transport type。`
+  network: tcp # 可选；VMess 底层网络，仅支持 tcp、udp。
+  transport:
+    type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
+    path: /vmess
+    headers:
+      Host: vmess.example.com`
+}
+
+// outboundVLESSExample 返回 VLESS outbound 示例片段。
+func outboundVLESSExample() string {
+	return `# VLESS outbound。
+- name: vless-upstream
+  type: vless
+  server: vless.example.com
+  port: 443
+  uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填。
+  flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+  tls:
+    enabled: true # 是否启用 TLS。
+  transport:
+    type: httpupgrade # 可选；支持 http、ws、quic、grpc、httpupgrade。
+    host: vless.example.com
+    path: /upgrade`
+}
+
+// outboundAnyTLSExample 返回 AnyTLS outbound 示例片段。
+func outboundAnyTLSExample() string {
+	return `# AnyTLS outbound。
+- name: anytls-upstream
+  type: anytls
+  server: anytls.example.com
+  port: 443
+  password: change-me # AnyTLS 必填。
+  tls:
+    enabled: true # AnyTLS 必须启用 TLS。`
 }
 
 func outboundTrojanExample() string {

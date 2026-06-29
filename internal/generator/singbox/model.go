@@ -34,6 +34,8 @@ type Inbound struct {
 	Listen     string        `json:"listen"`
 	ListenPort int           `json:"listen_port"`
 	UDP        *bool         `json:"udp,omitempty"`
+	TLS        *TLS          `json:"tls,omitempty"`
+	Transport  *Transport    `json:"transport,omitempty"`
 	Method     string        `json:"method,omitempty"`
 	Password   string        `json:"password,omitempty"`
 	Users      []InboundUser `json:"users,omitempty"`
@@ -46,6 +48,8 @@ type InboundUser struct {
 	Password string `json:"password,omitempty"`
 	Method   string `json:"method,omitempty"`
 	Username string `json:"username,omitempty"`
+	Flow     string `json:"flow,omitempty"`
+	AlterID  int    `json:"alterId,omitempty"`
 }
 
 // Outbound 表示 sing-box outbound 或 outbound group 配置。
@@ -57,6 +61,9 @@ type Outbound struct {
 	UUID       string     `json:"uuid,omitempty"`
 	Password   string     `json:"password,omitempty"`
 	Method     string     `json:"method,omitempty"`
+	Security   string     `json:"security,omitempty"`
+	Flow       string     `json:"flow,omitempty"`
+	AlterID    int        `json:"alter_id,omitempty"`
 	Username   string     `json:"username,omitempty"`
 	Network    string     `json:"network,omitempty"`
 	TLS        *TLS       `json:"tls,omitempty"`
@@ -74,7 +81,17 @@ type TLS struct {
 
 // Transport 表示 sing-box vmess 等协议的传输配置。
 type Transport struct {
-	Type string `json:"type"`
+	Type                string            `json:"type"`
+	Host                interface{}       `json:"host,omitempty"`
+	Path                string            `json:"path,omitempty"`
+	Method              string            `json:"method,omitempty"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	IdleTimeout         string            `json:"idle_timeout,omitempty"`
+	PingTimeout         string            `json:"ping_timeout,omitempty"`
+	MaxEarlyData        int               `json:"max_early_data,omitempty"`
+	EarlyDataHeaderName string            `json:"early_data_header_name,omitempty"`
+	ServiceName         string            `json:"service_name,omitempty"`
+	PermitWithoutStream bool              `json:"permit_without_stream,omitempty"`
 }
 
 // Route 表示 sing-box 路由配置。

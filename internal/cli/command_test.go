@@ -123,6 +123,23 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			notWant: []string{"type: shadowsocks"},
 		},
 		{
+			name: "inbound all protocols",
+			args: []string{"example", "inbound"},
+			want: []string{"type: vmess", "type: vless", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
+		},
+		{
+			name:    "inbound vless",
+			args:    []string{"example", "inbound", "vless"},
+			want:    []string{"# VLESS inbound", "type: vless", "uuid:", "flow:", "transport:"},
+			notWant: []string{"type: anytls"},
+		},
+		{
+			name:    "inbound anytls",
+			args:    []string{"example", "inbound", "anytls"},
+			want:    []string{"# AnyTLS inbound", "type: anytls", "password:", "tls:", "enabled: true"},
+			notWant: []string{"type: vless"},
+		},
+		{
 			name: "inbound shadowsocks22 alias",
 			args: []string{"example", "inbound", "shadowsocks22"},
 			want: []string{"type: shadowsocks", "2022-blake3-aes-256-gcm", "password:", "shadowsocks22 是示例别名"},
@@ -130,13 +147,25 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "outbound all protocols",
 			args: []string{"example", "outbound"},
-			want: []string{"type: direct", "type: block", "type: shadowsocks", "type: vmess", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+			want: []string{"type: direct", "type: block", "type: shadowsocks", "type: vmess", "type: vless", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
 		},
 		{
 			name:    "outbound vmess",
 			args:    []string{"example", "outbound", "vmess"},
 			want:    []string{"# VMess outbound", "uuid:", "tls:", "network: tcp"},
 			notWant: []string{"type: shadowsocks"},
+		},
+		{
+			name:    "outbound vless",
+			args:    []string{"example", "outbound", "vless"},
+			want:    []string{"# VLESS outbound", "type: vless", "uuid:", "flow:", "transport:"},
+			notWant: []string{"type: vmess"},
+		},
+		{
+			name:    "outbound anytls",
+			args:    []string{"example", "outbound", "anytls"},
+			want:    []string{"# AnyTLS outbound", "type: anytls", "password:", "enabled: true"},
+			notWant: []string{"type: trojan"},
 		},
 		{
 			name: "outbound socks alias",

@@ -189,7 +189,7 @@ traffic:
 | 字段 | 类型 | 必填 | 默认值 | 校验 |
 | --- | --- | --- | --- | --- |
 | `name` | string | 是 | 无 | instance 内唯一 |
-| `type` | string | 是 | 无 | `vmess`、`shadowsocks`、`socks5`、`http` |
+| `type` | string | 是 | 无 | `vmess`、`vless`、`anytls`、`shadowsocks`、`socks5`、`http` |
 | `listen` | string | 否 | `0.0.0.0` | host，不含端口 |
 | `port` | int | 是 | 无 | `1-65535` |
 | `tag` | string | 否 | `<type>-<name>` | sing-box tag，instance 内唯一 |
@@ -197,17 +197,21 @@ traffic:
 | `auth.type` | string | socks5/http 必填 | `noauth` | `noauth`、`password` |
 | `auth.username` | string | password 必填 | 无 | 非空 |
 | `auth.password` | string | password 必填 | 无 | 非空 |
-| `users` | list | vmess/shadowsocks 必填 | 无 | 多用户凭据 |
+| `tls.enabled` | bool | AnyTLS 必填 | `false` | AnyTLS 必须为 `true`，其他支持 TLS 的 inbound 可按需启用 |
+| `transport` | object | 否 | 无 | VMess/VLESS 的 V2Ray transport 配置 |
+| `users` | list | vmess/vless/anytls/shadowsocks 必填 | 无 | 多用户凭据 |
 | `subscription` | object | 否 | `{enabled:false}` | 是否导出订阅节点 |
 
 `InboundUser` 字段：
 
 | 字段 | 类型 | 必填 | 适用 |
 | --- | --- | --- | --- |
-| `name` | string | 是 | vmess、shadowsocks |
-| `uuid` | string | vmess 必填 | vmess |
-| `password` | string | shadowsocks 必填 | shadowsocks |
+| `name` | string | 是 | vmess、vless、anytls、shadowsocks |
+| `uuid` | string | vmess/vless 必填 | vmess、vless |
+| `password` | string | shadowsocks/anytls 必填 | shadowsocks、anytls |
 | `method` | string | shadowsocks 可选 | shadowsocks，缺省继承 inbound method |
+| `flow` | string | 否 | vless，支持 `xtls-rprx-vision` |
+| `alter_id` | int | 否 | vmess，`0` 表示 VMess AEAD |
 | `remark` | string | 订阅启用时建议 | 订阅展示名 |
 | `tag` | string | 否 | 订阅 tag 覆盖 |
 
@@ -226,16 +230,37 @@ traffic:
 | 字段 | 类型 | 必填 | 适用 |
 | --- | --- | --- | --- |
 | `name` | string | 是 | 所有类型 |
-| `type` | string | 是 | `direct`、`block`、`shadowsocks`、`vmess`、`trojan`、`hysteria2`、`socks5`、`http` |
+| `type` | string | 是 | `direct`、`block`、`shadowsocks`、`vmess`、`vless`、`anytls`、`trojan`、`hysteria2`、`socks5`、`http` |
 | `server` | string | 远端类型必填 | 远端类型 |
 | `port` | int | 远端类型必填 | 远端类型 |
-| `uuid` | string | vmess 必填 | vmess |
-| `password` | string | shadowsocks/trojan/hysteria2 可必填 | 对应协议 |
+| `uuid` | string | vmess/vless 必填 | vmess、vless |
+| `password` | string | shadowsocks/anytls/trojan/hysteria2 可必填 | 对应协议 |
 | `method` | string | shadowsocks 必填 | shadowsocks |
+| `security` | string | 否 | vmess 加密参数，Surge 输出为 `encrypt-method` |
+| `flow` | string | 否 | vless，支持 `xtls-rprx-vision` |
+| `alter_id` | int | 否 | vmess，`0` 表示 VMess AEAD |
 | `auth.username` | string | socks5/http 可选 | socks5/http |
 | `auth.password` | string | socks5/http 可选 | socks5/http |
-| `tls.enabled` | bool | 否 | 支持 TLS 的远端类型 |
-| `network` | string | vmess 可选 | `tcp`、`ws` 等 |
+| `tls.enabled` | bool | AnyTLS 必填 | 支持 TLS 的远端类型；AnyTLS 必须为 `true` |
+| `network` | string | vmess 可选 | 仅表示 VMess 底层网络，支持 `tcp`、`udp`；V2Ray transport 必须写入 `transport.type` |
+| `transport` | object | 否 | VMess/VLESS 的 V2Ray transport 配置 |
+
+`transport` 字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | string | 是 | `http`、`ws`、`quic`、`grpc`、`httpupgrade` |
+| `host` | string | 否 | HTTPUpgrade 或 WebSocket Host |
+| `hosts` | string list | 否 | HTTP transport 的 host 列表 |
+| `path` | string | 否 | HTTP/WebSocket/HTTPUpgrade 请求路径 |
+| `method` | string | 否 | HTTP transport 请求方法 |
+| `headers` | object | 否 | HTTP/WebSocket/HTTPUpgrade 附加 header |
+| `idle_timeout` | duration string | 否 | HTTP/gRPC idle timeout |
+| `ping_timeout` | duration string | 否 | HTTP/gRPC ping timeout |
+| `max_early_data` | int | 否 | WebSocket early data 大小 |
+| `early_data_header_name` | string | 否 | WebSocket early data header |
+| `service_name` | string | 否 | gRPC service name |
+| `permit_without_stream` | bool | 否 | gRPC keepalive 选项 |
 
 `Group` 字段：
 
@@ -416,6 +441,7 @@ Surge Managed Config：
 - `public_base_url` 为空时使用当前请求 URL。
 - `public_base_url` 非空且 token 模式时使用 `/surge/:token/:user`。
 - `public_base_url` 非空且 none 模式时使用 `/surge/:user`。
+- Surge 输出仅保留 Surge 支持的协议；当前会输出 `vmess`、`anytls`、`shadowsocks`、`socks5`、`http`，并跳过 `vless` 等不支持协议。VMess WebSocket 会输出 `ws`、`ws-path`、`ws-headers`，`alter_id=0` 时输出 `vmess-aead=true`。
 
 Watcher：
 
@@ -462,19 +488,24 @@ nodes:
 | --- | --- | --- | --- |
 | `id` | string | 是 | 全局唯一 |
 | `user` | string | 是 | HTTP 路由过滤用户 |
-| `protocol` | string | 是 | `vmess`、`shadowsocks`、`socks5`、`http`、`sing-box` |
+| `protocol` | string | 是 | `vmess`、`vless`、`anytls`、`shadowsocks`、`socks5`、`http`、`sing-box` |
 | `server` | string | 条件必填 | 为空时使用文件级 `external_host` |
 | `port` | int | 是 | `1-65535` |
 | `tag` | string | 是 | 唯一 tag |
 | `remark` | string | 是 | 客户端展示名 |
 | `region` | string | 否 | 两位大写字母 |
-| `uuid` | string | vmess 必填 | UUID |
-| `network` | string | vmess 必填 | `tcp`、`ws` 等 |
+| `uuid` | string | vmess/vless 必填 | UUID |
+| `network` | string | 否 | VMess 底层网络，支持 `tcp`、`udp`；V2Ray transport 必须写入 `transport.type` |
+| `security` | string | 否 | VMess 加密参数 |
+| `flow` | string | 否 | VLESS flow |
+| `alter_id` | int | 否 | VMess alterId，`0` 表示 AEAD |
 | `method` | string | shadowsocks 必填 | 加密方法 |
-| `password` | string | shadowsocks 必填 | 密码 |
+| `password` | string | shadowsocks/anytls 必填 | 密码 |
 | `auth.type` | string | socks5/http 必填 | `noauth`、`password` |
 | `auth.username` | string | password 必填 | 用户名 |
 | `auth.password` | string | password 必填 | 密码 |
+| `tls.enabled` | bool | AnyTLS 必填 | AnyTLS 必须为 `true`，其他协议按需启用 |
+| `transport` | object | 否 | VMess/VLESS 的 V2Ray transport 配置 |
 | `udp` | bool | 否 | 显式配置时输出到支持该字段的客户端 |
 | `native` | object | sing-box 必填 | sing-box native node 原始片段 |
 

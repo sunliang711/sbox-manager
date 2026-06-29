@@ -101,6 +101,8 @@ type Inbound struct {
 	Tag          string             `yaml:"tag" json:"tag"`
 	UDP          bool               `yaml:"udp" json:"udp"`
 	Method       string             `yaml:"method,omitempty" json:"method,omitempty"`
+	TLS          TLSConfig          `yaml:"tls" json:"tls"`
+	Transport    TransportConfig    `yaml:"transport" json:"transport"`
 	Auth         AuthConfig         `yaml:"auth" json:"auth"`
 	Users        []InboundUser      `yaml:"users" json:"users"`
 	Subscription SubscriptionConfig `yaml:"subscription" json:"subscription"`
@@ -119,6 +121,8 @@ type InboundUser struct {
 	UUID     string `yaml:"uuid" json:"uuid"`
 	Password string `yaml:"password" json:"password"`
 	Method   string `yaml:"method" json:"method"`
+	Flow     string `yaml:"flow" json:"flow"`
+	AlterID  int    `yaml:"alter_id" json:"alter_id"`
 	Remark   string `yaml:"remark" json:"remark"`
 	Tag      string `yaml:"tag" json:"tag"`
 }
@@ -134,21 +138,41 @@ type SubscriptionConfig struct {
 
 // Outbound 表示出站代理或直连目标。
 type Outbound struct {
-	Name     string     `yaml:"name" json:"name"`
-	Type     string     `yaml:"type" json:"type"`
-	Server   string     `yaml:"server" json:"server"`
-	Port     int        `yaml:"port" json:"port"`
-	UUID     string     `yaml:"uuid" json:"uuid"`
-	Password string     `yaml:"password" json:"password"`
-	Method   string     `yaml:"method" json:"method"`
-	Auth     AuthConfig `yaml:"auth" json:"auth"`
-	TLS      TLSConfig  `yaml:"tls" json:"tls"`
-	Network  string     `yaml:"network" json:"network"`
+	Name      string          `yaml:"name" json:"name"`
+	Type      string          `yaml:"type" json:"type"`
+	Server    string          `yaml:"server" json:"server"`
+	Port      int             `yaml:"port" json:"port"`
+	UUID      string          `yaml:"uuid" json:"uuid"`
+	Password  string          `yaml:"password" json:"password"`
+	Method    string          `yaml:"method" json:"method"`
+	Security  string          `yaml:"security" json:"security"`
+	Flow      string          `yaml:"flow" json:"flow"`
+	AlterID   int             `yaml:"alter_id" json:"alter_id"`
+	Auth      AuthConfig      `yaml:"auth" json:"auth"`
+	TLS       TLSConfig       `yaml:"tls" json:"tls"`
+	Network   string          `yaml:"network" json:"network"`
+	Transport TransportConfig `yaml:"transport" json:"transport"`
 }
 
-// TLSConfig 表示出站连接的 TLS 开关。
+// TLSConfig 表示连接的 TLS 开关。
 type TLSConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
+// TransportConfig 表示 VMess/VLESS 使用的 V2Ray transport 配置。
+type TransportConfig struct {
+	Type                string            `yaml:"type" json:"type,omitempty"`
+	Host                string            `yaml:"host" json:"host,omitempty"`
+	Hosts               []string          `yaml:"hosts" json:"hosts,omitempty"`
+	Path                string            `yaml:"path" json:"path,omitempty"`
+	Method              string            `yaml:"method" json:"method,omitempty"`
+	Headers             map[string]string `yaml:"headers" json:"headers,omitempty"`
+	IdleTimeout         string            `yaml:"idle_timeout" json:"idle_timeout,omitempty"`
+	PingTimeout         string            `yaml:"ping_timeout" json:"ping_timeout,omitempty"`
+	MaxEarlyData        int               `yaml:"max_early_data" json:"max_early_data,omitempty"`
+	EarlyDataHeaderName string            `yaml:"early_data_header_name" json:"early_data_header_name,omitempty"`
+	ServiceName         string            `yaml:"service_name" json:"service_name,omitempty"`
+	PermitWithoutStream bool              `yaml:"permit_without_stream" json:"permit_without_stream,omitempty"`
 }
 
 // Group 表示 selector 或 urltest 出站集合。
@@ -229,21 +253,26 @@ type SubscriptionInput struct {
 
 // SubscriptionNode 表示一个订阅节点。
 type SubscriptionNode struct {
-	ID       string                 `yaml:"id" json:"id"`
-	User     string                 `yaml:"user" json:"user"`
-	Protocol string                 `yaml:"protocol" json:"protocol"`
-	Server   string                 `yaml:"server" json:"server"`
-	Port     int                    `yaml:"port" json:"port"`
-	Tag      string                 `yaml:"tag" json:"tag"`
-	Remark   string                 `yaml:"remark" json:"remark"`
-	Region   string                 `yaml:"region" json:"region"`
-	UUID     string                 `yaml:"uuid" json:"uuid"`
-	Network  string                 `yaml:"network" json:"network"`
-	Method   string                 `yaml:"method" json:"method"`
-	Password string                 `yaml:"password" json:"password"`
-	Auth     AuthConfig             `yaml:"auth" json:"auth"`
-	UDP      bool                   `yaml:"udp" json:"udp"`
-	Native   map[string]interface{} `yaml:"native" json:"native"`
+	ID        string                 `yaml:"id" json:"id"`
+	User      string                 `yaml:"user" json:"user"`
+	Protocol  string                 `yaml:"protocol" json:"protocol"`
+	Server    string                 `yaml:"server" json:"server"`
+	Port      int                    `yaml:"port" json:"port"`
+	Tag       string                 `yaml:"tag" json:"tag"`
+	Remark    string                 `yaml:"remark" json:"remark"`
+	Region    string                 `yaml:"region" json:"region"`
+	UUID      string                 `yaml:"uuid" json:"uuid"`
+	Network   string                 `yaml:"network" json:"network"`
+	Security  string                 `yaml:"security" json:"security"`
+	Flow      string                 `yaml:"flow" json:"flow"`
+	AlterID   int                    `yaml:"alter_id" json:"alter_id"`
+	Method    string                 `yaml:"method" json:"method"`
+	Password  string                 `yaml:"password" json:"password"`
+	Auth      AuthConfig             `yaml:"auth" json:"auth"`
+	TLS       TLSConfig              `yaml:"tls" json:"tls"`
+	Transport TransportConfig        `yaml:"transport" json:"transport"`
+	UDP       bool                   `yaml:"udp" json:"udp"`
+	Native    map[string]interface{} `yaml:"native" json:"native"`
 }
 
 // SubscriptionIndex 表示订阅服务加载后的索引骨架。

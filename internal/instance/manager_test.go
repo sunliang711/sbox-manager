@@ -47,7 +47,26 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read instance: %v", err)
 	}
-	for _, want := range []string{"# 可用模板:", "# api:", "# inbounds:", "# 订阅字段示例:"} {
+	for _, want := range []string{
+		"# 可用模板:",
+		"# api:",
+		"# inbounds:",
+		"# 订阅字段示例:",
+		"# 协议模板参考",
+		"# outbounds:",
+		"#     type: vmess",
+		"#     type: vless",
+		"#     type: anytls",
+		"#     type: shadowsocks",
+		"#     type: socks5",
+		"#     type: http",
+		"#     type: direct",
+		"#     type: block",
+		"#     type: trojan",
+		"#     type: hysteria2",
+		"#       type: ws",
+		"#       type: httpupgrade",
+	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("instance missing comment %q:\n%s", want, data)
 		}

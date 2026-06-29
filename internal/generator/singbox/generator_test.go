@@ -75,6 +75,144 @@ func TestBuildSubscriptionInputsRequiresExternalHost(t *testing.T) {
 	}
 }
 
+// TestGenerateSupportsVLESSAnyTLSAndTransports 验证新增协议和 transport 能生成 sing-box JSON。
+func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "vless-main",
+			Type:   "vless",
+			Listen: "0.0.0.0",
+			Port:   24101,
+			TLS:    domain.TLSConfig{Enabled: true},
+			Transport: domain.TransportConfig{
+				Type:        "grpc",
+				ServiceName: "TunService",
+			},
+			Users: []domain.InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+					Flow: "xtls-rprx-vision",
+				},
+			},
+		},
+		{
+			Name:   "anytls-main",
+			Type:   "anytls",
+			Listen: "0.0.0.0",
+			Port:   24102,
+			TLS:    domain.TLSConfig{Enabled: true},
+			Users: []domain.InboundUser{
+				{
+					Name:     "alice",
+					Password: "change-me",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []domain.Outbound{
+		{
+			Name:   "vless-upstream",
+			Type:   "vless",
+			Server: "vless.example.com",
+			Port:   443,
+			UUID:   "22222222-2222-4222-8222-222222222222",
+			Transport: domain.TransportConfig{
+				Type: "httpupgrade",
+				Host: "vless.example.com",
+				Path: "/upgrade",
+			},
+		},
+		{
+			Name:     "anytls-upstream",
+			Type:     "anytls",
+			Server:   "anytls.example.com",
+			Port:     443,
+			Password: "change-me",
+			TLS:      domain.TLSConfig{Enabled: true},
+		},
+	}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "vless-upstream"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	for _, want := range []string{`"type": "vless"`, `"type": "anytls"`, `"type": "grpc"`, `"service_name": "TunService"`, `"type": "httpupgrade"`, `"path": "/upgrade"`, `"flow": "xtls-rprx-vision"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("generated config missing %s: %s", want, output)
+		}
+	}
+}
+
+// TestBuildSubscriptionInputIncludesNewProtocolFields 验证 inbound 订阅节点保留新增协议字段。
+func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "vless-main",
+			Type:   "vless",
+			Listen: "0.0.0.0",
+			Port:   24101,
+			Transport: domain.TransportConfig{
+				Type: "ws",
+				Path: "/ws",
+			},
+			Users: []domain.InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+					Flow: "xtls-rprx-vision",
+				},
+			},
+			Subscription: domain.SubscriptionConfig{
+				Enabled: true,
+				User:    "alice",
+				Remark:  "US VLESS",
+				Region:  "US",
+			},
+		},
+		{
+			Name:   "anytls-main",
+			Type:   "anytls",
+			Listen: "0.0.0.0",
+			Port:   24102,
+			TLS:    domain.TLSConfig{Enabled: true},
+			Users: []domain.InboundUser{
+				{
+					Name:     "alice",
+					Password: "change-me",
+				},
+			},
+			Subscription: domain.SubscriptionConfig{
+				Enabled: true,
+				User:    "alice",
+				Remark:  "US AnyTLS",
+				Region:  "US",
+			},
+		},
+	}
+	domain.ApplyInstanceDefaults(&instance)
+
+	input, err := BuildSubscriptionInput(global, instance, testTime())
+	if err != nil {
+		t.Fatalf("build subscription input: %v", err)
+	}
+	if len(input.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(input.Nodes))
+	}
+	if input.Nodes[0].Protocol != "vless" || input.Nodes[0].Transport.Type != "ws" || input.Nodes[0].Flow != "xtls-rprx-vision" {
+		t.Fatalf("vless node missing fields: %+v", input.Nodes[0])
+	}
+	if input.Nodes[1].Protocol != "anytls" || input.Nodes[1].Password != "change-me" || !input.Nodes[1].TLS.Enabled {
+		t.Fatalf("anytls node missing fields: %+v", input.Nodes[1])
+	}
+}
+
 // testConfig 返回生成器测试使用的稳定配置。
 func testConfig() (domain.GlobalConfig, domain.Instance) {
 	global := domain.DefaultGlobalConfig()

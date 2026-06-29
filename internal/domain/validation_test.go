@@ -142,6 +142,183 @@ func TestUnsupportedTypesFail(t *testing.T) {
 	}
 }
 
+// TestVLESSAnyTLSAndTransportsValidate 验证新增协议和官方 V2Ray transport 类型可通过校验。
+func TestVLESSAnyTLSAndTransportsValidate(t *testing.T) {
+	for _, transportType := range []string{"http", "ws", "quic", "grpc", "httpupgrade"} {
+		global := DefaultGlobalConfig()
+		instance := validInstance("edge-"+transportType, 24000)
+		instance.Inbounds = []Inbound{
+			{
+				Name:   "vless-main",
+				Type:   "vless",
+				Listen: "0.0.0.0",
+				Port:   24000,
+				Transport: TransportConfig{
+					Type: transportType,
+				},
+				Users: []InboundUser{
+					{
+						Name: "alice",
+						UUID: "11111111-1111-4111-8111-111111111111",
+						Flow: "xtls-rprx-vision",
+					},
+				},
+			},
+			{
+				Name:   "anytls-main",
+				Type:   "anytls",
+				Listen: "0.0.0.0",
+				Port:   24001,
+				TLS:    TLSConfig{Enabled: true},
+				Users: []InboundUser{
+					{
+						Name:     "alice",
+						Password: "change-me",
+					},
+				},
+			},
+		}
+		instance.Outbounds = []Outbound{
+			{
+				Name: "direct",
+				Type: "direct",
+			},
+			{
+				Name:   "vless-upstream",
+				Type:   "vless",
+				Server: "vless.example.com",
+				Port:   443,
+				UUID:   "22222222-2222-4222-8222-222222222222",
+				Transport: TransportConfig{
+					Type: transportType,
+				},
+			},
+			{
+				Name:     "anytls-upstream",
+				Type:     "anytls",
+				Server:   "anytls.example.com",
+				Port:     443,
+				Password: "change-me",
+				TLS:      TLSConfig{Enabled: true},
+			},
+		}
+		instance.Route = RouteConfig{Default: "direct"}
+		ApplyInstanceDefaults(&instance)
+
+		if err := ValidateInstance(global, &instance); err != nil {
+			t.Fatalf("transport %s should validate: %v", transportType, err)
+		}
+	}
+}
+
+// TestInvalidTransportFails 验证未知 V2Ray transport 类型会失败。
+func TestInvalidTransportFails(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Inbounds[0].Transport = TransportConfig{Type: "mkcp"}
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected invalid transport error")
+	}
+	if !strings.Contains(err.Error(), "mkcp") {
+		t.Fatalf("expected transport type in error: %v", err)
+	}
+}
+
+// TestVMessNetworkRejectsTransportName 验证 network 不能混用 V2Ray transport 类型。
+func TestVMessNetworkRejectsTransportName(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Outbounds = []Outbound{
+		{
+			Name:    "vmess-upstream",
+			Type:    "vmess",
+			Server:  "vmess.example.com",
+			Port:    443,
+			UUID:    "22222222-2222-4222-8222-222222222222",
+			Network: "ws",
+		},
+	}
+	instance.Route = RouteConfig{Default: "vmess-upstream"}
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected invalid vmess network error")
+	}
+	if !strings.Contains(err.Error(), "network") {
+		t.Fatalf("expected network error, got %v", err)
+	}
+}
+
+// TestAnyTLSRequiresTLS 验证 AnyTLS inbound/outbound 必须启用 TLS。
+func TestAnyTLSRequiresTLS(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Inbounds = []Inbound{
+		{
+			Name:   "anytls-main",
+			Type:   "anytls",
+			Listen: "0.0.0.0",
+			Port:   24000,
+			Users: []InboundUser{
+				{
+					Name:     "alice",
+					Password: "change-me",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []Outbound{
+		{
+			Name:     "anytls-upstream",
+			Type:     "anytls",
+			Server:   "anytls.example.com",
+			Port:     443,
+			Password: "change-me",
+		},
+	}
+	instance.Route = RouteConfig{Default: "anytls-upstream"}
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected anytls tls error")
+	}
+	if !strings.Contains(err.Error(), "tls.enabled") {
+		t.Fatalf("expected tls.enabled error, got %v", err)
+	}
+}
+
+// TestVMessVLESSRejectCrossProtocolUserFields 验证 VMess/VLESS 用户字段不会串协议。
+func TestVMessVLESSRejectCrossProtocolUserFields(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Inbounds[0].Users[0].Flow = "xtls-rprx-vision"
+	instance.Inbounds = append(instance.Inbounds, Inbound{
+		Name:   "vless-main",
+		Type:   "vless",
+		Listen: "0.0.0.0",
+		Port:   24001,
+		Users: []InboundUser{
+			{
+				Name:    "alice",
+				UUID:    "22222222-2222-4222-8222-222222222222",
+				AlterID: 1,
+			},
+		},
+	})
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected cross protocol field errors")
+	}
+	for _, want := range []string{"flow", "alter_id"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %s error, got %v", want, err)
+		}
+	}
+}
+
 // validInstance 返回可通过校验的 instance fixture。
 func validInstance(name string, port int) Instance {
 	instance := DefaultInstance(DefaultGlobalConfig())

@@ -94,14 +94,38 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 		udp := inbound.UDP
 		result.UDP = &udp
 	}
+	if inbound.TLS.Enabled || inbound.Type == "anytls" {
+		result.TLS = &TLS{Enabled: true}
+	}
+	if inboundSupportsTransport(inbound.Type) {
+		result.Transport = convertTransport(inbound.Transport)
+	}
 
 	switch inbound.Type {
 	case "vmess":
 		result.Users = make([]InboundUser, 0, len(inbound.Users))
 		for _, user := range inbound.Users {
 			result.Users = append(result.Users, InboundUser{
+				Name:    user.Name,
+				UUID:    user.UUID,
+				AlterID: user.AlterID,
+			})
+		}
+	case "vless":
+		result.Users = make([]InboundUser, 0, len(inbound.Users))
+		for _, user := range inbound.Users {
+			result.Users = append(result.Users, InboundUser{
 				Name: user.Name,
 				UUID: user.UUID,
+				Flow: user.Flow,
+			})
+		}
+	case "anytls":
+		result.Users = make([]InboundUser, 0, len(inbound.Users))
+		for _, user := range inbound.Users {
+			result.Users = append(result.Users, InboundUser{
+				Name:     user.Name,
+				Password: user.Password,
 			})
 		}
 	case "shadowsocks":
@@ -149,13 +173,20 @@ func convertOutbound(outbound domain.Outbound) (Outbound, error) {
 		UUID:       outbound.UUID,
 		Password:   outbound.Password,
 		Method:     outbound.Method,
-		Network:    outbound.Network,
 	}
-	if outbound.TLS.Enabled {
+	if outbound.Type == "vmess" {
+		result.Network = outbound.Network
+		result.Security = outbound.Security
+		result.AlterID = outbound.AlterID
+	}
+	if outbound.Type == "vless" {
+		result.Flow = outbound.Flow
+	}
+	if outbound.TLS.Enabled || outbound.Type == "anytls" {
 		result.TLS = &TLS{Enabled: true}
 	}
-	if outbound.Network != "" && outbound.Network != "tcp" && outbound.Type == "vmess" {
-		result.Transport = &Transport{Type: outbound.Network}
+	if outboundSupportsTransport(outbound.Type) {
+		result.Transport = convertTransport(outbound.Transport)
 	}
 	if outbound.Auth.Type == "password" {
 		result.Username = outbound.Auth.Username
@@ -163,7 +194,7 @@ func convertOutbound(outbound domain.Outbound) (Outbound, error) {
 	}
 
 	switch outbound.Type {
-	case "direct", "block", "shadowsocks", "vmess", "trojan", "hysteria2", "socks5", "http":
+	case "direct", "block", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http":
 		return result, nil
 	default:
 		return Outbound{}, fmt.Errorf("不支持的 outbound type %q", outbound.Type)
@@ -211,6 +242,41 @@ func convertRouteRule(rule domain.RouteRule) RouteRule {
 		converted.Geosite = values
 	}
 	return converted
+}
+
+// convertTransport 将领域 transport 转换为 sing-box V2Ray transport 配置。
+func convertTransport(transport domain.TransportConfig) *Transport {
+	if transport.Type == "" {
+		return nil
+	}
+	result := &Transport{
+		Type:                transport.Type,
+		Path:                transport.Path,
+		Method:              transport.Method,
+		Headers:             transport.Headers,
+		IdleTimeout:         transport.IdleTimeout,
+		PingTimeout:         transport.PingTimeout,
+		MaxEarlyData:        transport.MaxEarlyData,
+		EarlyDataHeaderName: transport.EarlyDataHeaderName,
+		ServiceName:         transport.ServiceName,
+		PermitWithoutStream: transport.PermitWithoutStream,
+	}
+	if transport.Type == "http" && len(transport.Hosts) > 0 {
+		result.Host = append([]string(nil), transport.Hosts...)
+	} else if transport.Host != "" {
+		result.Host = transport.Host
+	}
+	return result
+}
+
+// inboundSupportsTransport 判断 inbound 协议是否支持 V2Ray transport。
+func inboundSupportsTransport(inboundType string) bool {
+	return inboundType == "vmess" || inboundType == "vless"
+}
+
+// outboundSupportsTransport 判断 outbound 协议是否支持 V2Ray transport。
+func outboundSupportsTransport(outboundType string) bool {
+	return outboundType == "vmess" || outboundType == "vless"
 }
 
 // buildExperimental 根据 instance API 配置生成 sing-box experimental 片段。

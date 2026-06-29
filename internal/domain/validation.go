@@ -403,7 +403,7 @@ func validateSubscriptionNode(path string, inputExternalHost string, node Subscr
 	} else {
 		validateSafeName(path+".user", node.User, errs)
 	}
-	if !allowedValue(node.Protocol, "vmess", "shadowsocks", "socks5", "http", "sing-box") {
+	if !allowedValue(node.Protocol, "vmess", "vless", "anytls", "shadowsocks", "socks5", "http", "sing-box") {
 		errs.Add(path+".protocol", "不支持的 protocol %q", node.Protocol)
 		return
 	}
@@ -435,8 +435,33 @@ func validateSubscriptionNode(path string, inputExternalHost string, node Subscr
 		} else if !uuidPattern.MatchString(node.UUID) {
 			errs.Add(path+".uuid", "必须是 UUID")
 		}
-		if strings.TrimSpace(node.Network) == "" {
-			errs.Add(path+".network", "vmess 节点必须配置 network")
+		validateVMessNetwork(path+".network", node.Network, errs)
+		validateTransportConfig(path+".transport", node.Transport, errs)
+		if strings.TrimSpace(node.Flow) != "" {
+			errs.Add(path+".flow", "vmess 节点不支持 flow")
+		}
+	case "vless":
+		if strings.TrimSpace(node.UUID) == "" {
+			errs.Add(path+".uuid", "vless 节点必须配置 uuid")
+		} else if !uuidPattern.MatchString(node.UUID) {
+			errs.Add(path+".uuid", "必须是 UUID")
+		}
+		if strings.TrimSpace(node.Network) != "" {
+			errs.Add(path+".network", "vless 节点不支持 network")
+		}
+		validateTransportConfig(path+".transport", node.Transport, errs)
+		if strings.TrimSpace(node.Flow) != "" && !allowedValue(node.Flow, "xtls-rprx-vision") {
+			errs.Add(path+".flow", "不支持的 vless flow %q", node.Flow)
+		}
+		if node.AlterID != 0 {
+			errs.Add(path+".alter_id", "vless 节点不支持 alter_id")
+		}
+	case "anytls":
+		if strings.TrimSpace(node.Password) == "" {
+			errs.Add(path+".password", "anytls 节点必须配置 password")
+		}
+		if !node.TLS.Enabled {
+			errs.Add(path+".tls.enabled", "anytls 节点必须启用 TLS")
 		}
 	case "shadowsocks":
 		if strings.TrimSpace(node.Method) == "" {
@@ -469,6 +494,32 @@ func validateSubscriptionAuth(path string, auth AuthConfig, errs *ValidationErro
 	if strings.TrimSpace(auth.Password) == "" {
 		errs.Add(path+".password", "password 鉴权必须配置 password")
 	}
+}
+
+// validateTransportConfig 校验 VMess/VLESS 的 V2Ray transport 类型和关键字段。
+func validateTransportConfig(path string, transport TransportConfig, errs *ValidationErrors) {
+	if strings.TrimSpace(transport.Type) == "" {
+		return
+	}
+	if !allowedValue(transport.Type, "http", "ws", "quic", "grpc", "httpupgrade") {
+		errs.Add(path+".type", "不支持的 transport type %q", transport.Type)
+		return
+	}
+}
+
+// validateVMessNetwork 校验 VMess network 只表达底层网络，不承载 transport 类型。
+func validateVMessNetwork(path string, network string, errs *ValidationErrors) {
+	if strings.TrimSpace(network) == "" {
+		return
+	}
+	if !allowedValue(network, "tcp", "udp") {
+		errs.Add(path, "vmess network 仅支持 tcp 或 udp")
+	}
+}
+
+// inboundSupportsTransport 判断 inbound 协议是否支持 V2Ray transport。
+func inboundSupportsTransport(inboundType string) bool {
+	return inboundType == "vmess" || inboundType == "vless"
 }
 
 // validateSubscriptionMergeRules 校验多 input 合并后的唯一性约束。
@@ -569,7 +620,7 @@ func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationE
 			errs.Add(path+".name", "inbound 名称重复")
 		}
 		names[inbound.Name] = struct{}{}
-		if !allowedValue(inbound.Type, "vmess", "shadowsocks", "socks5", "http") {
+		if !allowedValue(inbound.Type, "vmess", "vless", "anytls", "shadowsocks", "socks5", "http") {
 			errs.Add(path+".type", "不支持的 inbound type %q", inbound.Type)
 			continue
 		}
@@ -582,6 +633,12 @@ func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationE
 		}
 		validateHost(path+".listen", inbound.Listen, errs)
 		validatePort(path+".port", inbound.Port, errs)
+		if inbound.Type == "anytls" && !inbound.TLS.Enabled {
+			errs.Add(path+".tls.enabled", "anytls inbound 必须启用 TLS")
+		}
+		if inboundSupportsTransport(inbound.Type) {
+			validateTransportConfig(path+".transport", inbound.Transport, errs)
+		}
 		validateInboundAuth(global, path, inbound, errs)
 		validateInboundUsers(path, inbound, errs)
 		validateInboundSubscription(path, inbound, errs)
@@ -613,7 +670,7 @@ func validateInboundAuth(global GlobalConfig, path string, inbound Inbound, errs
 	}
 }
 
-// validateInboundUsers 校验 vmess/shadowsocks 用户凭据。
+// validateInboundUsers 校验 inbound 用户凭据。
 func validateInboundUsers(path string, inbound Inbound, errs *ValidationErrors) {
 	switch inbound.Type {
 	case "vmess":
@@ -625,6 +682,41 @@ func validateInboundUsers(path string, inbound Inbound, errs *ValidationErrors) 
 			validateSafeName(userPath+".name", user.Name, errs)
 			if strings.TrimSpace(user.UUID) == "" {
 				errs.Add(userPath+".uuid", "vmess 用户必须配置 uuid")
+			} else if !uuidPattern.MatchString(user.UUID) {
+				errs.Add(userPath+".uuid", "必须是 UUID")
+			}
+			if strings.TrimSpace(user.Flow) != "" {
+				errs.Add(userPath+".flow", "vmess 用户不支持 flow")
+			}
+		}
+	case "vless":
+		if len(inbound.Users) == 0 {
+			errs.Add(path+".users", "vless inbound 必须配置用户")
+		}
+		for index, user := range inbound.Users {
+			userPath := fmt.Sprintf("%s.users[%d]", path, index)
+			validateSafeName(userPath+".name", user.Name, errs)
+			if strings.TrimSpace(user.UUID) == "" {
+				errs.Add(userPath+".uuid", "vless 用户必须配置 uuid")
+			} else if !uuidPattern.MatchString(user.UUID) {
+				errs.Add(userPath+".uuid", "必须是 UUID")
+			}
+			if strings.TrimSpace(user.Flow) != "" && !allowedValue(user.Flow, "xtls-rprx-vision") {
+				errs.Add(userPath+".flow", "不支持的 vless flow %q", user.Flow)
+			}
+			if user.AlterID != 0 {
+				errs.Add(userPath+".alter_id", "vless 用户不支持 alter_id")
+			}
+		}
+	case "anytls":
+		if len(inbound.Users) == 0 {
+			errs.Add(path+".users", "anytls inbound 必须配置用户")
+		}
+		for index, user := range inbound.Users {
+			userPath := fmt.Sprintf("%s.users[%d]", path, index)
+			validateSafeName(userPath+".name", user.Name, errs)
+			if strings.TrimSpace(user.Password) == "" {
+				errs.Add(userPath+".password", "anytls 用户必须配置 password")
 			}
 		}
 	case "shadowsocks":
@@ -679,7 +771,7 @@ func validateOutbounds(outbounds []Outbound, errs *ValidationErrors) map[string]
 			errs.Add(path+".name", "outbound 名称重复")
 		}
 		names[outbound.Name] = struct{}{}
-		if !allowedValue(outbound.Type, "direct", "block", "shadowsocks", "vmess", "trojan", "hysteria2", "socks5", "http") {
+		if !allowedValue(outbound.Type, "direct", "block", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http") {
 			errs.Add(path+".type", "不支持的 outbound type %q", outbound.Type)
 			continue
 		}
@@ -702,6 +794,25 @@ func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErro
 		if strings.TrimSpace(outbound.UUID) == "" {
 			errs.Add(path+".uuid", "vmess outbound 必须配置 uuid")
 		}
+		validateVMessNetwork(path+".network", outbound.Network, errs)
+		if strings.TrimSpace(outbound.Flow) != "" {
+			errs.Add(path+".flow", "vmess outbound 不支持 flow")
+		}
+		validateTransportConfig(path+".transport", outbound.Transport, errs)
+	case "vless":
+		if strings.TrimSpace(outbound.UUID) == "" {
+			errs.Add(path+".uuid", "vless outbound 必须配置 uuid")
+		}
+		if strings.TrimSpace(outbound.Network) != "" {
+			errs.Add(path+".network", "vless outbound 不支持 network")
+		}
+		if strings.TrimSpace(outbound.Flow) != "" && !allowedValue(outbound.Flow, "xtls-rprx-vision") {
+			errs.Add(path+".flow", "不支持的 vless flow %q", outbound.Flow)
+		}
+		if outbound.AlterID != 0 {
+			errs.Add(path+".alter_id", "vless outbound 不支持 alter_id")
+		}
+		validateTransportConfig(path+".transport", outbound.Transport, errs)
 	case "shadowsocks":
 		if strings.TrimSpace(outbound.Method) == "" {
 			errs.Add(path+".method", "shadowsocks outbound 必须配置 method")
@@ -709,9 +820,12 @@ func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErro
 		if strings.TrimSpace(outbound.Password) == "" {
 			errs.Add(path+".password", "shadowsocks outbound 必须配置 password")
 		}
-	case "trojan", "hysteria2":
+	case "trojan", "hysteria2", "anytls":
 		if strings.TrimSpace(outbound.Password) == "" {
 			errs.Add(path+".password", "%s outbound 必须配置 password", outbound.Type)
+		}
+		if outbound.Type == "anytls" && !outbound.TLS.Enabled {
+			errs.Add(path+".tls.enabled", "anytls outbound 必须启用 TLS")
 		}
 	case "socks5", "http":
 		validateOutboundAuth(path, outbound.Auth, errs)

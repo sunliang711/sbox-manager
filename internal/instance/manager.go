@@ -511,8 +511,192 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 #     remark: edge-us
 #     region: US
 
-`
+` + instanceProtocolTemplateComment() + "\n"
 	return append([]byte(header), data...), nil
+}
+
+// instanceProtocolTemplateComment 返回所有受支持协议的注释模板，方便用户在新实例配置中复制启用。
+func instanceProtocolTemplateComment() string {
+	const template = `协议模板参考（默认全部注释，不参与加载；启用时复制到正文 inbounds/outbounds 并去掉前缀 #）。
+inbounds:
+  - name: vmess-main # VMess 入口。
+    type: vmess
+    listen: 0.0.0.0 # 监听主机，不包含端口。
+    port: 24100
+    tag: vmess-vmess-main # 不填默认 <type>-<name>。
+    udp: true
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111 # VMess 必填 UUID。
+    subscription:
+      enabled: true # 是否导出订阅节点。
+      user: alice # 必须引用 users.name。
+      server: proxy.example.com # 为空时使用 global.external_host。
+      remark: US VMess
+      region: US
+  - name: vless-main # VLESS 入口，支持 V2Ray transport。
+    type: vless
+    listen: 0.0.0.0
+    port: 24110
+    tag: vless-vless-main
+    udp: true
+    tls:
+      enabled: true # 可按需启用 TLS。
+    transport:
+      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
+      path: /vless
+      headers:
+        Host: proxy.example.com
+    users:
+      - name: alice
+        uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填 UUID。
+        flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+    subscription:
+      enabled: true
+      user: alice
+      server: proxy.example.com
+      remark: US VLESS
+      region: US
+  - name: anytls-main # AnyTLS 入口。
+    type: anytls
+    listen: 0.0.0.0
+    port: 24120
+    tag: anytls-anytls-main
+    udp: true
+    tls:
+      enabled: true # AnyTLS 必须启用 TLS。
+    users:
+      - name: alice
+        password: change-me # AnyTLS 用户必填密码。
+    subscription:
+      enabled: true
+      user: alice
+      server: proxy.example.com
+      remark: US AnyTLS
+      region: US
+  - name: ss-main # Shadowsocks 入口。
+    type: shadowsocks
+    listen: 0.0.0.0
+    port: 24200
+    tag: shadowsocks-ss-main
+    udp: true
+    method: 2022-blake3-aes-256-gcm # 可被 users[].method 覆盖。
+    users:
+      - name: alice
+        password: change-me-32-byte-key
+        method: 2022-blake3-aes-256-gcm
+    subscription:
+      enabled: true
+      user: alice
+      server: proxy.example.com
+      remark: US Shadowsocks
+      region: US
+  - name: local-socks # SOCKS5 本地入口；公网监听建议 password。
+    type: socks5
+    listen: 127.0.0.1
+    port: 17000
+    tag: socks5-local-socks
+    udp: true
+    auth:
+      type: password # 支持 noauth、password。
+      username: alice
+      password: change-me
+  - name: local-http # HTTP 本地入口；公网监听建议 password。
+    type: http
+    listen: 127.0.0.1
+    port: 18000
+    tag: http-local-http
+    udp: false
+    auth:
+      type: password # 支持 noauth、password。
+      username: alice
+      password: change-me
+outbounds:
+  - name: direct # 直连出站，不需要 server/port。
+    type: direct
+  - name: block # 阻断出站，不需要 server/port。
+    type: block
+  - name: ss-upstream # Shadowsocks 上游。
+    type: shadowsocks
+    server: ss.example.com
+    port: 443
+    method: 2022-blake3-aes-256-gcm
+    password: change-me
+  - name: vmess-upstream # VMess 上游。
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    tls:
+      enabled: true
+    network: tcp # VMess 底层网络，仅支持 tcp、udp。
+    transport:
+      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
+      path: /vmess
+      headers:
+        Host: vmess.example.com
+  - name: vless-upstream # VLESS 上游。
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 33333333-3333-4333-8333-333333333333
+    flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+    tls:
+      enabled: true
+    transport:
+      type: httpupgrade
+      host: vless.example.com
+      path: /upgrade
+  - name: anytls-upstream # AnyTLS 上游。
+    type: anytls
+    server: anytls.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true # AnyTLS 必须启用 TLS。
+  - name: trojan-upstream # Trojan 上游。
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true
+  - name: hy2-upstream # Hysteria2 上游。
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true
+  - name: socks5-upstream # SOCKS5 上游。
+    type: socks5
+    server: socks.example.com
+    port: 1080
+    auth:
+      type: password # 可为空、noauth 或 password。
+      username: alice
+      password: change-me
+  - name: http-upstream # HTTP 上游。
+    type: http
+    server: http-proxy.example.com
+    port: 8080
+    auth:
+      type: password # 可为空、noauth 或 password。
+      username: alice
+      password: change-me`
+
+	lines := strings.Split(strings.TrimSuffix(template, "\n"), "\n")
+	var builder strings.Builder
+	for _, line := range lines {
+		if line == "" {
+			builder.WriteString("#\n")
+			continue
+		}
+		builder.WriteString("# ")
+		builder.WriteString(line)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
 }
 
 // MemberList 返回 group 成员列表。

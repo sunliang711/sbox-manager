@@ -112,6 +112,12 @@ func FilterNodesForFormat(format Format, nodes []domain.SubscriptionNode) []doma
 	}
 	filtered := make([]domain.SubscriptionNode, 0, len(nodes))
 	for _, node := range nodes {
+		if format == FormatSurge {
+			if surgeSupportsNode(node) {
+				filtered = append(filtered, node)
+			}
+			continue
+		}
 		switch node.Protocol {
 		case "vmess", "shadowsocks", "socks5", "http":
 			filtered = append(filtered, node)
@@ -219,7 +225,7 @@ func clashProxies(nodes []domain.SubscriptionNode) []ClashProxy {
 			UUID:     node.UUID,
 			Cipher:   node.Method,
 			Password: node.Password,
-			Network:  valueOrDefault(node.Network, "tcp"),
+			Network:  clashNetwork(node),
 			Username: node.Auth.Username,
 			UDP:      node.UDP,
 		}
@@ -249,7 +255,9 @@ func surgeProxyLines(nodes []domain.SubscriptionNode) []string {
 	for _, node := range nodes {
 		switch node.Protocol {
 		case "vmess":
-			lines = append(lines, fmt.Sprintf("%s = vmess, %s, %d, username=%s", node.Remark, node.Server, node.Port, node.UUID))
+			lines = append(lines, fmt.Sprintf("%s = vmess, %s, %d, username=%s%s", node.Remark, node.Server, node.Port, node.UUID, surgeVMessSuffix(node)))
+		case "anytls":
+			lines = append(lines, fmt.Sprintf("%s = anytls, %s, %d, password=%s", node.Remark, node.Server, node.Port, node.Password))
 		case "shadowsocks":
 			lines = append(lines, fmt.Sprintf("%s = ss, %s, %d, encrypt-method=%s, password=%s", node.Remark, node.Server, node.Port, node.Method, node.Password))
 		case "socks5":
@@ -332,12 +340,33 @@ func singBoxOutbound(node domain.SubscriptionNode) map[string]interface{} {
 	if node.UDP {
 		outbound["udp"] = true
 	}
+	if node.TLS.Enabled || node.Protocol == "anytls" {
+		outbound["tls"] = map[string]interface{}{"enabled": true}
+	}
+	if subscriptionNodeSupportsTransport(node.Protocol) {
+		if transport := singBoxTransport(node.Transport); len(transport) > 0 {
+			outbound["transport"] = transport
+		}
+	}
 	switch node.Protocol {
 	case "vmess":
 		outbound["uuid"] = node.UUID
+		if node.Security != "" {
+			outbound["security"] = node.Security
+		}
+		if node.AlterID != 0 {
+			outbound["alter_id"] = node.AlterID
+		}
 		if node.Network != "" {
 			outbound["network"] = node.Network
 		}
+	case "vless":
+		outbound["uuid"] = node.UUID
+		if node.Flow != "" {
+			outbound["flow"] = node.Flow
+		}
+	case "anytls":
+		outbound["password"] = node.Password
 	case "shadowsocks":
 		outbound["method"] = node.Method
 		outbound["password"] = node.Password
@@ -348,6 +377,64 @@ func singBoxOutbound(node domain.SubscriptionNode) map[string]interface{} {
 		}
 	}
 	return outbound
+}
+
+// subscriptionNodeSupportsTransport 判断订阅节点协议是否支持 V2Ray transport。
+func subscriptionNodeSupportsTransport(protocol string) bool {
+	return protocol == "vmess" || protocol == "vless"
+}
+
+// singBoxTransport 将订阅节点 transport 转换为 sing-box outbound transport 对象。
+func singBoxTransport(transport domain.TransportConfig) map[string]interface{} {
+	if transport.Type == "" {
+		return nil
+	}
+	result := map[string]interface{}{
+		"type": transport.Type,
+	}
+	if transport.Type == "http" && len(transport.Hosts) > 0 {
+		result["host"] = append([]string(nil), transport.Hosts...)
+	} else if transport.Host != "" {
+		result["host"] = transport.Host
+	}
+	if transport.Path != "" {
+		result["path"] = transport.Path
+	}
+	if transport.Method != "" {
+		result["method"] = transport.Method
+	}
+	if len(transport.Headers) > 0 {
+		result["headers"] = transport.Headers
+	}
+	if transport.IdleTimeout != "" {
+		result["idle_timeout"] = transport.IdleTimeout
+	}
+	if transport.PingTimeout != "" {
+		result["ping_timeout"] = transport.PingTimeout
+	}
+	if transport.MaxEarlyData != 0 {
+		result["max_early_data"] = transport.MaxEarlyData
+	}
+	if transport.EarlyDataHeaderName != "" {
+		result["early_data_header_name"] = transport.EarlyDataHeaderName
+	}
+	if transport.ServiceName != "" {
+		result["service_name"] = transport.ServiceName
+	}
+	if transport.PermitWithoutStream {
+		result["permit_without_stream"] = true
+	}
+	return result
+}
+
+// surgeSupportsNode 判断 Surge 是否支持该订阅节点协议。
+func surgeSupportsNode(node domain.SubscriptionNode) bool {
+	switch node.Protocol {
+	case "vmess", "anytls", "shadowsocks", "socks5", "http":
+		return true
+	default:
+		return false
+	}
 }
 
 // managedConfigURL 根据配置和请求上下文生成 Surge managed config URL。
@@ -414,6 +501,52 @@ func surgeAuthSuffix(auth domain.AuthConfig) string {
 		return ""
 	}
 	return fmt.Sprintf(", username=%s, password=%s", auth.Username, auth.Password)
+}
+
+// surgeVMessSuffix 生成 Surge VMess 的 websocket、AEAD 和加密参数。
+func surgeVMessSuffix(node domain.SubscriptionNode) string {
+	var parts []string
+	if node.Transport.Type == "ws" {
+		parts = append(parts, "ws=true")
+		if node.Transport.Path != "" {
+			parts = append(parts, "ws-path="+node.Transport.Path)
+		}
+		if len(node.Transport.Headers) > 0 {
+			parts = append(parts, "ws-headers="+formatSurgeHeaders(node.Transport.Headers))
+		}
+	}
+	if node.Security != "" {
+		parts = append(parts, "encrypt-method="+node.Security)
+	}
+	if node.AlterID == 0 {
+		parts = append(parts, "vmess-aead=true")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ", " + strings.Join(parts, ", ")
+}
+
+// formatSurgeHeaders 按稳定顺序生成 Surge ws-headers 参数。
+func formatSurgeHeaders(headers map[string]string) string {
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	values := make([]string, 0, len(keys))
+	for _, key := range keys {
+		values = append(values, key+":"+headers[key])
+	}
+	return strings.Join(values, "|")
+}
+
+// clashNetwork 为 Clash 文本订阅派生 VMess network 字段，不污染 sing-box network。
+func clashNetwork(node domain.SubscriptionNode) string {
+	if node.Transport.Type != "" {
+		return node.Transport.Type
+	}
+	return valueOrDefault(node.Network, "tcp")
 }
 
 // valueOrDefault 返回非空值或默认值。
