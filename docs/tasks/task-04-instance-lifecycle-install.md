@@ -6,8 +6,9 @@
 
 ## 范围
 
-- `init`
-- `setup`
+- `setup local`
+- `setup binary`
+- `setup all`
 - `add`
 - `example`
 - `clone`

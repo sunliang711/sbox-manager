@@ -108,7 +108,7 @@
 | cleanup | 支持 `--period hourly|daily|monthly|all`、`--dry-run`、hourly/daily/monthly 保留期和删除计数输出 |
 | check config/health | 检查 traffic 配置、数据库和采集目标 |
 | edit config | 草稿编辑，校验失败不覆盖原文件 |
-| timer install | Linux 写 systemd service/timer，macOS 写 launchd plist，且不启用、不启动 |
+| timer install | Linux 写 systemd service/timer，macOS 写 launchd plist，并启用 timer |
 | timer uninstall | 停用并删除受管 service/timer 或 plist，不删除 traffic DB |
 | timer enable/disable | 启用或禁用 hourly/daily/monthly 自动调度 |
 | timer status/logs | 展示调度状态和日志，支持 `--follow` |

@@ -682,7 +682,10 @@ func runTrafficTimerAction(cmd *cobra.Command, action string) error {
 		if err := manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer install 完成")
+		if _, err := manager.RunTrafficTimers(cmd.Context(), "enable", false); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer install 完成，已启用")
 		return err
 	case "uninstall":
 		if err := manager.UninstallTrafficTimers(cmd.Context()); err != nil {

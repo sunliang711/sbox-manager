@@ -25,80 +25,119 @@ var newResourceInstaller = func() resourceInstallerRunner {
 	return installer.NewInstaller()
 }
 
-// newSboxctlInitCommand 创建 init 命令。
-func newSboxctlInitCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "初始化 agent 环境目录和默认配置",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			options, err := getRootOptions(cmd)
-			if err != nil {
-				return err
-			}
-			externalHost, _ := cmd.Flags().GetString("external-host")
-			force, _ := cmd.Flags().GetBool("force")
-			if err := instancemgr.Init(options.baseDir, instancemgr.InitOptions{ExternalHost: externalHost, Force: force}); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "初始化完成: %s\n%s", options.baseDir, sboxctlInitNextSteps(options.baseDir))
-			return err
-		},
-	}
-}
-
 // newSboxctlSetupCommand 创建 setup 命令。
 func newSboxctlSetupCommand() *cobra.Command {
-	return &cobra.Command{
+	setup := &cobra.Command{
 		Use:   "setup",
-		Short: "初始化并安装 agent 运行依赖",
+		Short: "准备本机配置、服务和运行资源",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options, err := getRootOptions(cmd)
-			if err != nil {
-				return err
-			}
-			externalHost, _ := cmd.Flags().GetString("external-host")
-			force, _ := cmd.Flags().GetBool("force")
-			start, _ := cmd.Flags().GetBool("start")
-			if err := instancemgr.Init(options.baseDir, instancemgr.InitOptions{ExternalHost: externalHost, Force: force, AllowExisting: true}); err != nil {
-				return err
-			}
-			set, err := config.LoadAgentConfigSet(options.baseDir)
-			if err != nil {
-				return err
-			}
-			if err := newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
-				Operation: installer.OperationInstall,
-				Resource:  installer.ResourceAll,
-				Progress:  installProgress(cmd),
-			}); err != nil {
-				return err
-			}
-			manager, err := newSboxctlServiceManager(options)
-			if err != nil {
-				return err
-			}
-			if err := installSboxctlServiceFiles(cmd, manager, set, ""); err != nil {
-				return err
-			}
-			if start {
-				return runSboxctlRuntimeLifecycle(cmd, "start", nil)
-			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup 完成\n%s", sboxctlSetupNextSteps(options.baseDir))
-			return err
+			return runSboxctlSetupAll(cmd)
 		},
 	}
+	setup.AddCommand(
+		&cobra.Command{
+			Use:   "local",
+			Short: "准备本机配置目录并安装服务文件",
+			Args:  cobra.NoArgs,
+			RunE:  runSboxctlSetupLocal,
+		},
+		&cobra.Command{
+			Use:   "binary",
+			Short: "下载并安装 sing-box、geosite 和 geoip",
+			Args:  cobra.NoArgs,
+			RunE:  runSboxctlSetupBinary,
+		},
+		&cobra.Command{
+			Use:   "all",
+			Short: "执行 local 和 binary 两个 setup 阶段",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runSboxctlSetupAll(cmd)
+			},
+		},
+	)
+	return setup
 }
 
-// sboxctlInitNextSteps 返回 agent 初始化后的下一步提示。
-func sboxctlInitNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了创建实例配置，执行：sboxctl --base-dir %s add edge-us --template edge\n- 为了安装 sing-box、规则集和服务文件，执行：sudo sboxctl --base-dir %s setup\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
+// runSboxctlSetupLocal 准备本机目录、默认配置、服务文件和 traffic timer。
+func runSboxctlSetupLocal(cmd *cobra.Command, args []string) error {
+	options, err := getRootOptions(cmd)
+	if err != nil {
+		return err
+	}
+	externalHost, _ := cmd.Flags().GetString("external-host")
+	force, _ := cmd.Flags().GetBool("force")
+	if err := instancemgr.Init(options.baseDir, instancemgr.InitOptions{ExternalHost: externalHost, Force: force, AllowExisting: true}); err != nil {
+		return err
+	}
+	set, err := config.LoadAgentConfigSet(options.baseDir)
+	if err != nil {
+		return err
+	}
+	manager, err := newSboxctlServiceManager(options)
+	if err != nil {
+		return err
+	}
+	if err := installSboxctlServiceFiles(cmd, manager, set, ""); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup local 完成: %s\n", options.baseDir)
+	return err
+}
+
+// runSboxctlSetupBinary 下载并安装 agent 运行所需资源。
+func runSboxctlSetupBinary(cmd *cobra.Command, args []string) error {
+	options, err := getRootOptions(cmd)
+	if err != nil {
+		return err
+	}
+	set, err := loadSetupBinaryConfigSet(options.baseDir)
+	if err != nil {
+		return err
+	}
+	if err := newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
+		Operation: installer.OperationInstall,
+		Resource:  installer.ResourceAll,
+		Progress:  installProgress(cmd),
+	}); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "setup binary 完成")
+	return err
+}
+
+// runSboxctlSetupAll 依次执行 local 和 binary 阶段。
+func runSboxctlSetupAll(cmd *cobra.Command) error {
+	if err := runSboxctlSetupLocal(cmd, nil); err != nil {
+		return err
+	}
+	if err := runSboxctlSetupBinary(cmd, nil); err != nil {
+		return err
+	}
+	options, err := getRootOptions(cmd)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup all 完成\n%s", sboxctlSetupNextSteps(options.baseDir))
+	return err
+}
+
+// loadSetupBinaryConfigSet 加载 binary 阶段所需路径配置；缺少配置时使用默认 base-dir 路径。
+func loadSetupBinaryConfigSet(baseDir string) (*config.AgentConfigSet, error) {
+	set, err := config.LoadAgentConfigSet(baseDir)
+	if err == nil {
+		return set, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return defaultAgentConfigSetForPurgedBaseDir(baseDir)
 }
 
 // sboxctlSetupNextSteps 返回 agent setup 后的下一步提示。
 func sboxctlSetupNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 为了自动采集 traffic，执行：sudo sboxctl --base-dir %s traffic timer enable\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
+	return fmt.Sprintf("下一步：\n- 为了创建实例配置，执行：sboxctl --base-dir %s add edge-us --template edge\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
 }
 
 // newSboxctlConfigCommand 创建 agent 配置命令。
@@ -399,7 +438,14 @@ func installSboxctlServiceFiles(cmd *cobra.Command, manager *service.Manager, se
 	if err != nil {
 		return fmt.Errorf("解析 sboxctl 路径: %w", err)
 	}
-	return manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary)
+	if err := manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary); err != nil {
+		return err
+	}
+	if _, err := manager.RunTrafficTimers(cmd.Context(), "enable", false); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer enable 完成")
+	return err
 }
 
 func newSboxctlServiceUninstallCommand() *cobra.Command {

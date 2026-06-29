@@ -13,7 +13,7 @@
 
 ### Instance Service
 
-- `sboxctl --base-dir <agent-dir> init --external-host <host> --force`
+- `sboxctl --base-dir <agent-dir> setup local --external-host <host> --force`
 - `sboxctl --base-dir <agent-dir> add edge-smoke --no-edit`
 - `sboxctl --base-dir <agent-dir> service install edge-smoke`
 - `systemctl cat sbox@edge-smoke.service`，确认 `ExecStart`、`WorkingDirectory`、日志和 hardening 字段。
@@ -43,7 +43,6 @@
 - `systemctl cat sbox-traffic-daily.timer`
 - `systemctl cat sbox-traffic-monthly.service`
 - `systemctl cat sbox-traffic-monthly.timer`
-- `sboxctl --base-dir <agent-dir> traffic timer enable`
 - `sboxctl --base-dir <agent-dir> traffic timer status`
 - `sboxctl --base-dir <agent-dir> traffic timer logs`
 - `sboxctl --base-dir <agent-dir> traffic timer run hourly`
@@ -56,7 +55,7 @@
 
 ### Instance Service
 
-- `sboxctl --base-dir <agent-dir> init --external-host <host> --force`
+- `sboxctl --base-dir <agent-dir> setup local --external-host <host> --force`
 - `sboxctl --base-dir <agent-dir> add edge-smoke --no-edit`
 - `sboxctl --base-dir <agent-dir> service install edge-smoke`
 - `plutil -lint ~/Library/LaunchAgents/com.sbox-manager.edge-smoke.plist`

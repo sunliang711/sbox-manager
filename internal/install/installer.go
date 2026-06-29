@@ -33,6 +33,8 @@ const (
 const (
 	singBoxManagedMarker = ".sing-box.managed"
 	rulesManagedMarker   = ".sbox-manager-managed"
+
+	downloadProgressStepBytes = 1 << 20
 )
 
 // Source 描述受信任的内置下载源。
@@ -209,6 +211,16 @@ func (i *Installer) installOne(ctx context.Context, global domain.GlobalConfig, 
 		if len(source.Files) > 0 {
 			return fmt.Errorf("sing-box source 不支持 multi-file")
 		}
+		if options.Operation == OperationInstall && source.SHA256 != "" {
+			installed, err := singBoxSourceInstalled(global.Paths.Bin, source.SHA256, source.ArchiveMember)
+			if err != nil {
+				return err
+			}
+			if installed {
+				emitProgress(options.Progress, "%s: skip %s already installed", options.Operation, options.Resource)
+				return nil
+			}
+		}
 		data, err := i.fetch(ctx, global.Paths.Downloads, source.URL, source.SHA256, options.Progress)
 		if err != nil {
 			return err
@@ -219,13 +231,23 @@ func (i *Installer) installOne(ctx context.Context, global domain.GlobalConfig, 
 			return err
 		}
 		emitProgress(options.Progress, "%s: write %s", options.Operation, filepath.Join(global.Paths.Bin, "sing-box"))
-		if err := installSingBox(global.Paths.Bin, payload, hashBytes(payload)); err != nil {
+		if err := installSingBox(global.Paths.Bin, payload, hashBytes(payload), source.SHA256, source.ArchiveMember); err != nil {
 			return err
 		}
 		emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
 		return nil
 	case ResourceRules:
 		if len(source.Files) > 0 {
+			if options.Operation == OperationInstall {
+				installed, err := rulesFilesInstalled(global.Paths.Rules, source.Files)
+				if err != nil {
+					return err
+				}
+				if installed {
+					emitProgress(options.Progress, "%s: skip %s already installed", options.Operation, options.Resource)
+					return nil
+				}
+			}
 			if err := i.installRulesFiles(ctx, global.Paths.Downloads, global.Paths.Rules, source.Files, options.Operation, options.Progress); err != nil {
 				return err
 			}
@@ -308,7 +330,7 @@ func (i *Installer) fetch(ctx context.Context, downloadsDir string, source strin
 	var err error
 	if isRemoteSource(source) {
 		emitProgress(progress, "download: start %s", safeSourceSummary(source))
-		data, err = i.fetchRemote(ctx, downloadsDir, source)
+		data, err = i.fetchRemote(ctx, downloadsDir, source, progress)
 		if err == nil {
 			emitProgress(progress, "download: complete %s bytes=%d", safeSourceSummary(source), len(data))
 		}
@@ -335,7 +357,7 @@ func (i *Installer) fetch(ctx context.Context, downloadsDir string, source strin
 	return data, nil
 }
 
-func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source string) ([]byte, error) {
+func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source string, progress Progress) ([]byte, error) {
 	client := i.Client
 	if client == nil {
 		client = http.DefaultClient
@@ -355,15 +377,79 @@ func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source
 	if err := os.MkdirAll(downloadsDir, 0750); err != nil {
 		return nil, fmt.Errorf("创建下载目录 %s: %w", downloadsDir, err)
 	}
-	data, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取下载内容 %s: %w", source, err)
+	var buffer bytes.Buffer
+	readBuffer := make([]byte, 32*1024)
+	total := response.ContentLength
+	if total < 0 {
+		total = 0
 	}
+	var downloaded int64
+	var lastProgress int64
+	for {
+		n, readErr := response.Body.Read(readBuffer)
+		if n > 0 {
+			if _, err := buffer.Write(readBuffer[:n]); err != nil {
+				return nil, fmt.Errorf("缓存下载内容 %s: %w", source, err)
+			}
+			downloaded += int64(n)
+			if shouldEmitDownloadProgress(downloaded, lastProgress, total) {
+				emitDownloadProgress(progress, source, downloaded, total)
+				lastProgress = downloaded
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("读取下载内容 %s: %w", source, readErr)
+		}
+	}
+	if downloaded > 0 && lastProgress != downloaded {
+		emitDownloadProgress(progress, source, downloaded, total)
+	}
+	data := buffer.Bytes()
 	cachePath := filepath.Join(downloadsDir, safeCacheName(source))
 	if err := os.WriteFile(cachePath, data, 0640); err != nil {
 		return nil, fmt.Errorf("写入下载缓存 %s: %w", cachePath, err)
 	}
 	return data, nil
+}
+
+func shouldEmitDownloadProgress(downloaded int64, lastProgress int64, total int64) bool {
+	if downloaded <= 0 {
+		return false
+	}
+	if total > 0 && downloaded >= total {
+		return true
+	}
+	return downloaded-lastProgress >= downloadProgressStepBytes
+}
+
+func emitDownloadProgress(progress Progress, source string, downloaded int64, total int64) {
+	if total > 0 {
+		percent := int(float64(downloaded) * 100 / float64(total))
+		if percent > 100 {
+			percent = 100
+		}
+		emitProgress(progress, "download: progress %s %s / %s (%d%%)", safeSourceSummary(source), formatBytes(downloaded), formatBytes(total), percent)
+		return
+	}
+	emitProgress(progress, "download: progress %s %s", safeSourceSummary(source), formatBytes(downloaded))
+}
+
+func formatBytes(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	value := float64(size)
+	for _, suffix := range []string{"KiB", "MiB", "GiB"} {
+		value = value / unit
+		if value < unit {
+			return fmt.Sprintf("%.1f %s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1f TiB", value/unit)
 }
 
 func safeCacheName(source string) string {
@@ -444,7 +530,7 @@ func defaultSingBoxSource() (Source, bool) {
 	}, true
 }
 
-func installSingBox(binDir string, payload []byte, payloadSHA string) error {
+func installSingBox(binDir string, payload []byte, payloadSHA string, sourceSHA string, archiveMember string) error {
 	if err := os.MkdirAll(binDir, 0750); err != nil {
 		return fmt.Errorf("创建 bin 目录 %s: %w", binDir, err)
 	}
@@ -457,7 +543,7 @@ func installSingBox(binDir string, payload []byte, payloadSHA string) error {
 		return err
 	}
 	markerPath := filepath.Join(binDir, singBoxManagedMarker)
-	markerTemp, err := writeTempFile(binDir, ".sing-box.managed.tmp-*", []byte(payloadSHA+"\n"), 0640)
+	markerTemp, err := writeTempFile(binDir, ".sing-box.managed.tmp-*", singBoxMarkerData(payloadSHA, sourceSHA, archiveMember), 0640)
 	if err != nil {
 		_ = os.Remove(binaryTemp)
 		return err
@@ -466,6 +552,85 @@ func installSingBox(binDir string, payload []byte, payloadSHA string) error {
 		return err
 	}
 	return nil
+}
+
+func singBoxMarkerData(payloadSHA string, sourceSHA string, archiveMember string) []byte {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "payload %s\n", strings.ToLower(strings.TrimSpace(payloadSHA)))
+	if strings.TrimSpace(sourceSHA) != "" {
+		fmt.Fprintf(&builder, "source %s\n", strings.ToLower(strings.TrimSpace(sourceSHA)))
+	}
+	if strings.TrimSpace(archiveMember) != "" {
+		fmt.Fprintf(&builder, "archive_member %s\n", strings.TrimSpace(archiveMember))
+	}
+	return []byte(builder.String())
+}
+
+func singBoxSourceInstalled(binDir string, sourceSHA string, archiveMember string) (bool, error) {
+	target := filepath.Join(binDir, "sing-box")
+	if exists, err := pathExists(target); err != nil || !exists {
+		return false, err
+	}
+	fields, err := readManagedMarkerFields(filepath.Join(binDir, singBoxManagedMarker))
+	if err != nil {
+		return false, err
+	}
+	if fields["source"] != strings.ToLower(strings.TrimSpace(sourceSHA)) {
+		return false, nil
+	}
+	if strings.TrimSpace(archiveMember) != "" && fields["archive_member"] != strings.TrimSpace(archiveMember) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func rulesFilesInstalled(rulesDir string, files []SourceFile) (bool, error) {
+	fields, err := readManagedMarkerFields(filepath.Join(rulesDir, rulesManagedMarker))
+	if err != nil {
+		return false, err
+	}
+	if len(fields) == 0 {
+		return false, nil
+	}
+	for _, file := range files {
+		if strings.TrimSpace(file.SHA256) == "" {
+			return false, nil
+		}
+		if fields[file.Path] != strings.ToLower(strings.TrimSpace(file.SHA256)) {
+			return false, nil
+		}
+		if exists, err := pathExists(filepath.Join(rulesDir, filepath.Clean(file.Path))); err != nil || !exists {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+func readManagedMarkerFields(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取管理标记 %s: %w", path, err)
+	}
+	fields := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		value := parts[1]
+		if parts[0] != "archive_member" {
+			value = strings.ToLower(value)
+		}
+		fields[parts[0]] = value
+	}
+	return fields, nil
 }
 
 func writeTempFile(dir string, pattern string, data []byte, mode os.FileMode) (string, error) {

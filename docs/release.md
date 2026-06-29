@@ -44,7 +44,7 @@
 
 - `build`、`package` 必须通过 `-ldflags` 注入 version、commit、build time。
 - `package` 只打包二进制、README、LICENSE 和必要模板，不包含配置、runtime、traffic DB 或本地下载缓存。
-- `install-local` 只安装 `sboxctl`、`sboxsub`，不运行 `sboxctl init`、`setup` 或 `service install`。
+- `install-local` 只安装 `sboxctl`、`sboxsub`，不运行 `sboxctl setup` 或 `service install`。
 - `clean` 只删除项目内生成目录，不删除用户配置目录。
 
 ## 3. GitHub Actions Release

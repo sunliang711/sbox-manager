@@ -21,7 +21,7 @@ func (m *Manager) Install(ctx context.Context, baseDir string, global domain.Glo
 	if err != nil {
 		return err
 	}
-	if m.kind == KindSystemd && len(targets) > 0 {
+	if m.kind == KindSystemd && (target == "" || len(targets) > 0) {
 		if err := m.prepareSystemdServiceEnvironment(ctx, baseDir); err != nil {
 			return err
 		}

@@ -243,23 +243,39 @@ func TestSboxctlExampleRejectsUnsupportedType(t *testing.T) {
 	}
 }
 
-// TestSboxctlInitPrintsNextSteps 验证 agent init 后会提示下一步操作。
-func TestSboxctlInitPrintsNextSteps(t *testing.T) {
+// TestSboxctlSetupLocalPreparesBaseAndEnablesTrafficTimers 验证 local 阶段准备本机文件并启用 timer。
+func TestSboxctlSetupLocalPreparesBaseAndEnablesTrafficTimers(t *testing.T) {
 	baseDir := t.TempDir()
-	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init")
+	unitDir := filepath.Join(t.TempDir(), "units")
+	runner := &cliRecordingRunner{}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: unitDir, Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "setup", "local", "--external-host", "proxy.example.com")
 	if err != nil {
-		t.Fatalf("execute sboxctl init: %v\n%s", err, output)
+		t.Fatalf("execute setup local: %v\n%s", err, output)
 	}
 	for _, want := range []string{
-		"初始化完成: " + baseDir,
-		"为了创建实例配置",
-		"sboxctl --base-dir " + baseDir + " add edge-us --template edge",
-		"sudo sboxctl --base-dir " + baseDir + " setup",
-		"sboxctl --base-dir " + baseDir + " doctor",
+		"setup local 完成: " + baseDir,
+		"traffic timer enable 完成",
 	} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("init output missing %q:\n%s", want, output)
+			t.Fatalf("setup local output missing %q:\n%s", want, output)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "config.yaml")); err != nil {
+		t.Fatalf("setup local should write config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(unitDir, "sbox@.service")); err != nil {
+		t.Fatalf("setup local should write template service: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(unitDir, service.TrafficSystemdTimerName("hourly"))); err != nil {
+		t.Fatalf("setup local should write traffic timer: %v", err)
+	}
+	if !strings.Contains(runner.joined(), "systemctl enable --now sbox-traffic-hourly.timer") {
+		t.Fatalf("setup local should enable traffic timers, got %q", runner.joined())
 	}
 }
 
@@ -299,11 +315,17 @@ func TestSboxctlDoctorReturnsNonZeroOnIssue(t *testing.T) {
 	}
 }
 
-// TestSboxctlDoctorAfterInitSucceeds 验证 init 后的空环境 doctor 不会把未安装组件当成故障。
-func TestSboxctlDoctorAfterInitSucceeds(t *testing.T) {
+// TestSboxctlDoctorAfterSetupLocalSucceeds 验证 local setup 后的空环境 doctor 不会把未安装组件当成故障。
+func TestSboxctlDoctorAfterSetupLocalSucceeds(t *testing.T) {
 	baseDir := t.TempDir()
-	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init"); err != nil {
-		t.Fatalf("init failed: %v\n%s", err, output)
+	unitDir := filepath.Join(t.TempDir(), "units")
+	runner := &cliRecordingRunner{}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: unitDir, Runner: runner})
+	}
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "setup", "local"); err != nil {
+		t.Fatalf("setup local failed: %v\n%s", err, output)
 	}
 
 	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "doctor")
@@ -318,7 +340,7 @@ func TestSboxctlDoctorAfterInitSucceeds(t *testing.T) {
 			t.Fatalf("doctor output missing %q:\n%s", want, output)
 		}
 	}
-	if !strings.Contains(output, "traffic timer install 和 traffic timer enable") {
+	if !strings.Contains(output, "setup local") {
 		t.Fatalf("doctor output missing traffic timer hint:\n%s", output)
 	}
 }
@@ -579,8 +601,8 @@ func TestSboxctlStopDoesNotWriteRuntime(t *testing.T) {
 	}
 }
 
-// TestSboxctlServiceInstallDoesNotStart 验证 service install 写 systemd 模板服务和 traffic timer 文件并 reload，不启动服务。
-func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
+// TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances 验证 service install 写服务文件并启用 timer，但不启动实例服务。
+func TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	unitDir := filepath.Join(t.TempDir(), "units")
 	runner := &cliRecordingRunner{}
@@ -621,8 +643,8 @@ func TestSboxctlServiceInstallDoesNotStart(t *testing.T) {
 	if strings.Contains(got, "systemctl start") {
 		t.Fatalf("service install should not start service, got %q", got)
 	}
-	if strings.Contains(got, "systemctl enable --now") {
-		t.Fatalf("service install should not enable timer, got %q", got)
+	if !strings.Contains(got, "systemctl enable --now sbox-traffic-hourly.timer") {
+		t.Fatalf("service install should enable traffic timers, got %q", got)
 	}
 }
 
@@ -729,7 +751,7 @@ func TestSboxctlInstallPrintsProgress(t *testing.T) {
 	}
 }
 
-// TestSboxctlSetupOrder 验证 setup 依次执行 init、install all、service install。
+// TestSboxctlSetupOrder 验证 setup 默认依次执行 local 和 binary。
 func TestSboxctlSetupOrder(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	order := []string{}
@@ -741,7 +763,7 @@ func TestSboxctlSetupOrder(t *testing.T) {
 	newResourceInstaller = func() resourceInstallerRunner {
 		return cliFakeInstaller{run: func(options installer.Options) error {
 			if _, err := os.Stat(filepath.Join(baseDir, "config.yaml")); err != nil {
-				t.Fatalf("init should run before install all: %v", err)
+				t.Fatalf("local setup should run before binary setup: %v", err)
 			}
 			order = append(order, "install:"+options.Resource)
 			return nil
@@ -755,41 +777,18 @@ func TestSboxctlSetupOrder(t *testing.T) {
 		t.Fatalf("execute setup: %v", err)
 	}
 	got := strings.Join(order, "|")
-	want := "install:all|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload|getent group sbox|id -u sbox|chown -R sbox:sbox " + baseDir + "|systemctl daemon-reload"
-	if got != want {
-		t.Fatalf("unexpected setup order: got %q want %q", got, want)
+	for _, want := range []string{
+		"systemctl daemon-reload",
+		"systemctl enable --now sbox-traffic-hourly.timer",
+		"systemctl enable --now sbox-traffic-monthly.timer",
+		"install:all",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("setup order missing %q: %q", want, got)
+		}
 	}
-}
-
-// TestSboxctlSetupStartDoesNotReparseRootFlags 验证 setup --start 内部复用 start 时不会误解析外层 root flags。
-func TestSboxctlSetupStartDoesNotReparseRootFlags(t *testing.T) {
-	baseDir := writeAgentFixture(t)
-	runner := &cliRecordingRunner{}
-	checker := &cliFakeChecker{}
-	restoreRuntimeHooks(t)
-	restoreResourceInstaller(t)
-	newRuntimeConfigChecker = func(*rootOptions, domain.GlobalConfig) runtimeplan.ConfigChecker {
-		return checker
-	}
-	newResourceInstaller = func() resourceInstallerRunner {
-		return cliFakeInstaller{}
-	}
-	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
-		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(t.TempDir(), "units"), Runner: runner})
-	}
-
-	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "setup", "--start")
-	if err != nil {
-		t.Fatalf("execute setup --start: %v\n%s", err, output)
-	}
-	if checker.calls == 0 {
-		t.Fatal("setup --start should run runtime config check")
-	}
-	if !strings.Contains(runner.joined(), "systemctl start sbox@edge-us.service") {
-		t.Fatalf("setup --start should start instance service, got %q", runner.joined())
-	}
-	if strings.Contains(output, "unknown flag: --base-dir") {
-		t.Fatalf("setup --start reparsed root flags:\n%s", output)
+	if strings.Index(got, "systemctl enable --now sbox-traffic-monthly.timer") > strings.Index(got, "install:all") {
+		t.Fatalf("binary setup should run after local setup, got %q", got)
 	}
 }
 
@@ -890,7 +889,7 @@ func TestReadOnlyCommandsDoNotWriteManagedOutputs(t *testing.T) {
 	}
 }
 
-// TestSboxctlE2EFakeLifecycle 覆盖 init/add/check/start/status/logs/stop 的 fake 端到端路径。
+// TestSboxctlE2EFakeLifecycle 覆盖 setup local/add/check/start/status/logs/stop 的 fake 端到端路径。
 func TestSboxctlE2EFakeLifecycle(t *testing.T) {
 	baseDir := t.TempDir()
 	runner := &cliRecordingRunner{}
@@ -903,8 +902,8 @@ func TestSboxctlE2EFakeLifecycle(t *testing.T) {
 		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
 	}
 
-	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "init", "--external-host", "proxy.example.com"); err != nil {
-		t.Fatalf("init failed: %v\n%s", err, output)
+	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "setup", "local", "--external-host", "proxy.example.com"); err != nil {
+		t.Fatalf("setup local failed: %v\n%s", err, output)
 	}
 	if output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "add", "edge-us", "--no-edit"); err != nil {
 		t.Fatalf("add failed: %v\n%s", err, output)

@@ -182,7 +182,7 @@ docs/
 - monthly 只从 daily 聚合。
 - yearly 动态聚合，不落库。
 - `show` 覆盖当前周期时追加未落库增量。
-- `traffic timer install` 只写调度文件，不启用、不启动。
+- `traffic timer install` 写调度文件后自动启用 timer，但不启动实例服务。
 - `traffic timer run` 等价立即执行对应 `collect ... --instance ALL`，不调用服务管理器。
 
 ## 12. 订阅规范

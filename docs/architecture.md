@@ -418,7 +418,7 @@ sing-box V2Ray API 作为统计数据源，但不依赖 reset 语义。
 
 写配置命令：
 
-- `init`
+- `setup local`
 - `config`
 - `add`
 - `clone`

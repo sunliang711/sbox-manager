@@ -25,7 +25,6 @@ func newSboxctlCommand() *cobra.Command {
 	)
 
 	root.AddCommand(
-		newSboxctlInitCommand(),
 		newSboxctlSetupCommand(),
 		newSboxctlConfigCommand(),
 		newSboxctlExampleCommand(),
@@ -76,7 +75,7 @@ func addSboxctlCommandGroups(root *cobra.Command) {
 		&cobra.Group{ID: sboxctlGroupDiagnostics, Title: "诊断与备份"},
 		&cobra.Group{ID: commandGroupHelp, Title: "帮助"},
 	)
-	setCommandGroup(root, sboxctlGroupConfig, "init", "setup", "config", "example", "validate")
+	setCommandGroup(root, sboxctlGroupConfig, "setup", "config", "example", "validate")
 	setCommandGroup(root, sboxctlGroupInstance, "add", "list", "clone", "member", "remove")
 	setCommandGroup(root, sboxctlGroupRender, "check", "render", "export-config", "sub")
 	setCommandGroup(root, sboxctlGroupService, "start", "stop", "restart", "status", "logs", "enable", "disable", "service")
@@ -87,13 +86,10 @@ func addSboxctlCommandGroups(root *cobra.Command) {
 
 // addSboxctlFlags 为 sboxctl 占位命令补充规格中的常用参数。
 func addSboxctlFlags(root *cobra.Command) {
-	mustCommand(root, "init").Flags().String("external-host", "", "外部访问域名或地址")
-	mustCommand(root, "init").Flags().Bool("force", false, "覆盖已有初始化结果")
-
 	setup := mustCommand(root, "setup")
-	setup.Flags().String("external-host", "", "外部访问域名或地址")
-	setup.Flags().Bool("force", false, "覆盖已有初始化结果")
-	setup.Flags().Bool("start", false, "安装后启动服务")
+	addSboxctlSetupLocalFlags(setup)
+	addSboxctlSetupLocalFlags(mustCommand(root, "setup", "local"))
+	addSboxctlSetupLocalFlags(mustCommand(root, "setup", "all"))
 
 	config := mustCommand(root, "config")
 	config.Flags().String("editor", "", "指定编辑器命令")
@@ -129,6 +125,12 @@ func addSboxctlFlags(root *cobra.Command) {
 	mustCommand(root, "import").Flags().Bool("force", false, "强制导入")
 	mustCommand(root, "ipinfo").Flags().String("family", "all", "地址族：all、ipv4、ipv6")
 	mustCommand(root, "ipinfo").Flags().Int("timeout", 0, "超时时间，单位秒")
+}
+
+// addSboxctlSetupLocalFlags 为会创建或覆盖本机配置的 setup 命令添加参数。
+func addSboxctlSetupLocalFlags(cmd *cobra.Command) {
+	cmd.Flags().String("external-host", "", "外部访问域名或地址")
+	cmd.Flags().Bool("force", false, "覆盖已有初始化结果")
 }
 
 // newSboxctlInstallCommand 创建 sing-box 和规则资源安装命令。

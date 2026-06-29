@@ -748,8 +748,8 @@ traffic launchd plist：
 服务管理约束：
 
 - `service install` 写入或更新 systemd unit 后必须执行 `systemctl daemon-reload`。
-- `traffic timer install` 只写 service/timer 或 plist，不启用、不启动。
-- `traffic timer enable` 才启用自动调度；systemd 使用 `enable --now`，launchd 使用 `bootstrap` 后按需 `enable`。
+- `traffic timer install` 写 service/timer 或 plist 后自动启用 timer；systemd 使用 `enable --now`，launchd 使用 `bootstrap` 后按需 `enable`。
+- `traffic timer enable` 可用于重复确保自动调度已启用。
 - `traffic timer uninstall` 删除前先停用并卸载受管 timer/service 或 plist，不删除 traffic DB。
 - 所有 systemctl、journalctl、launchctl、log 调用必须使用参数数组，不得拼接 shell 字符串。
 

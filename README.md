@@ -63,10 +63,10 @@ make clean
 
 ## 快速开始
 
-初始化 agent 工作目录：
+准备 agent 本机配置和服务文件：
 
 ```bash
-sboxctl --base-dir /opt/sbox-manager init --external-host proxy.example.com
+sudo sboxctl --base-dir /opt/sbox-manager setup local --external-host proxy.example.com
 ```
 
 查看配置示例：
@@ -80,17 +80,17 @@ sboxctl example inbound vmess
 添加并校验实例：
 
 ```bash
-sboxctl --base-dir /opt/sbox-manager add edge-us --template edge --no-edit
-sboxctl --base-dir /opt/sbox-manager validate edge-us
-sboxctl --base-dir /opt/sbox-manager check edge-us
+sudo sboxctl --base-dir /opt/sbox-manager add edge-us --template edge --no-edit
+sudo sboxctl --base-dir /opt/sbox-manager validate edge-us
+sudo sboxctl --base-dir /opt/sbox-manager check edge-us
 ```
 
-安装服务文件并启动实例：
+下载运行资源并启动实例：
 
 ```bash
-sboxctl --base-dir /opt/sbox-manager --service-manager auto service install edge-us
-sboxctl --base-dir /opt/sbox-manager --service-manager auto start edge-us
-sboxctl --base-dir /opt/sbox-manager --service-manager auto status edge-us
+sudo sboxctl --base-dir /opt/sbox-manager setup binary
+sudo sboxctl --base-dir /opt/sbox-manager --service-manager auto start edge-us
+sudo sboxctl --base-dir /opt/sbox-manager --service-manager auto status edge-us
 ```
 
 初始化订阅服务并导入 agent 导出的 bundle：
@@ -120,7 +120,7 @@ sboxctl logs edge-us --follow
 ```bash
 sboxctl doctor
 sboxctl ipinfo edge-us
-sboxctl install sing-box --version VERSION
+sboxctl setup binary
 sboxctl export -o backup.tar.gz
 sboxctl import backup.tar.gz --force
 ```

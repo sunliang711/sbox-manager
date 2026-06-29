@@ -7,6 +7,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +109,113 @@ func TestInstallSingBoxWithSHA256AndArchiveMember(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(global.Paths.Bin, singBoxManagedMarker)); err != nil {
 		t.Fatalf("missing managed marker: %v", err)
+	}
+}
+
+// TestInstallSingBoxSkipsMatchingManagedSource 验证已安装相同 source hash 时不重复读取或下载。
+func TestInstallSingBoxSkipsMatchingManagedSource(t *testing.T) {
+	global := installerFixtureGlobal(t)
+	payload := []byte("#!/bin/sh\necho sing-box\n")
+	source := writeSource(t, payload)
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceSingBox,
+		Source:    source,
+		SHA256:    shaHex(payload),
+	}); err != nil {
+		t.Fatalf("first install sing-box: %v", err)
+	}
+	progress := []string{}
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceSingBox,
+		Source:    source,
+		SHA256:    shaHex(payload),
+		Progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}); err != nil {
+		t.Fatalf("second install sing-box: %v", err)
+	}
+	joined := strings.Join(progress, "\n")
+	if !strings.Contains(joined, "install: skip sing-box already installed") {
+		t.Fatalf("second install should skip existing sing-box:\n%s", joined)
+	}
+	if strings.Contains(joined, "source: read local") {
+		t.Fatalf("second install should not read source again:\n%s", joined)
+	}
+}
+
+// TestInstallRulesSkipsMatchingManagedFiles 验证 geosite/geoip 文件 hash 匹配时跳过安装。
+func TestInstallRulesSkipsMatchingManagedFiles(t *testing.T) {
+	global := installerFixtureGlobal(t)
+	geosite := []byte("geosite")
+	geoip := []byte("geoip")
+	geositeSource := writeSource(t, geosite)
+	geoipSource := writeSource(t, geoip)
+	installer := &Installer{
+		Client: http.DefaultClient,
+		Sources: map[string]Source{
+			ResourceRules: {
+				Files: []SourceFile{
+					{URL: geositeSource, SHA256: shaHex(geosite), Path: "geosite.db"},
+					{URL: geoipSource, SHA256: shaHex(geoip), Path: "geoip.db"},
+				},
+			},
+		},
+	}
+	if err := installer.Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceRules,
+	}); err != nil {
+		t.Fatalf("first install rules: %v", err)
+	}
+	progress := []string{}
+	if err := installer.Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceRules,
+		Progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}); err != nil {
+		t.Fatalf("second install rules: %v", err)
+	}
+	joined := strings.Join(progress, "\n")
+	if !strings.Contains(joined, "install: skip rules already installed") {
+		t.Fatalf("second install should skip existing rules:\n%s", joined)
+	}
+	if strings.Contains(joined, "source: read local") {
+		t.Fatalf("second install should not read rule sources again:\n%s", joined)
+	}
+}
+
+// TestRemoteDownloadEmitsProgress 验证远端下载会持续输出下载进度。
+func TestRemoteDownloadEmitsProgress(t *testing.T) {
+	global := installerFixtureGlobal(t)
+	payload := bytes.Repeat([]byte("x"), 128*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
+		if _, err := writer.Write(payload); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
+	}))
+	defer server.Close()
+	progress := []string{}
+
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceSingBox,
+		Source:    server.URL + "/sing-box",
+		SHA256:    shaHex(payload),
+		Progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}); err != nil {
+		t.Fatalf("install remote sing-box: %v", err)
+	}
+	joined := strings.Join(progress, "\n")
+	if !strings.Contains(joined, "download: progress") || !strings.Contains(joined, "100%") {
+		t.Fatalf("download progress missing:\n%s", joined)
 	}
 }
 
