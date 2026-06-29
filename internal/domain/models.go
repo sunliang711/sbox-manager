@@ -140,6 +140,7 @@ type SubscriptionConfig struct {
 type Outbound struct {
 	Name      string          `yaml:"name" json:"name"`
 	Type      string          `yaml:"type" json:"type"`
+	Ref       string          `yaml:"ref" json:"ref"`
 	Server    string          `yaml:"server" json:"server"`
 	Port      int             `yaml:"port" json:"port"`
 	UUID      string          `yaml:"uuid" json:"uuid"`

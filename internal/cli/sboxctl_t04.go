@@ -163,6 +163,7 @@ func newSboxctlAddCommand() *cobra.Command {
 			}
 			template, _ := cmd.Flags().GetString("template")
 			fromFile, _ := cmd.Flags().GetString("from-file")
+			members, _ := cmd.Flags().GetString("members")
 			allocate, _ := cmd.Flags().GetBool("allocate-ports")
 			keep, _ := cmd.Flags().GetBool("keep-template-ports")
 			edit, _ := cmd.Flags().GetBool("edit")
@@ -172,6 +173,7 @@ func newSboxctlAddCommand() *cobra.Command {
 				Name:              args[0],
 				Template:          template,
 				FromFile:          fromFile,
+				Members:           splitCommaList(members),
 				AllocatePorts:     allocate,
 				KeepTemplatePorts: keep,
 			})
@@ -187,6 +189,19 @@ func newSboxctlAddCommand() *cobra.Command {
 			return err
 		},
 	}
+}
+
+// splitCommaList 将逗号分隔参数解析为去空白列表。
+func splitCommaList(value string) []string {
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			items = append(items, part)
+		}
+	}
+	return items
 }
 
 // newSboxctlListCommand 创建 list 命令。
@@ -736,8 +751,7 @@ func editInstanceByName(baseDir string, name string, editor string) error {
 }
 
 func draftPath(path string) string {
-	extension := filepath.Ext(path)
-	return strings.TrimSuffix(path, extension) + ".draft" + extension
+	return path + ".draft"
 }
 
 func serviceActionShort(action string) string {
@@ -1023,7 +1037,8 @@ traffic:
   scopes: [user, inbound, outbound]
 `, nil
 	case "urltest":
-		return `# URLTest instance 示例，通过 group 自动选择延迟更低的 outbound。
+		return `# URLTest instance 示例，通过已有 instance ref 成员自动选择延迟更低的 outbound。
+# 创建前可使用：sboxctl add auto-us --template urltest --members edge-us,relay-us
 name: auto-us
 enabled: true
 role: urltest
@@ -1049,23 +1064,16 @@ inbounds:
       remark: Auto VMess
       region: US
 outbounds:
-  - name: proxy-a
-    type: shadowsocks
-    server: a.example.com
-    port: 443
-    method: 2022-blake3-aes-256-gcm
-    password: change-me-a
-  - name: proxy-b
-    type: trojan
-    server: b.example.com
-    port: 443
-    password: change-me-b
-    tls:
-      enabled: true
+  - name: edge-us-local-socks
+    type: ref # sbox-manager 抽象类型，生成 sing-box 时解析为 socks5/http outbound。
+    ref: edge-us.local-socks # 引用已有 instance 的 socks5/http inbound。
+  - name: relay-us-local-socks
+    type: ref
+    ref: relay-us.local-socks
 groups:
   - name: auto
     type: urltest
-    outbounds: [proxy-a, proxy-b]
+    outbounds: [edge-us-local-socks, relay-us-local-socks]
     url: http://www.gstatic.com/generate_204
     interval: 300
     tolerance: 50
@@ -1244,11 +1252,13 @@ func outboundExampleSnippet(typeName string) (string, error) {
 	typeName = normalizeExampleType(typeName)
 	switch typeName {
 	case "", "all":
-		return outboundDirectExample() + "\n" + outboundBlockExample() + "\n" + outboundShadowsocksExample() + "\n" + outboundVMessExample() + "\n" + outboundVLESSExample() + "\n" + outboundAnyTLSExample() + "\n" + outboundTrojanExample() + "\n" + outboundHysteria2Example() + "\n" + outboundSocks5Example() + "\n" + outboundHTTPExample(), nil
+		return outboundDirectExample() + "\n" + outboundBlockExample() + "\n" + outboundRefExample() + "\n" + outboundShadowsocksExample() + "\n" + outboundVMessExample() + "\n" + outboundVLESSExample() + "\n" + outboundAnyTLSExample() + "\n" + outboundTrojanExample() + "\n" + outboundHysteria2Example() + "\n" + outboundSocks5Example() + "\n" + outboundHTTPExample(), nil
 	case "direct":
 		return outboundDirectExample(), nil
 	case "block":
 		return outboundBlockExample(), nil
+	case "ref":
+		return outboundRefExample(), nil
 	case "shadowsocks":
 		return outboundShadowsocksExample(), nil
 	case "vmess":
@@ -1266,7 +1276,7 @@ func outboundExampleSnippet(typeName string) (string, error) {
 	case "http":
 		return outboundHTTPExample(), nil
 	default:
-		return "", unsupportedExampleType("outbound", typeName, []string{"direct", "block", "shadowsocks", "shadowsocks22", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http", "all"})
+		return "", unsupportedExampleType("outbound", typeName, []string{"direct", "block", "ref", "shadowsocks", "shadowsocks22", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http", "all"})
 	}
 }
 
@@ -1280,6 +1290,13 @@ func outboundBlockExample() string {
 	return `# Block outbound，阻断匹配流量。
 - name: block
   type: block # 不需要 server、port 或认证字段。`
+}
+
+func outboundRefExample() string {
+	return `# Ref outbound，引用已有 instance 的 socks5/http inbound。
+- name: edge-us-local-socks
+  type: ref # sbox-manager 抽象类型，生成 sing-box 时解析为 socks5/http outbound。
+  ref: edge-us.local-socks # 格式为 <instance>.<inbound>。`
 }
 
 func outboundShadowsocksExample() string {

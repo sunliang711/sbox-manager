@@ -192,6 +192,9 @@ func decodeStrictReader(reader io.Reader, format string, target interface{}) err
 
 // formatForPath 根据文件扩展名返回解码格式。
 func formatForPath(path string) (string, error) {
+	if strings.EqualFold(filepath.Ext(path), ".draft") {
+		path = strings.TrimSuffix(path, filepath.Ext(path))
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yaml", ".yml":
 		return "yaml", nil

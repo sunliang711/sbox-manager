@@ -101,6 +101,7 @@ func addSboxctlFlags(root *cobra.Command) {
 	add := mustCommand(root, "add")
 	add.Flags().String("template", "edge", "实例模板：edge、relay、urltest")
 	add.Flags().String("from-file", "", "从指定文件创建实例")
+	add.Flags().String("members", "", "urltest 模板成员 instance，逗号分隔")
 	add.Flags().Bool("allocate-ports", true, "自动分配端口")
 	add.Flags().Bool("keep-template-ports", false, "保留模板端口")
 	add.Flags().Bool("edit", true, "创建后打开编辑器")

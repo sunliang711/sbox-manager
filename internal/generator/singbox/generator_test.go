@@ -213,6 +213,60 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 	}
 }
 
+// TestGenerateWithInstancesResolvesRefOutbound 验证 ref outbound 会在生成阶段解析为 socks/http outbound。
+func TestGenerateWithInstancesResolvesRefOutbound(t *testing.T) {
+	global, auto := testConfig()
+	member := domain.DefaultInstance(global)
+	member.Name = "edge.us"
+	member.API.Enabled = false
+	member.Inbounds = []domain.Inbound{
+		{
+			Name:   "local-socks",
+			Type:   "socks5",
+			Listen: "0.0.0.0",
+			Port:   17000,
+			Auth: domain.AuthConfig{
+				Type:     "password",
+				Username: "alice",
+				Password: "change-me",
+			},
+		},
+	}
+	member.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
+	member.Route = domain.RouteConfig{Default: "direct"}
+	domain.ApplyInstanceDefaults(&member)
+
+	auto.Name = "auto-us"
+	auto.Outbounds = []domain.Outbound{
+		{
+			Name: "edge.us-local-socks",
+			Type: "ref",
+			Ref:  "edge.us.local-socks",
+		},
+	}
+	auto.Groups = []domain.Group{
+		{
+			Name:      "auto",
+			Type:      "urltest",
+			Outbounds: []string{"edge.us-local-socks"},
+			URL:       "http://www.gstatic.com/generate_204",
+			Interval:  300,
+		},
+	}
+	auto.Route = domain.RouteConfig{Default: "auto"}
+
+	generated, err := GenerateWithInstances(global, []domain.Instance{member, auto}, auto)
+	if err != nil {
+		t.Fatalf("generate ref config: %v", err)
+	}
+	output := string(generated)
+	for _, want := range []string{`"type": "socks"`, `"tag": "edge.us-local-socks"`, `"server": "127.0.0.1"`, `"server_port": 17000`, `"username": "alice"`, `"password": "change-me"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("generated ref config missing %s: %s", want, output)
+		}
+	}
+}
+
 // testConfig 返回生成器测试使用的稳定配置。
 func testConfig() (domain.GlobalConfig, domain.Instance) {
 	global := domain.DefaultGlobalConfig()

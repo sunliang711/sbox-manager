@@ -41,7 +41,7 @@ func BuildPlan(global domain.GlobalConfig, instances []domain.Instance, target s
 		}
 		plan.InstanceSHA256[instance.Name] = instanceHash
 
-		data, err := singbox.Generate(global, instance)
+		data, err := singbox.GenerateWithInstances(global, instances, instance)
 		if err != nil {
 			return nil, err
 		}

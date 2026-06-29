@@ -319,6 +319,63 @@ func TestVMessVLESSRejectCrossProtocolUserFields(t *testing.T) {
 	}
 }
 
+// TestOutboundRefRequiresExistingSocksOrHTTPInbound 验证 ref outbound 必须指向已有 socks5/http inbound。
+func TestOutboundRefRequiresExistingSocksOrHTTPInbound(t *testing.T) {
+	global := DefaultGlobalConfig()
+	member := validInstance("edge.us", 24000)
+	member.Inbounds = append(member.Inbounds, Inbound{
+		Name:   "local-socks",
+		Type:   "socks5",
+		Listen: "127.0.0.1",
+		Port:   17000,
+		Auth:   AuthConfig{Type: "noauth"},
+	})
+	auto := validInstance("auto-us", 24001)
+	auto.Outbounds = []Outbound{
+		{
+			Name: "edge.us-local-socks",
+			Type: "ref",
+			Ref:  "edge.us.local-socks",
+		},
+	}
+	auto.Groups = []Group{
+		{
+			Name:      "auto",
+			Type:      "urltest",
+			Outbounds: []string{"edge.us-local-socks"},
+			URL:       "http://www.gstatic.com/generate_204",
+			Interval:  300,
+		},
+	}
+	auto.Route = RouteConfig{Default: "auto"}
+
+	if err := ValidateConfigSet(global, []Instance{member, auto}); err != nil {
+		t.Fatalf("ref outbound should validate: %v", err)
+	}
+}
+
+// TestOutboundRefRejectsMissingTarget 验证 ref outbound 指向不存在的目标会失败。
+func TestOutboundRefRejectsMissingTarget(t *testing.T) {
+	global := DefaultGlobalConfig()
+	auto := validInstance("auto-us", 24000)
+	auto.Outbounds = []Outbound{
+		{
+			Name: "missing-local-socks",
+			Type: "ref",
+			Ref:  "missing.local-socks",
+		},
+	}
+	auto.Route = RouteConfig{Default: "missing-local-socks"}
+
+	err := ValidateConfigSet(global, []Instance{auto})
+	if err == nil {
+		t.Fatal("expected missing ref target error")
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("expected missing ref target in error: %v", err)
+	}
+}
+
 // validInstance 返回可通过校验的 instance fixture。
 func validInstance(name string, port int) Instance {
 	instance := DefaultInstance(DefaultGlobalConfig())

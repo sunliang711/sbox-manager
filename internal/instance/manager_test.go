@@ -62,13 +62,26 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 		"#     type: http",
 		"#     type: direct",
 		"#     type: block",
+		"#     type: ref",
 		"#     type: trojan",
 		"#     type: hysteria2",
 		"#       type: ws",
 		"#       type: httpupgrade",
+		"# groups:",
+		"#     outbounds: [edge-us-local-socks]",
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("instance missing comment %q:\n%s", want, data)
+		}
+	}
+	bodyStart := strings.Index(string(data), "\nname: edge-smoke\n")
+	if bodyStart < 0 {
+		t.Fatalf("instance body missing:\n%s", data)
+	}
+	body := string(data[bodyStart:])
+	for _, unexpected := range []string{"transport:", "tls:\n", "type: noauth", "labels: []", "users: []", "groups: []", "rules: []", "ref: \"\"", "port: 0"} {
+		if strings.Contains(body, unexpected) {
+			t.Fatalf("instance body should not contain %q:\n%s", unexpected, body)
 		}
 	}
 	global, err := config.LoadGlobalConfig(filepath.Join(baseDir, "config.yaml"), baseDir)
@@ -88,7 +101,14 @@ func TestAddTemplatesIncludeLocalProxyInbounds(t *testing.T) {
 			if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
 				t.Fatalf("init: %v", err)
 			}
-			instance, err := Add(baseDir, AddOptions{Name: template + "-smoke", Template: template, AllocatePorts: true})
+			options := AddOptions{Name: template + "-smoke", Template: template, AllocatePorts: true}
+			if template == "urltest" {
+				if _, err := Add(baseDir, AddOptions{Name: "edge-member", Template: "edge", AllocatePorts: true}); err != nil {
+					t.Fatalf("add member edge: %v", err)
+				}
+				options.Members = []string{"edge-member"}
+			}
+			instance, err := Add(baseDir, options)
 			if err != nil {
 				t.Fatalf("add %s: %v", template, err)
 			}
@@ -97,17 +117,243 @@ func TestAddTemplatesIncludeLocalProxyInbounds(t *testing.T) {
 			if socks == nil {
 				t.Fatalf("%s template missing local-socks inbound: %+v", template, instance.Inbounds)
 			}
-			if socks.Type != "socks5" || socks.Listen != "127.0.0.1" || socks.Port != 17000 {
+			wantSocksPort := 17000
+			wantHTTPPort := 18000
+			if template == "urltest" {
+				wantSocksPort = 17001
+				wantHTTPPort = 18001
+			}
+			if socks.Type != "socks5" || socks.Listen != "127.0.0.1" || socks.Port != wantSocksPort {
 				t.Fatalf("unexpected local-socks inbound: %+v", *socks)
 			}
 			http := findTestInbound(instance.Inbounds, "local-http")
 			if http == nil {
 				t.Fatalf("%s template missing local-http inbound: %+v", template, instance.Inbounds)
 			}
-			if http.Type != "http" || http.Listen != "127.0.0.1" || http.Port != 18000 {
+			if http.Type != "http" || http.Listen != "127.0.0.1" || http.Port != wantHTTPPort {
 				t.Fatalf("unexpected local-http inbound: %+v", *http)
 			}
 		})
+	}
+}
+
+// TestAddURLTestTemplateUsesRefMembers 验证 urltest 模板会把已有 instance 作为 ref outbound 成员。
+func TestAddURLTestTemplateUsesRefMembers(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-member", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge member: %v", err)
+	}
+	instance, err := Add(baseDir, AddOptions{Name: "auto-smoke", Template: "urltest", Members: []string{"edge-member"}, AllocatePorts: true})
+	if err != nil {
+		t.Fatalf("add urltest: %v", err)
+	}
+	if len(instance.Outbounds) != 1 {
+		t.Fatalf("urltest outbounds = %+v", instance.Outbounds)
+	}
+	if instance.Outbounds[0].Type != "ref" || instance.Outbounds[0].Ref != "edge-member.local-socks" {
+		t.Fatalf("unexpected ref outbound: %+v", instance.Outbounds[0])
+	}
+	if len(instance.Groups) != 1 || len(instance.Groups[0].Outbounds) != 1 || instance.Groups[0].Outbounds[0] != "edge-member-local-socks" {
+		t.Fatalf("unexpected urltest group: %+v", instance.Groups)
+	}
+}
+
+// TestAddURLTestTemplateAllowsDottedMemberName 验证 ref 解析支持带点号的 instance 名。
+func TestAddURLTestTemplateAllowsDottedMemberName(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge.us", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add dotted member: %v", err)
+	}
+	instance, err := Add(baseDir, AddOptions{Name: "auto-smoke", Template: "urltest", Members: []string{"edge.us"}, AllocatePorts: true})
+	if err != nil {
+		t.Fatalf("add urltest: %v", err)
+	}
+	if len(instance.Outbounds) != 1 || instance.Outbounds[0].Ref != "edge.us.local-socks" {
+		t.Fatalf("unexpected ref outbound: %+v", instance.Outbounds)
+	}
+	if _, err := config.LoadAgentConfigSet(baseDir); err != nil {
+		t.Fatalf("load config set: %v", err)
+	}
+}
+
+// TestAddRefMemberAllocatesHashedNameOnCollision 验证 ref outbound 名称碰撞时追加稳定哈希。
+func TestAddRefMemberAllocatesHashedNameOnCollision(t *testing.T) {
+	instance := domain.Instance{
+		Name: "auto-smoke",
+		Groups: []domain.Group{
+			{Name: "auto", Type: "urltest"},
+		},
+	}
+	existing := []domain.Instance{
+		{
+			Name: "edge-us",
+			Inbounds: []domain.Inbound{
+				{Name: "local-socks", Type: "socks5"},
+			},
+		},
+		{
+			Name: "edge",
+			Inbounds: []domain.Inbound{
+				{Name: "us-local-socks", Type: "socks5"},
+			},
+		},
+	}
+	if err := addRefMemberToInstance(&instance, existing, "auto", "edge-us"); err != nil {
+		t.Fatalf("add edge-us member: %v", err)
+	}
+	if err := addRefMemberToInstance(&instance, existing, "auto", "edge"); err != nil {
+		t.Fatalf("add edge member: %v", err)
+	}
+	if len(instance.Outbounds) != 2 {
+		t.Fatalf("outbounds = %+v", instance.Outbounds)
+	}
+	if instance.Outbounds[0].Name != "edge-us-local-socks" {
+		t.Fatalf("first outbound name = %q", instance.Outbounds[0].Name)
+	}
+	if instance.Outbounds[1].Name == "edge-us-local-socks" || !strings.HasPrefix(instance.Outbounds[1].Name, "edge-us-local-socks-") {
+		t.Fatalf("second outbound name should use hash suffix: %+v", instance.Outbounds[1])
+	}
+	if len(instance.Groups[0].Outbounds) != 2 || instance.Groups[0].Outbounds[0] == instance.Groups[0].Outbounds[1] {
+		t.Fatalf("unexpected group outbounds: %+v", instance.Groups[0].Outbounds)
+	}
+}
+
+// TestAddURLTestTemplateRequiresMembers 验证 urltest 模板必须显式指定已有成员。
+func TestAddURLTestTemplateRequiresMembers(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "auto-smoke", Template: "urltest", AllocatePorts: true}); err == nil {
+		t.Fatal("expected urltest without members to fail")
+	}
+}
+
+// TestMemberCommandsUseRefMembers 验证 member 子命令按已有 instance ref 成员维护 group。
+func TestMemberCommandsUseRefMembers(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-one", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge-one: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-two", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge-two: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "auto-smoke", Template: "urltest", Members: []string{"edge-one"}, AllocatePorts: true}); err != nil {
+		t.Fatalf("add urltest: %v", err)
+	}
+	if err := MemberAdd(baseDir, "auto-smoke", "auto", "edge-two"); err != nil {
+		t.Fatalf("member add: %v", err)
+	}
+	set, err := config.LoadAgentConfigSet(baseDir)
+	if err != nil {
+		t.Fatalf("load config set: %v", err)
+	}
+	members, err := MemberList(set, "auto-smoke", "auto")
+	if err != nil {
+		t.Fatalf("member list: %v", err)
+	}
+	if strings.Join(members, ",") != "edge-one,edge-two" {
+		t.Fatalf("members = %+v", members)
+	}
+	auto, ok := set.FindInstance("auto-smoke")
+	if !ok {
+		t.Fatal("auto instance missing")
+	}
+	if !hasRefOutbound(auto, "edge-two-local-socks", "edge-two.local-socks") {
+		t.Fatalf("edge-two ref outbound missing: %+v", auto.Outbounds)
+	}
+	if err := MemberRemove(baseDir, "auto-smoke", "auto", "edge-one"); err != nil {
+		t.Fatalf("member remove: %v", err)
+	}
+	set, err = config.LoadAgentConfigSet(baseDir)
+	if err != nil {
+		t.Fatalf("reload config set: %v", err)
+	}
+	members, err = MemberList(set, "auto-smoke", "auto")
+	if err != nil {
+		t.Fatalf("member list after remove: %v", err)
+	}
+	if strings.Join(members, ",") != "edge-two" {
+		t.Fatalf("members after remove = %+v", members)
+	}
+	auto, ok = set.FindInstance("auto-smoke")
+	if !ok {
+		t.Fatal("auto instance missing after remove")
+	}
+	if hasRefOutbound(auto, "edge-one-local-socks", "edge-one.local-socks") {
+		t.Fatalf("edge-one ref outbound should be removed: %+v", auto.Outbounds)
+	}
+	if err := MemberAdd(baseDir, "auto-smoke", "auto", "missing"); err == nil {
+		t.Fatal("expected missing member add to fail")
+	}
+}
+
+// TestMemberRemoveKeepsSharedRefOutbound 验证删除单个 group 成员时保留其它 group 仍引用的 ref outbound。
+func TestMemberRemoveKeepsSharedRefOutbound(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-one", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge-one: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-two", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge-two: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "auto-smoke", Template: "urltest", Members: []string{"edge-one"}, AllocatePorts: true}); err != nil {
+		t.Fatalf("add urltest: %v", err)
+	}
+	if err := MemberAdd(baseDir, "auto-smoke", "auto", "edge-two"); err != nil {
+		t.Fatalf("member add: %v", err)
+	}
+	set, err := config.LoadAgentConfigSet(baseDir)
+	if err != nil {
+		t.Fatalf("load config set: %v", err)
+	}
+	auto, ok := set.FindInstance("auto-smoke")
+	if !ok {
+		t.Fatal("auto instance missing")
+	}
+	auto.Groups = append(auto.Groups, domain.Group{
+		Name:      "backup",
+		Type:      "selector",
+		Outbounds: []string{"edge-one-local-socks"},
+	})
+	if err := WriteInstance(set.Global, set.Instances, auto); err != nil {
+		t.Fatalf("write shared group: %v", err)
+	}
+	if err := MemberRemove(baseDir, "auto-smoke", "auto", "edge-one"); err != nil {
+		t.Fatalf("member remove: %v", err)
+	}
+	set, err = config.LoadAgentConfigSet(baseDir)
+	if err != nil {
+		t.Fatalf("reload config set: %v", err)
+	}
+	auto, ok = set.FindInstance("auto-smoke")
+	if !ok {
+		t.Fatal("auto instance missing after remove")
+	}
+	members, err := MemberList(set, "auto-smoke", "auto")
+	if err != nil {
+		t.Fatalf("member list: %v", err)
+	}
+	if strings.Join(members, ",") != "edge-two" {
+		t.Fatalf("auto members = %+v", members)
+	}
+	if !hasRefOutbound(auto, "edge-one-local-socks", "edge-one.local-socks") {
+		t.Fatalf("shared ref outbound should be kept: %+v", auto.Outbounds)
+	}
+	if !groupHasOutbound(auto.Groups, "backup", "edge-one-local-socks") {
+		t.Fatalf("backup group should keep shared outbound: %+v", auto.Groups)
 	}
 }
 
@@ -146,7 +392,7 @@ func TestCloneAllocatesPortsWithoutMutatingSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add edge: %v", err)
 	}
-	if _, err := Add(baseDir, AddOptions{Name: "urltest-smoke", Template: "urltest", AllocatePorts: true}); err != nil {
+	if _, err := Add(baseDir, AddOptions{Name: "urltest-smoke", Template: "urltest", Members: []string{"edge-smoke"}, AllocatePorts: true}); err != nil {
 		t.Fatalf("add urltest: %v", err)
 	}
 	cloned, err := Clone(baseDir, CloneOptions{Source: "edge-smoke", Target: "edge-clone", AllocatePorts: true})
@@ -225,7 +471,7 @@ func TestTemplateSubscriptionRemarksAreUnique(t *testing.T) {
 	if _, err := Add(baseDir, AddOptions{Name: "edge-smoke", Template: "edge", AllocatePorts: true}); err != nil {
 		t.Fatalf("add edge: %v", err)
 	}
-	if _, err := Add(baseDir, AddOptions{Name: "urltest-smoke", Template: "urltest", AllocatePorts: true}); err != nil {
+	if _, err := Add(baseDir, AddOptions{Name: "urltest-smoke", Template: "urltest", Members: []string{"edge-smoke"}, AllocatePorts: true}); err != nil {
 		t.Fatalf("add urltest: %v", err)
 	}
 	set, err := config.LoadAgentConfigSet(baseDir)
@@ -240,6 +486,31 @@ func TestTemplateSubscriptionRemarksAreUnique(t *testing.T) {
 	if _, err := subscription.BuildBundle(inputs, generatedAt); err != nil {
 		t.Fatalf("build subscription bundle: %v", err)
 	}
+}
+
+// hasRefOutbound 判断 instance 是否包含指定 ref outbound。
+func hasRefOutbound(instance domain.Instance, name string, ref string) bool {
+	for _, outbound := range instance.Outbounds {
+		if outbound.Name == name && outbound.Type == "ref" && outbound.Ref == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// groupHasOutbound 判断 group 是否包含指定 outbound。
+func groupHasOutbound(groups []domain.Group, groupName string, outboundName string) bool {
+	for _, group := range groups {
+		if group.Name != groupName {
+			continue
+		}
+		for _, current := range group.Outbounds {
+			if current == outboundName {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // findTestInbound 按名称查找测试用 inbound。

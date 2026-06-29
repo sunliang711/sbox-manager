@@ -108,10 +108,19 @@ func (s *AgentConfigSet) TargetInstances(target string) ([]domain.Instance, erro
 
 // isInstanceConfigFile 判断文件名是否是受支持的 instance 配置文件。
 func isInstanceConfigFile(name string) bool {
+	if isDraftConfigFile(name) {
+		return false
+	}
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".yaml", ".yml", ".json":
 		return true
 	default:
 		return false
 	}
+}
+
+// isDraftConfigFile 判断文件名是否为编辑器产生的草稿或临时配置。
+func isDraftConfigFile(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.Contains(lower, ".draft") || strings.Contains(lower, ".tmp") || strings.Contains(lower, ".swp")
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,6 +236,39 @@ port_ranges:
 	}
 }
 
+// TestGlobalConfigLoadsDraftSuffix 验证编辑草稿可按原始配置扩展名解析。
+func TestGlobalConfigLoadsDraftSuffix(t *testing.T) {
+	baseDir := t.TempDir()
+	path := writeTempFile(t, baseDir, "config.yaml.draft", `
+version: 1
+`)
+
+	if _, err := LoadGlobalConfig(path, baseDir); err != nil {
+		t.Fatalf("load global draft config: %v", err)
+	}
+}
+
+// TestLoadInstancesIgnoresDraftFiles 验证 instance 目录加载会忽略新旧草稿文件。
+func TestLoadInstancesIgnoresDraftFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	global := domain.DefaultGlobalConfig()
+	instancesDir := filepath.Join(baseDir, "instances")
+	if err := os.MkdirAll(instancesDir, 0750); err != nil {
+		t.Fatalf("mkdir instances: %v", err)
+	}
+	writeTempFile(t, instancesDir, "edge-us.yaml", validLoadInstanceYAML("edge-us"))
+	writeTempFile(t, instancesDir, "usa4.draft.yaml", validLoadInstanceYAML("usa4"))
+	writeTempFile(t, instancesDir, "usa5.yaml.draft", validLoadInstanceYAML("usa5"))
+
+	instances, err := LoadInstances(instancesDir, global)
+	if err != nil {
+		t.Fatalf("load instances: %v", err)
+	}
+	if len(instances) != 1 || instances[0].Name != "edge-us" {
+		t.Fatalf("instances = %+v", instances)
+	}
+}
+
 // TestGlobalConfigRejectsNestedUnknownPortRangeField 验证端口范围对象内未知字段会失败。
 func TestGlobalConfigRejectsNestedUnknownPortRangeField(t *testing.T) {
 	baseDir := t.TempDir()
@@ -294,6 +328,25 @@ func TestFirstAvailablePort(t *testing.T) {
 	if port != 1001 {
 		t.Fatalf("expected port 1001, got %d", port)
 	}
+}
+
+// validLoadInstanceYAML 返回用于配置加载测试的最小合法 instance YAML。
+func validLoadInstanceYAML(name string) string {
+	return fmt.Sprintf(`
+name: %s
+inbounds:
+  - name: vmess-main
+    type: vmess
+    port: 24000
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+outbounds:
+  - name: direct
+    type: direct
+route:
+  default: direct
+`, name)
 }
 
 // writeTempFile 在测试临时目录中写入文件。

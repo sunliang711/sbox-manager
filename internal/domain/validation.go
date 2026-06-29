@@ -70,6 +70,7 @@ func ValidateConfigSet(global GlobalConfig, instances []Instance) error {
 	for index := range instances {
 		mergeValidationError(ValidateInstance(global, &instances[index]), &errs)
 	}
+	validateOutboundRefs(instances, &errs)
 	validatePortConflicts(instances, &errs)
 	return errs.ErrOrNil()
 }
@@ -771,7 +772,7 @@ func validateOutbounds(outbounds []Outbound, errs *ValidationErrors) map[string]
 			errs.Add(path+".name", "outbound 名称重复")
 		}
 		names[outbound.Name] = struct{}{}
-		if !allowedValue(outbound.Type, "direct", "block", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http") {
+		if !allowedValue(outbound.Type, "direct", "block", "ref", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http") {
 			errs.Add(path+".type", "不支持的 outbound type %q", outbound.Type)
 			continue
 		}
@@ -783,6 +784,10 @@ func validateOutbounds(outbounds []Outbound, errs *ValidationErrors) map[string]
 // validateOutboundRemote 校验远端 outbound 的必填字段。
 func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErrors) {
 	if outbound.Type == "direct" || outbound.Type == "block" {
+		return
+	}
+	if outbound.Type == "ref" {
+		validateOutboundRefFormat(path+".ref", outbound.Ref, errs)
 		return
 	}
 	if strings.TrimSpace(outbound.Server) == "" {
@@ -849,6 +854,97 @@ func validateOutboundAuth(path string, auth AuthConfig, errs *ValidationErrors) 
 			errs.Add(path+".auth.password", "password 鉴权必须配置 password")
 		}
 	}
+}
+
+// validateOutboundRefFormat 校验 ref outbound 的 `<instance>.<inbound>` 基础格式。
+func validateOutboundRefFormat(path string, ref string, errs *ValidationErrors) {
+	trimmed := strings.TrimSpace(ref)
+	if _, _, ok := parseOutboundRef(trimmed); !ok {
+		errs.Add(path, "ref outbound 必须使用 <instance>.<inbound> 格式")
+		return
+	}
+	validateSafeName(path, trimmed, errs)
+}
+
+// validateOutboundRefs 校验 ref outbound 指向的 instance/inbound 存在且协议可被引用。
+func validateOutboundRefs(instances []Instance, errs *ValidationErrors) {
+	byName := make(map[string]Instance, len(instances))
+	for _, instance := range instances {
+		byName[instance.Name] = instance
+	}
+	for instanceIndex, instance := range instances {
+		for outboundIndex, outbound := range instance.Outbounds {
+			if outbound.Type != "ref" {
+				continue
+			}
+			path := fmt.Sprintf("instances[%d].outbounds[%d].ref", instanceIndex, outboundIndex)
+			targetInstanceName, targetInboundName, targetInstance, exists := resolveOutboundRefTarget(outbound.Ref, byName)
+			if !exists {
+				missingInstanceName, _, ok := parseOutboundRef(outbound.Ref)
+				if ok {
+					errs.Add(path, "引用的 instance %q 不存在", missingInstanceName)
+				}
+				continue
+			}
+			if targetInstanceName == instance.Name {
+				errs.Add(path, "ref outbound 不允许引用当前 instance")
+				continue
+			}
+			targetInbound, exists := findInboundByName(targetInstance.Inbounds, targetInboundName)
+			if !exists {
+				errs.Add(path, "引用的 inbound %q 不存在", outbound.Ref)
+				continue
+			}
+			if targetInbound.Type != "socks5" && targetInbound.Type != "http" {
+				errs.Add(path, "ref outbound 只能引用 socks5/http inbound，当前为 %q", targetInbound.Type)
+			}
+		}
+	}
+}
+
+// resolveOutboundRefTarget 根据已有 instance 名称解析 ref，支持 instance 名称包含点号。
+func resolveOutboundRefTarget(ref string, byName map[string]Instance) (string, string, Instance, bool) {
+	trimmed := strings.TrimSpace(ref)
+	matchedName := ""
+	matchedInbound := ""
+	matchedInstance := Instance{}
+	for instanceName, instance := range byName {
+		prefix := instanceName + "."
+		if !strings.HasPrefix(trimmed, prefix) || len(instanceName) <= len(matchedName) {
+			continue
+		}
+		inboundName := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		if inboundName == "" {
+			continue
+		}
+		matchedName = instanceName
+		matchedInbound = inboundName
+		matchedInstance = instance
+	}
+	if matchedName == "" {
+		return "", "", Instance{}, false
+	}
+	return matchedName, matchedInbound, matchedInstance, true
+}
+
+// parseOutboundRef 解析 `<instance>.<inbound>` 格式引用。
+func parseOutboundRef(ref string) (string, string, bool) {
+	trimmed := strings.TrimSpace(ref)
+	separator := strings.LastIndex(trimmed, ".")
+	if separator <= 0 || separator == len(trimmed)-1 {
+		return "", "", false
+	}
+	return strings.TrimSpace(trimmed[:separator]), strings.TrimSpace(trimmed[separator+1:]), true
+}
+
+// findInboundByName 按名称查找 inbound。
+func findInboundByName(inbounds []Inbound, name string) (Inbound, bool) {
+	for _, inbound := range inbounds {
+		if inbound.Name == name {
+			return inbound, true
+		}
+	}
+	return Inbound{}, false
 }
 
 // validateGroups 校验 group 并返回名称集合。

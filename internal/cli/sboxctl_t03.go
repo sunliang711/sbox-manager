@@ -140,7 +140,7 @@ func newSboxctlRenderSingBoxCommand() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("instance %q 不存在", args[0])
 			}
-			data, err := singbox.Generate(set.Global, instance)
+			data, err := singbox.GenerateWithInstances(set.Global, set.Instances, instance)
 			if err != nil {
 				return err
 			}

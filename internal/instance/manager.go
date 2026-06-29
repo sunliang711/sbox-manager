@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"os/exec"
@@ -32,6 +33,7 @@ type AddOptions struct {
 	Name              string
 	Template          string
 	FromFile          string
+	Members           []string
 	AllocatePorts     bool
 	KeepTemplatePorts bool
 }
@@ -123,6 +125,9 @@ func Add(baseDir string, options AddOptions) (domain.Instance, error) {
 func buildInstance(global domain.GlobalConfig, existing []domain.Instance, options AddOptions) (domain.Instance, error) {
 	var instance domain.Instance
 	if options.FromFile != "" {
+		if len(options.Members) > 0 {
+			return domain.Instance{}, fmt.Errorf("--members 只能与内置 urltest 模板一起使用")
+		}
 		loaded, err := loadInstanceDraft(options.FromFile, global)
 		if err != nil {
 			return domain.Instance{}, err
@@ -130,7 +135,7 @@ func buildInstance(global domain.GlobalConfig, existing []domain.Instance, optio
 		instance = loaded
 		instance.Name = options.Name
 	} else {
-		created, err := templateInstance(global, options.Name, options.Template)
+		created, err := templateInstance(global, existing, options.Name, options.Template, options.Members)
 		if err != nil {
 			return domain.Instance{}, err
 		}
@@ -148,7 +153,7 @@ func buildInstance(global domain.GlobalConfig, existing []domain.Instance, optio
 	return instance, nil
 }
 
-func templateInstance(global domain.GlobalConfig, name string, template string) (domain.Instance, error) {
+func templateInstance(global domain.GlobalConfig, existing []domain.Instance, name string, template string, members []string) (domain.Instance, error) {
 	instance := domain.DefaultInstance(global)
 	instance.Name = name
 	instance.API.Enabled = false
@@ -159,20 +164,32 @@ func templateInstance(global domain.GlobalConfig, name string, template string) 
 	instance.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
 	switch instance.Role {
 	case "edge":
+		if len(members) > 0 {
+			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
+		}
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
 		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "relay":
+		if len(members) > 0 {
+			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
+		}
 		instance.Inbounds = []domain.Inbound{shadowsocksInbound("ss-main", 24000)}
 		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Route = domain.RouteConfig{Default: "direct"}
 	case "urltest":
+		if len(members) == 0 {
+			return domain.Instance{}, fmt.Errorf("urltest 模板必须通过 --members 指定已有 instance")
+		}
+		instance.Outbounds = nil
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
 		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
 		instance.Groups = []domain.Group{domain.DefaultGroup("auto", "urltest")}
-		instance.Groups[0].Outbounds = []string{"direct"}
+		if err := addRefMembersToInstance(&instance, existing, "auto", members); err != nil {
+			return domain.Instance{}, err
+		}
 		instance.Route = domain.RouteConfig{Default: "auto"}
 	default:
 		return domain.Instance{}, fmt.Errorf("不支持的 template %q", template)
@@ -224,6 +241,209 @@ func localProxyInbound(name string, inboundType string, port int) domain.Inbound
 	inbound.Listen = "127.0.0.1"
 	inbound.Port = port
 	return inbound
+}
+
+// addRefMembersToInstance 将已有 instance 作为 ref outbound 成员加入指定 group。
+func addRefMembersToInstance(instance *domain.Instance, existing []domain.Instance, groupName string, members []string) error {
+	for _, member := range members {
+		if err := addRefMemberToInstance(instance, existing, groupName, member); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addRefMemberToInstance 为单个 member instance 创建 ref outbound 并加入 group。
+func addRefMemberToInstance(instance *domain.Instance, existing []domain.Instance, groupName string, member string) error {
+	if instance == nil {
+		return fmt.Errorf("instance 不能为空")
+	}
+	memberInstance, ok := findInstanceByName(existing, member)
+	if !ok {
+		return fmt.Errorf("member instance %q 不存在", member)
+	}
+	if memberInstance.Name == instance.Name {
+		return fmt.Errorf("member instance 不能引用自身")
+	}
+	inbound, ok := selectRefMemberInbound(memberInstance)
+	if !ok {
+		return fmt.Errorf("member instance %q 必须包含 socks5 或 http inbound", member)
+	}
+	ref := refMemberRef(memberInstance.Name, inbound.Name)
+	for _, outbound := range instance.Outbounds {
+		if outbound.Type == "ref" && outbound.Ref == ref {
+			return addGroupOutbound(instance, groupName, outbound.Name)
+		}
+	}
+	outboundName := allocateRefOutboundName(instance.Outbounds, refOutboundName(memberInstance.Name, inbound.Name), ref)
+	instance.Outbounds = append(instance.Outbounds, domain.Outbound{
+		Name: outboundName,
+		Type: "ref",
+		Ref:  ref,
+	})
+	return addGroupOutbound(instance, groupName, outboundName)
+}
+
+// removeRefMemberFromInstance 从 group 和 outbounds 中移除指定 member 的 ref 成员。
+func removeRefMemberFromInstance(instance *domain.Instance, existing []domain.Instance, groupName string, member string) error {
+	if instance == nil {
+		return fmt.Errorf("instance 不能为空")
+	}
+	groupIndex, err := findMutableGroup(instance, groupName)
+	if err != nil {
+		return err
+	}
+	candidates := map[string]struct{}{}
+	for _, outbound := range instance.Outbounds {
+		if outbound.Type == "ref" {
+			memberName, _, ok := parseRefMemberWithInstances(outbound.Ref, existing)
+			if !ok {
+				memberName, _, ok = parseRefMember(outbound.Ref)
+			}
+			if ok && memberName == member {
+				candidates[outbound.Name] = struct{}{}
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	group := &instance.Groups[groupIndex]
+	removed := map[string]struct{}{}
+	nextGroupOutbounds := group.Outbounds[:0]
+	for _, outboundName := range group.Outbounds {
+		if _, ok := candidates[outboundName]; ok {
+			removed[outboundName] = struct{}{}
+			continue
+		}
+		nextGroupOutbounds = append(nextGroupOutbounds, outboundName)
+	}
+	group.Outbounds = nextGroupOutbounds
+	if len(removed) == 0 {
+		return nil
+	}
+	referenced := referencedGroupOutbounds(instance.Groups)
+	nextOutbounds := instance.Outbounds[:0]
+	for _, outbound := range instance.Outbounds {
+		if _, removedFromGroup := removed[outbound.Name]; removedFromGroup {
+			if _, stillReferenced := referenced[outbound.Name]; !stillReferenced {
+				continue
+			}
+		}
+		nextOutbounds = append(nextOutbounds, outbound)
+	}
+	instance.Outbounds = nextOutbounds
+	return nil
+}
+
+// addGroupOutbound 将 outbound 名称加入 selector/urltest group，已存在时保持幂等。
+func addGroupOutbound(instance *domain.Instance, groupName string, outboundName string) error {
+	groupIndex, err := findMutableGroup(instance, groupName)
+	if err != nil {
+		return err
+	}
+	group := &instance.Groups[groupIndex]
+	for _, current := range group.Outbounds {
+		if current == outboundName {
+			return nil
+		}
+	}
+	group.Outbounds = append(group.Outbounds, outboundName)
+	return nil
+}
+
+// referencedGroupOutbounds 收集所有 group 仍在引用的 outbound 名称。
+func referencedGroupOutbounds(groups []domain.Group) map[string]struct{} {
+	referenced := map[string]struct{}{}
+	for _, group := range groups {
+		for _, outboundName := range group.Outbounds {
+			referenced[outboundName] = struct{}{}
+		}
+	}
+	return referenced
+}
+
+// findMutableGroup 返回可维护成员的 group 下标。
+func findMutableGroup(instance *domain.Instance, groupName string) (int, error) {
+	for index, group := range instance.Groups {
+		if group.Name != groupName {
+			continue
+		}
+		if group.Type != "selector" && group.Type != "urltest" {
+			return -1, fmt.Errorf("group %q 不是 selector 或 urltest", groupName)
+		}
+		return index, nil
+	}
+	return -1, fmt.Errorf("group %q 不存在", groupName)
+}
+
+// findInstanceByName 按名称查找 instance。
+func findInstanceByName(instances []domain.Instance, name string) (domain.Instance, bool) {
+	for _, instance := range instances {
+		if instance.Name == name {
+			return instance, true
+		}
+	}
+	return domain.Instance{}, false
+}
+
+// selectRefMemberInbound 选择 member 中可被 ref outbound 引用的入口，优先 socks5。
+func selectRefMemberInbound(instance domain.Instance) (domain.Inbound, bool) {
+	for _, inbound := range instance.Inbounds {
+		if inbound.Type == "socks5" {
+			return inbound, true
+		}
+	}
+	for _, inbound := range instance.Inbounds {
+		if inbound.Type == "http" {
+			return inbound, true
+		}
+	}
+	return domain.Inbound{}, false
+}
+
+// refMemberRef 生成 `<instance>.<inbound>` 格式引用。
+func refMemberRef(instanceName string, inboundName string) string {
+	return instanceName + "." + inboundName
+}
+
+// refOutboundName 生成 member ref outbound 的稳定名称。
+func refOutboundName(instanceName string, inboundName string) string {
+	return instanceName + "-" + inboundName
+}
+
+// allocateRefOutboundName 为 ref outbound 分配稳定名称，发生碰撞时追加短哈希后缀。
+func allocateRefOutboundName(outbounds []domain.Outbound, baseName string, ref string) string {
+	if outboundNameAvailable(outbounds, baseName) {
+		return baseName
+	}
+	hashedName := fmt.Sprintf("%s-%08x", baseName, refHash(ref))
+	if outboundNameAvailable(outbounds, hashedName) {
+		return hashedName
+	}
+	for index := 2; ; index++ {
+		candidate := fmt.Sprintf("%s-%08x-%d", baseName, refHash(ref), index)
+		if outboundNameAvailable(outbounds, candidate) {
+			return candidate
+		}
+	}
+}
+
+// outboundNameAvailable 判断 outbound 名称是否未被占用。
+func outboundNameAvailable(outbounds []domain.Outbound, name string) bool {
+	for _, outbound := range outbounds {
+		if outbound.Name == name {
+			return false
+		}
+	}
+	return true
+}
+
+// refHash 返回 ref 的稳定短哈希。
+func refHash(ref string) uint32 {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(ref))
+	return hash.Sum32()
 }
 
 func allocatePorts(global domain.GlobalConfig, existing []domain.Instance, target *domain.Instance) error {
@@ -489,7 +709,7 @@ func renderGlobalConfigYAML(global domain.GlobalConfig) ([]byte, error) {
 
 // renderInstanceConfigYAML 为新建或重写 instance 生成带模板说明的配置。
 func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
-	data, err := yaml.Marshal(instance)
+	data, err := marshalEditableInstanceYAML(instance)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +717,7 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 # 可用模板:
 #   sboxctl add <name> --template edge    # 入口节点，默认 vmess + local socks/http + direct
 #   sboxctl add <name> --template relay   # 中继节点，默认 shadowsocks + local socks/http + direct
-#   sboxctl add <name> --template urltest # 带 urltest group 和 local socks/http 的入口节点
+#   sboxctl add <name> --template urltest --members edge-us,relay-us # 基于已有 instance ref 成员创建 urltest 入口节点
 # 常用配置项:
 # name/role/enabled: 实例名称、模板角色和启停开关。
 # api: sing-box stats API；启用后 traffic 命令会读取该监听地址。
@@ -515,6 +735,137 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 	return append([]byte(header), data...), nil
 }
 
+// marshalEditableInstanceYAML 输出面向用户编辑的精简 instance YAML。
+func marshalEditableInstanceYAML(instance domain.Instance) ([]byte, error) {
+	var node yaml.Node
+	if err := node.Encode(instance); err != nil {
+		return nil, err
+	}
+	pruneEditableYAMLNode(&node, nil)
+	return yaml.Marshal(&node)
+}
+
+// pruneEditableYAMLNode 删除对当前协议无效或为空的字段，避免正文模板噪声。
+func pruneEditableYAMLNode(node *yaml.Node, path []string) bool {
+	if node == nil {
+		return true
+	}
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) == 0 {
+			return true
+		}
+		return pruneEditableYAMLNode(node.Content[0], path)
+	case yaml.MappingNode:
+		removeDefaultTagField(node)
+		next := make([]*yaml.Node, 0, len(node.Content))
+		for index := 0; index < len(node.Content); index += 2 {
+			key := node.Content[index]
+			value := node.Content[index+1]
+			childPath := appendEditableYAMLPath(path, key.Value)
+			if pruneEditableYAMLNode(value, childPath) {
+				continue
+			}
+			next = append(next, key, value)
+		}
+		node.Content = next
+		return len(node.Content) == 0 || isNoauthAuthNode(path, node)
+	case yaml.SequenceNode:
+		next := make([]*yaml.Node, 0, len(node.Content))
+		for _, item := range node.Content {
+			if pruneEditableYAMLNode(item, path) {
+				continue
+			}
+			next = append(next, item)
+		}
+		node.Content = next
+		return len(node.Content) == 0
+	case yaml.ScalarNode:
+		return isEditableEmptyScalar(path, node)
+	default:
+		return false
+	}
+}
+
+// appendEditableYAMLPath 复制并追加 YAML 路径片段，避免递归时复用底层数组。
+func appendEditableYAMLPath(path []string, key string) []string {
+	next := make([]string, 0, len(path)+1)
+	next = append(next, path...)
+	return append(next, key)
+}
+
+// isEditableEmptyScalar 判断标量值是否可从可编辑 YAML 中省略。
+func isEditableEmptyScalar(path []string, node *yaml.Node) bool {
+	switch node.Tag {
+	case "!!str":
+		return node.Value == ""
+	case "!!int":
+		return node.Value == "0"
+	case "!!bool":
+		if node.Value != "false" {
+			return false
+		}
+		return !keepFalseScalar(path)
+	default:
+		return false
+	}
+}
+
+// keepFalseScalar 保留会影响默认值回填语义的 false 字段。
+func keepFalseScalar(path []string) bool {
+	if len(path) == 0 || path[len(path)-1] != "enabled" {
+		return false
+	}
+	if len(path) == 1 {
+		return true
+	}
+	parent := path[len(path)-2]
+	return parent == "api" || parent == "traffic"
+}
+
+// removeDefaultTagField 删除可由 type/name 自动推导的默认 tag 字段。
+func removeDefaultTagField(node *yaml.Node) {
+	name := mappingScalarValue(node, "name")
+	protocolType := mappingScalarValue(node, "type")
+	tag := mappingScalarValue(node, "tag")
+	if name == "" || protocolType == "" || tag != protocolType+"-"+name {
+		return
+	}
+	removeMappingKey(node, "tag")
+}
+
+// isNoauthAuthNode 判断 auth 节点是否只是默认 noauth，可在正文中省略。
+func isNoauthAuthNode(path []string, node *yaml.Node) bool {
+	if len(path) == 0 || path[len(path)-1] != "auth" {
+		return false
+	}
+	return mappingScalarValue(node, "type") == "noauth" &&
+		mappingScalarValue(node, "username") == "" &&
+		mappingScalarValue(node, "password") == ""
+}
+
+// mappingScalarValue 返回 mapping 中指定 key 的标量值。
+func mappingScalarValue(node *yaml.Node, key string) string {
+	for index := 0; index < len(node.Content); index += 2 {
+		if node.Content[index].Value == key && node.Content[index+1].Kind == yaml.ScalarNode {
+			return node.Content[index+1].Value
+		}
+	}
+	return ""
+}
+
+// removeMappingKey 从 YAML mapping 中删除指定 key。
+func removeMappingKey(node *yaml.Node, key string) {
+	next := node.Content[:0]
+	for index := 0; index < len(node.Content); index += 2 {
+		if node.Content[index].Value == key {
+			continue
+		}
+		next = append(next, node.Content[index], node.Content[index+1])
+	}
+	node.Content = next
+}
+
 // instanceProtocolTemplateComment 返回所有受支持协议的注释模板，方便用户在新实例配置中复制启用。
 func instanceProtocolTemplateComment() string {
 	const template = `协议模板参考（默认全部注释，不参与加载；启用时复制到正文 inbounds/outbounds 并去掉前缀 #）。
@@ -528,6 +879,9 @@ inbounds:
     users:
       - name: alice
         uuid: 11111111-1111-4111-8111-111111111111 # VMess 必填 UUID。
+        alter_id: 0 # 可选，默认 0。
+        remark: US VMess # 可选，订阅展示名；subscription.remark 优先。
+        tag: edge-us-vmess # 可选，订阅节点 tag。
     subscription:
       enabled: true # 是否导出订阅节点。
       user: alice # 必须引用 users.name。
@@ -544,13 +898,24 @@ inbounds:
       enabled: true # 可按需启用 TLS。
     transport:
       type: ws # 支持 http、ws、quic、grpc、httpupgrade。
+      host: proxy.example.com
+      hosts: [proxy.example.com]
       path: /vless
+      method: GET
       headers:
         Host: proxy.example.com
+      idle_timeout: 30s
+      ping_timeout: 15s
+      max_early_data: 2048
+      early_data_header_name: Sec-WebSocket-Protocol
+      service_name: proxy
+      permit_without_stream: false
     users:
       - name: alice
         uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填 UUID。
         flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+        remark: US VLESS
+        tag: edge-us-vless
     subscription:
       enabled: true
       user: alice
@@ -616,6 +981,9 @@ outbounds:
     type: direct
   - name: block # 阻断出站，不需要 server/port。
     type: block
+  - name: edge-us-local-socks # 引用已有 instance 的 socks5/http inbound。
+    type: ref
+    ref: edge-us.local-socks # 格式为 <instance>.<inbound>，生成时解析。
   - name: ss-upstream # Shadowsocks 上游。
     type: shadowsocks
     server: ss.example.com
@@ -627,14 +995,25 @@ outbounds:
     server: vmess.example.com
     port: 443
     uuid: 22222222-2222-4222-8222-222222222222
+    security: auto # 可选。
+    alter_id: 0 # 可选，默认 0。
     tls:
       enabled: true
     network: tcp # VMess 底层网络，仅支持 tcp、udp。
     transport:
       type: ws # 支持 http、ws、quic、grpc、httpupgrade。
+      host: vmess.example.com
+      hosts: [vmess.example.com]
       path: /vmess
+      method: GET
       headers:
         Host: vmess.example.com
+      idle_timeout: 30s
+      ping_timeout: 15s
+      max_early_data: 2048
+      early_data_header_name: Sec-WebSocket-Protocol
+      service_name: proxy
+      permit_without_stream: false
   - name: vless-upstream # VLESS 上游。
     type: vless
     server: vless.example.com
@@ -647,6 +1026,7 @@ outbounds:
       type: httpupgrade
       host: vless.example.com
       path: /upgrade
+      method: GET
   - name: anytls-upstream # AnyTLS 上游。
     type: anytls
     server: anytls.example.com
@@ -683,7 +1063,14 @@ outbounds:
     auth:
       type: password # 可为空、noauth 或 password。
       username: alice
-      password: change-me`
+      password: change-me
+groups:
+  - name: auto # urltest group 示例，可引用上方 type=ref 的成员。
+    type: urltest
+    outbounds: [edge-us-local-socks]
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50`
 
 	lines := strings.Split(strings.TrimSuffix(template, "\n"), "\n")
 	var builder strings.Builder
@@ -705,7 +1092,32 @@ func MemberList(set *config.AgentConfigSet, instanceName string, groupName strin
 	if err != nil {
 		return nil, err
 	}
-	return append([]string(nil), group.Outbounds...), nil
+	instanceValue, _, err := findInstance(set, instanceName)
+	if err != nil {
+		return nil, err
+	}
+	outbounds := make(map[string]domain.Outbound, len(instanceValue.Outbounds))
+	for _, outbound := range instanceValue.Outbounds {
+		outbounds[outbound.Name] = outbound
+	}
+	members := make([]string, 0, len(group.Outbounds))
+	for _, outboundName := range group.Outbounds {
+		outbound, ok := outbounds[outboundName]
+		if !ok || outbound.Type != "ref" {
+			members = append(members, outboundName)
+			continue
+		}
+		memberName, _, ok := parseRefMemberWithInstances(outbound.Ref, set.Instances)
+		if !ok {
+			memberName, _, ok = parseRefMember(outbound.Ref)
+		}
+		if !ok {
+			members = append(members, outboundName)
+			continue
+		}
+		members = append(members, memberName)
+	}
+	return members, nil
 }
 
 // MemberAdd 添加 selector/urltest group 成员。
@@ -727,39 +1139,50 @@ func updateMember(baseDir string, instanceName string, groupName string, member 
 	if err != nil {
 		return err
 	}
-	groupIndex := -1
-	for index, group := range instanceValue.Groups {
-		if group.Name == groupName {
-			groupIndex = index
-			break
-		}
-	}
-	if groupIndex < 0 {
-		return fmt.Errorf("group %q 不存在", groupName)
-	}
-	group := &instanceValue.Groups[groupIndex]
-	if group.Type != "selector" && group.Type != "urltest" {
-		return fmt.Errorf("group %q 不是 selector 或 urltest", groupName)
-	}
 	if add {
-		for _, outbound := range group.Outbounds {
-			if outbound == member {
-				set.Instances[instanceIndex] = instanceValue
-				return nil
-			}
+		if err := addRefMemberToInstance(&instanceValue, set.Instances, groupName, member); err != nil {
+			return err
 		}
-		group.Outbounds = append(group.Outbounds, member)
 	} else {
-		next := group.Outbounds[:0]
-		for _, outbound := range group.Outbounds {
-			if outbound != member {
-				next = append(next, outbound)
-			}
+		if err := removeRefMemberFromInstance(&instanceValue, set.Instances, groupName, member); err != nil {
+			return err
 		}
-		group.Outbounds = next
 	}
 	set.Instances[instanceIndex] = instanceValue
 	return WriteInstance(set.Global, set.Instances, instanceValue)
+}
+
+// parseRefMemberWithInstances 按已有 instance 名称解析 ref，支持 instance 名称包含点号。
+func parseRefMemberWithInstances(ref string, instances []domain.Instance) (string, string, bool) {
+	trimmed := strings.TrimSpace(ref)
+	matchedName := ""
+	matchedInbound := ""
+	for _, instance := range instances {
+		prefix := instance.Name + "."
+		if !strings.HasPrefix(trimmed, prefix) || len(instance.Name) <= len(matchedName) {
+			continue
+		}
+		inboundName := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		if inboundName == "" {
+			continue
+		}
+		matchedName = instance.Name
+		matchedInbound = inboundName
+	}
+	if matchedName == "" {
+		return "", "", false
+	}
+	return matchedName, matchedInbound, true
+}
+
+// parseRefMember 从 `<instance>.<inbound>` ref 中提取 member instance 名。
+func parseRefMember(ref string) (string, string, bool) {
+	trimmed := strings.TrimSpace(ref)
+	separator := strings.LastIndex(trimmed, ".")
+	if separator <= 0 || separator == len(trimmed)-1 {
+		return "", "", false
+	}
+	return strings.TrimSpace(trimmed[:separator]), strings.TrimSpace(trimmed[separator+1:]), true
 }
 
 func findGroup(set *config.AgentConfigSet, instanceName string, groupName string) (domain.Group, domain.Instance, error) {

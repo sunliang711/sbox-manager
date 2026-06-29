@@ -48,7 +48,7 @@ sboxctl example [global|instance|inbound|outbound|group|route|traffic] [TYPE]
 ### 3.2 实例管理
 
 ```bash
-sboxctl [--base-dir DIR] add NAME [--template edge|relay|urltest] [--from-file FILE] [--allocate-ports|--keep-template-ports] [--edit|--no-edit] [--editor CMD]
+sboxctl [--base-dir DIR] add NAME [--template edge|relay|urltest] [--from-file FILE] [--members a,b] [--allocate-ports|--keep-template-ports] [--edit|--no-edit] [--editor CMD]
 sboxctl [--base-dir DIR] list [--verbose] [--check-system-ports]
 sboxctl [--base-dir DIR] clone SOURCE TARGET [--allocate-ports] [--edit|--no-edit] [--editor CMD]
 sboxctl [--base-dir DIR] member list INSTANCE GROUP
@@ -58,7 +58,8 @@ sboxctl [--base-dir DIR] remove NAME [--purge]
 ```
 
 - `add`、`clone` 默认自动分配端口并打开编辑器，`--no-edit` 用于脚本化场景；内置模板默认附带本地 `socks5` 和 `http` 代理入口。
-- `member` 只维护 `selector` 或 `urltest` group 的 outbound 成员，用于贴近参考项目的 auto 成员维护体验。
+- `add --template urltest` 必须通过 `--members` 指定已有 instance 名；每个 member 必须包含 `socks5` 或 `http` inbound，生成的 outbound 使用 `type: ref` 和 `<instance>.<inbound>` 引用语法。
+- `member add/remove/list` 只维护 `selector` 或 `urltest` group 的成员；`MEMBER` 为已有 instance 名，会自动选择该 instance 的 `socks5/http` inbound 生成 `type: ref` outbound。
 - `remove` 默认只归档或删除 instance 配置；`--purge` 才清理 manifest 中关联的 generated 文件。
 
 ### 3.3 校验与渲染

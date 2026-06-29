@@ -42,6 +42,13 @@ func TestSboxctlVersionOutput(t *testing.T) {
 	}
 }
 
+// TestDraftPathAppendsDraftSuffix 验证编辑草稿名保留原配置文件名并追加 draft 后缀。
+func TestDraftPathAppendsDraftSuffix(t *testing.T) {
+	if got := draftPath("/opt/sbox-manager/instances/usa4.yaml"); got != "/opt/sbox-manager/instances/usa4.yaml.draft" {
+		t.Fatalf("draft path = %q", got)
+	}
+}
+
 // TestSboxctlComponentVersionOutput 验证 sboxctl version 可查询受管组件。
 func TestSboxctlComponentVersionOutput(t *testing.T) {
 	baseDir := writeAgentFixture(t)
@@ -147,7 +154,12 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "outbound all protocols",
 			args: []string{"example", "outbound"},
-			want: []string{"type: direct", "type: block", "type: shadowsocks", "type: vmess", "type: vless", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+			want: []string{"type: direct", "type: block", "type: ref", "type: shadowsocks", "type: vmess", "type: vless", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+		},
+		{
+			name: "outbound ref",
+			args: []string{"example", "outbound", "ref"},
+			want: []string{"# Ref outbound", "type: ref", "ref: edge-us.local-socks"},
 		},
 		{
 			name:    "outbound vmess",
@@ -181,6 +193,11 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			name: "route geosite",
 			args: []string{"example", "route", "geosite"},
 			want: []string{"type: geosite", "category-ads-all", "outbound: auto"},
+		},
+		{
+			name: "instance urltest ref members",
+			args: []string{"example", "instance", "urltest"},
+			want: []string{"--members edge-us,relay-us", "type: ref", "ref: edge-us.local-socks", "ref: relay-us.local-socks", "outbounds: [edge-us-local-socks, relay-us-local-socks]"},
 		},
 		{
 			name:    "instance relay",

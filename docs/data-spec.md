@@ -230,7 +230,8 @@ traffic:
 | 字段 | 类型 | 必填 | 适用 |
 | --- | --- | --- | --- |
 | `name` | string | 是 | 所有类型 |
-| `type` | string | 是 | `direct`、`block`、`shadowsocks`、`vmess`、`vless`、`anytls`、`trojan`、`hysteria2`、`socks5`、`http` |
+| `type` | string | 是 | `direct`、`block`、`ref`、`shadowsocks`、`vmess`、`vless`、`anytls`、`trojan`、`hysteria2`、`socks5`、`http` |
+| `ref` | string | ref 必填 | `type=ref`，格式 `<instance>.<inbound>`，按已有 instance 名匹配，只能指向 `socks5/http` inbound |
 | `server` | string | 远端类型必填 | 远端类型 |
 | `port` | int | 远端类型必填 | 远端类型 |
 | `uuid` | string | vmess/vless 必填 | vmess、vless |

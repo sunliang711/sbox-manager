@@ -4,14 +4,25 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
+	"strings"
 
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
 
 // Generate 将领域模型转换为稳定的 sing-box JSON 字节。
 func Generate(global domain.GlobalConfig, instance domain.Instance) ([]byte, error) {
-	config, err := BuildConfig(global, instance)
+	config, err := BuildConfigWithInstances(global, []domain.Instance{instance}, instance)
+	if err != nil {
+		return nil, err
+	}
+	return MarshalStable(config)
+}
+
+// GenerateWithInstances 使用完整 instance 集合解析 ref outbound 并生成 sing-box JSON 字节。
+func GenerateWithInstances(global domain.GlobalConfig, instances []domain.Instance, instance domain.Instance) ([]byte, error) {
+	config, err := BuildConfigWithInstances(global, instances, instance)
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +31,13 @@ func Generate(global domain.GlobalConfig, instance domain.Instance) ([]byte, err
 
 // BuildConfig 将领域模型转换为 sing-box 内部结构，不执行任何文件或外部命令操作。
 func BuildConfig(global domain.GlobalConfig, instance domain.Instance) (Config, error) {
+	return BuildConfigWithInstances(global, []domain.Instance{instance}, instance)
+}
+
+// BuildConfigWithInstances 将领域模型转换为 sing-box 内部结构，并可解析跨 instance ref outbound。
+func BuildConfigWithInstances(global domain.GlobalConfig, instances []domain.Instance, instance domain.Instance) (Config, error) {
 	domain.ApplyInstanceDefaults(&instance)
+	instanceIndex := indexInstances(instances)
 	config := Config{
 		Log: Log{
 			Level: global.Defaults.LogLevel,
@@ -48,7 +65,11 @@ func BuildConfig(global domain.GlobalConfig, instance domain.Instance) (Config, 
 		config.Inbounds = append(config.Inbounds, converted)
 	}
 	for _, outbound := range instance.Outbounds {
-		converted, err := convertOutbound(outbound)
+		resolved, err := resolveOutboundRef(instance.Name, outbound, instanceIndex)
+		if err != nil {
+			return Config{}, err
+		}
+		converted, err := convertOutbound(resolved)
 		if err != nil {
 			return Config{}, err
 		}
@@ -68,6 +89,98 @@ func BuildConfig(global domain.GlobalConfig, instance domain.Instance) (Config, 
 		config.Experimental = buildExperimental(instance)
 	}
 	return config, nil
+}
+
+// indexInstances 为 ref outbound 构建按 instance 名称索引的配置集合。
+func indexInstances(instances []domain.Instance) map[string]domain.Instance {
+	index := make(map[string]domain.Instance, len(instances))
+	for _, instance := range instances {
+		domain.ApplyInstanceDefaults(&instance)
+		index[instance.Name] = instance
+	}
+	return index
+}
+
+// resolveOutboundRef 将项目内 ref outbound 解析为 sing-box 可直接使用的 socks/http outbound。
+func resolveOutboundRef(currentInstance string, outbound domain.Outbound, instances map[string]domain.Instance) (domain.Outbound, error) {
+	if outbound.Type != "ref" {
+		return outbound, nil
+	}
+	parsedInstanceName, _, ok := parseOutboundRef(outbound.Ref)
+	if !ok {
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q 必须使用 <instance>.<inbound> 格式", outbound.Name)
+	}
+	targetInstanceName, targetInboundName, targetInstance, exists := resolveOutboundRefTarget(outbound.Ref, instances)
+	if !exists {
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q 引用的 instance %q 不存在", outbound.Name, parsedInstanceName)
+	}
+	if targetInstanceName == currentInstance {
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q 不允许引用当前 instance", outbound.Name)
+	}
+	for _, inbound := range targetInstance.Inbounds {
+		if inbound.Name != targetInboundName {
+			continue
+		}
+		if inbound.Type != "socks5" && inbound.Type != "http" {
+			return domain.Outbound{}, fmt.Errorf("ref outbound %q 只能引用 socks5/http inbound", outbound.Name)
+		}
+		return domain.Outbound{
+			Name:   outbound.Name,
+			Type:   inbound.Type,
+			Server: normalizeRefListen(inbound.Listen),
+			Port:   inbound.Port,
+			Auth:   inbound.Auth,
+		}, nil
+	}
+	return domain.Outbound{}, fmt.Errorf("ref outbound %q 引用的 inbound %q 不存在", outbound.Name, outbound.Ref)
+}
+
+// resolveOutboundRefTarget 根据已有 instance 名称解析 ref，支持 instance 名称包含点号。
+func resolveOutboundRefTarget(ref string, instances map[string]domain.Instance) (string, string, domain.Instance, bool) {
+	trimmed := strings.TrimSpace(ref)
+	matchedName := ""
+	matchedInbound := ""
+	matchedInstance := domain.Instance{}
+	for instanceName, instance := range instances {
+		prefix := instanceName + "."
+		if !strings.HasPrefix(trimmed, prefix) || len(instanceName) <= len(matchedName) {
+			continue
+		}
+		inboundName := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		if inboundName == "" {
+			continue
+		}
+		matchedName = instanceName
+		matchedInbound = inboundName
+		matchedInstance = instance
+	}
+	if matchedName == "" {
+		return "", "", domain.Instance{}, false
+	}
+	return matchedName, matchedInbound, matchedInstance, true
+}
+
+// parseOutboundRef 解析 `<instance>.<inbound>` 格式引用。
+func parseOutboundRef(ref string) (string, string, bool) {
+	trimmed := strings.TrimSpace(ref)
+	separator := strings.LastIndex(trimmed, ".")
+	if separator <= 0 || separator == len(trimmed)-1 {
+		return "", "", false
+	}
+	return strings.TrimSpace(trimmed[:separator]), strings.TrimSpace(trimmed[separator+1:]), true
+}
+
+// normalizeRefListen 将通配监听地址转换为本机可连接地址。
+func normalizeRefListen(listen string) string {
+	listen = strings.TrimSpace(listen)
+	ip := net.ParseIP(listen)
+	if ip == nil || !ip.IsUnspecified() {
+		return listen
+	}
+	if ip.To4() != nil {
+		return "127.0.0.1"
+	}
+	return "::1"
 }
 
 // MarshalStable 使用固定缩进和关闭 HTML 转义的 JSON 输出，保证同输入字节级稳定。
