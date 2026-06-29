@@ -97,8 +97,8 @@ sudo sboxctl --base-dir /opt/sbox-manager --service-manager auto status edge-us
 
 ```bash
 sboxsub --base-dir /opt/sbox-sub init
-sboxctl --base-dir /opt/sbox-manager sub export edge-us -o /tmp/sbox-sub-bundle.tar.gz
-sboxsub --base-dir /opt/sbox-sub import /tmp/sbox-sub-bundle.tar.gz
+sboxctl --base-dir /opt/sbox-manager sub export edge-us -o /tmp/sbox-sub-bundle.zip
+sboxsub --base-dir /opt/sbox-sub import /tmp/sbox-sub-bundle.zip
 sboxsub --base-dir /opt/sbox-sub config check
 sboxsub --base-dir /opt/sbox-sub serve
 ```
@@ -121,8 +121,8 @@ sboxctl logs edge-us --follow
 sboxctl doctor
 sboxctl ipinfo edge-us
 sboxctl setup binary
-sboxctl export -o backup.tar.gz
-sboxctl import backup.tar.gz --force
+sboxctl export -o backup.zip
+sboxctl import backup.zip --force
 ```
 
 流量统计：

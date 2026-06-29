@@ -42,7 +42,7 @@
 | 场景 | 验收标准 |
 | --- | --- |
 | init | 创建目录和默认配置，不覆盖既有文件 |
-| setup | 依次执行 init、install all、service install，`--start` 时继续 start |
+| setup | 等价于 `setup all`，依次执行 `setup local` 和 `setup binary`，不启动实例服务 |
 | add | 创建 instance 配置，端口自动分配 |
 | example | 输出可复制 YAML 片段，保持只读 |
 | clone | 新 instance 名和端口正确 |
@@ -52,7 +52,7 @@
 | validate | 聚合输出配置错误 |
 | render | 输出 model 或 sing-box JSON，保持只读 |
 | export-config | 输出 Clash、Premium Clash、Surge、sing-box 订阅文本，保持只读 |
-| list | 展示 instance、监听地址、服务状态 |
+| list | 展示 instance、enabled 状态和 role，`--verbose` 展示 inbound/outbound/group 数量 |
 | service install | Linux 写 systemd unit，macOS 写 launchd plist，且不启动服务 |
 | service files | systemd unit 和 launchd plist 包含 ExecStart/ProgramArguments、WorkingDirectory、User/Group、日志、权限和 hardening 约束 |
 

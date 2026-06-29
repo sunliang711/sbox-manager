@@ -16,7 +16,7 @@ NO_CHECKSUM=0
 usage() {
     cat <<'EOF'
 Usage:
-  install.sh [--version vX.Y.Z] [--repo OWNER/REPO] [--install-dir DIR] [--dry-run] [--force]
+  install.sh [--version vX.Y.Z] [--repo OWNER/REPO] [--os OS] [--arch ARCH] [--install-dir DIR] [--tmp-dir DIR] [--dry-run] [--force] [--no-checksum]
 
 Options:
   --version V              Release tag, default latest

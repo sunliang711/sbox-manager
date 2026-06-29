@@ -42,7 +42,7 @@
 - `stop/status/logs` 不写 runtime。
 - `service install` 在 Linux 写 systemd unit，在 macOS 写 launchd plist，且不启动服务。
 - systemd unit 和 launchd plist 的关键字段符合 `docs/data-spec.md`。
-- `setup` 按顺序执行 init、install all、service install，`--start` 时继续执行 start。
+- `setup` 等价于 `setup all`，按顺序执行 `setup local` 和 `setup binary`，不启动实例服务。
 - `uninstall` 默认保留配置和数据。
 - `uninstall --purge` 删除受管目录和服务文件。
 

@@ -72,7 +72,7 @@ sboxctl [--base-dir DIR] validate [TARGET] [--skip-system-ports]
 sboxctl [--base-dir DIR] check [TARGET] [--skip-system-ports]
 sboxctl [--base-dir DIR] render model [--skip-system-ports]
 sboxctl [--base-dir DIR] render sing-box INSTANCE [--skip-system-ports]
-sboxctl [--base-dir DIR] render sub [--input-dir DIR] [--skip-system-ports]
+sboxctl [--base-dir DIR] render sub [--skip-system-ports]
 sboxctl [--base-dir DIR] export-config clash|premium-clash|surge|sing-box USER
 ```
 

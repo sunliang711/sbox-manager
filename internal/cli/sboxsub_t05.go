@@ -48,7 +48,7 @@ func newSboxsubInitCommandT05() *cobra.Command {
 
 // sboxsubInitNextSteps 返回订阅服务初始化后的下一步提示。
 func sboxsubInitNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了导入 agent 导出的订阅 bundle，执行：sboxsub --base-dir %s import /path/to/sbox-sub-bundle.tar.gz\n- 为了安装订阅服务文件，执行：sudo sboxsub --base-dir %s service install\n- 为了启动订阅服务，执行：sudo sboxsub --base-dir %s start\n- 不确定还缺什么，执行：sboxsub --base-dir %s doctor\n", baseDir, baseDir, baseDir, baseDir)
+	return fmt.Sprintf("下一步：\n- 为了导入 agent 导出的订阅 bundle，执行：sboxsub --base-dir %s import /path/to/sbox-sub-bundle.zip\n- 为了安装订阅服务文件，执行：sudo sboxsub --base-dir %s service install\n- 为了启动订阅服务，执行：sudo sboxsub --base-dir %s start\n- 不确定还缺什么，执行：sboxsub --base-dir %s doctor\n", baseDir, baseDir, baseDir, baseDir)
 }
 
 // newSboxsubConfigCommandT05 创建订阅服务配置命令组。

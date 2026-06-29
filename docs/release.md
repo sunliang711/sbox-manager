@@ -176,7 +176,7 @@ bash install.sh --version vX.Y.Z
 `scripts/install-local.sh` 用于开发和离线安装：
 
 ```bash
-scripts/install-local.sh --from dist/sbox-manager_vX.Y.Z_linux_amd64.tar.gz --install-dir /usr/local/bin
+scripts/install-local.sh --from dist/release/sbox-manager_vX.Y.Z_linux_amd64.tar.gz --install-dir /usr/local/bin
 scripts/install-local.sh --from dist/bin --install-dir ./tmp/bin
 ```
 

@@ -84,7 +84,7 @@ func newSboxctlCheckCommand() *cobra.Command {
 func newSboxctlRenderCommand() *cobra.Command {
 	render := &cobra.Command{
 		Use:   "render",
-		Short: "渲染模型、sing-box 配置或订阅 bundle",
+		Short: "渲染模型、sing-box 配置或订阅 input",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -95,7 +95,6 @@ func newSboxctlRenderCommand() *cobra.Command {
 		newSboxctlRenderSingBoxCommand(),
 		newSboxctlRenderSubCommand(),
 	)
-	mustCommand(render, "sub").Flags().String("input-dir", "", "订阅 input 目录")
 	return render
 }
 

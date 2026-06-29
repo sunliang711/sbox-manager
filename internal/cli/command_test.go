@@ -289,7 +289,7 @@ func TestSboxsubInitPrintsNextSteps(t *testing.T) {
 	for _, want := range []string{
 		"初始化完成: " + baseDir,
 		"为了导入 agent 导出的订阅 bundle",
-		"sboxsub --base-dir " + baseDir + " import /path/to/sbox-sub-bundle.tar.gz",
+		"sboxsub --base-dir " + baseDir + " import /path/to/sbox-sub-bundle.zip",
 		"sudo sboxsub --base-dir " + baseDir + " service install",
 		"sudo sboxsub --base-dir " + baseDir + " start",
 	} {
@@ -370,7 +370,7 @@ func TestSboxctlRenderGroupShowsHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute render group: %v\n%s", err, output)
 	}
-	for _, want := range []string{"渲染模型、sing-box 配置或订阅 bundle", "sing-box", "sub"} {
+	for _, want := range []string{"渲染模型、sing-box 配置或订阅 input", "sing-box", "sub"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("render help missing %q:\n%s", want, output)
 		}
@@ -403,6 +403,17 @@ func TestSboxctlRenderCommands(t *testing.T) {
 		if !strings.Contains(subOutput, want) {
 			t.Fatalf("render sub output missing %q: %s", want, subOutput)
 		}
+	}
+}
+
+// TestSboxctlRenderSubHelpDoesNotAdvertiseInputDir 验证 render sub 不展示无效 input-dir 参数。
+func TestSboxctlRenderSubHelpDoesNotAdvertiseInputDir(t *testing.T) {
+	output, err := executeCommand(newSboxctlCommand(), "render", "sub", "--help")
+	if err != nil {
+		t.Fatalf("execute render sub help: %v\n%s", err, output)
+	}
+	if strings.Contains(output, "input-dir") {
+		t.Fatalf("render sub help should not advertise unused input-dir flag:\n%s", output)
 	}
 }
 
