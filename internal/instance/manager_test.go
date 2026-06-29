@@ -48,10 +48,13 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 		t.Fatalf("read instance: %v", err)
 	}
 	for _, want := range []string{
-		"# 可用模板:",
-		"# api:",
-		"# inbounds:",
-		"# 订阅字段示例:",
+		"# 生效配置从下方 name 字段开始",
+		"# 最少需要确认:",
+		"#   - inbounds[].port:",
+		"#   - inbounds[].users[].uuid/password:",
+		"#   - outbounds[].server/port/uuid:",
+		"#   - inbounds[].subscription.remark/region:",
+		"# 常用命令:",
 		"# 协议模板参考",
 		"# outbounds:",
 		"#     type: vmess",
@@ -65,8 +68,16 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 		"#     type: ref",
 		"#     type: trojan",
 		"#     type: hysteria2",
+		"#       server_name: vmess.example.com",
+		"#       insecure: false",
+		"#       alpn: [h2, http/1.1]",
+		"# transport_examples:",
+		"#       type: http",
 		"#       type: ws",
+		"#       type: quic",
+		"#       type: grpc",
 		"#       type: httpupgrade",
+		"#       service_name: TunService",
 		"# groups:",
 		"#     outbounds: [edge-us-local-socks]",
 	} {
@@ -78,8 +89,20 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 	if bodyStart < 0 {
 		t.Fatalf("instance body missing:\n%s", data)
 	}
-	body := string(data[bodyStart:])
-	for _, unexpected := range []string{"transport:", "tls:\n", "type: noauth", "labels: []", "users: []", "groups: []", "rules: []", "ref: \"\"", "port: 0"} {
+	templateStart := strings.Index(string(data), "\n# 协议模板参考")
+	if templateStart < 0 {
+		t.Fatalf("instance protocol template missing:\n%s", data)
+	}
+	if templateStart < bodyStart {
+		t.Fatalf("instance body should appear before protocol template:\n%s", data)
+	}
+	body := string(data[bodyStart:templateStart])
+	for _, want := range []string{"security: auto", "tls:", "server_name: vmess.example.com", "transport:", "type: ws", "Host: vmess.example.com"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("instance body missing %q:\n%s", want, body)
+		}
+	}
+	for _, unexpected := range []string{"type: noauth", "labels: []", "users: []", "groups: []", "rules: []", "ref: \"\"", "port: 0"} {
 		if strings.Contains(body, unexpected) {
 			t.Fatalf("instance body should not contain %q:\n%s", unexpected, body)
 		}
@@ -132,6 +155,22 @@ func TestAddTemplatesIncludeLocalProxyInbounds(t *testing.T) {
 			}
 			if http.Type != "http" || http.Listen != "127.0.0.1" || http.Port != wantHTTPPort {
 				t.Fatalf("unexpected local-http inbound: %+v", *http)
+			}
+			primary := instance.Inbounds[0]
+			if !primary.Subscription.Enabled || primary.Subscription.User != "alice" || primary.Subscription.Remark != instance.Name {
+				t.Fatalf("unexpected default subscription on primary inbound: %+v", primary.Subscription)
+			}
+			if template != "urltest" {
+				if len(instance.Outbounds) != 1 || instance.Outbounds[0].Name != "vmess-upstream" || instance.Outbounds[0].Type != "vmess" {
+					t.Fatalf("unexpected default outbound: %+v", instance.Outbounds)
+				}
+				if instance.Route.Default != "vmess-upstream" {
+					t.Fatalf("route default = %q, want vmess-upstream", instance.Route.Default)
+				}
+				outbound := instance.Outbounds[0]
+				if !outbound.TLS.Enabled || outbound.TLS.ServerName != "vmess.example.com" || outbound.Transport.Type != "ws" || outbound.Transport.Headers["Host"] != "vmess.example.com" {
+					t.Fatalf("unexpected vmess upstream detail: %+v", outbound)
+				}
 			}
 		})
 	}

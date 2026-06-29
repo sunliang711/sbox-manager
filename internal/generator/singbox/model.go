@@ -74,9 +74,12 @@ type Outbound struct {
 	Transport  *Transport `json:"transport,omitempty"`
 }
 
-// TLS 表示 sing-box outbound 的 TLS 配置。
+// TLS 表示 sing-box 的 TLS 配置。
 type TLS struct {
-	Enabled bool `json:"enabled"`
+	Enabled    bool     `json:"enabled"`
+	ServerName string   `json:"server_name,omitempty"`
+	Insecure   bool     `json:"insecure,omitempty"`
+	ALPN       []string `json:"alpn,omitempty"`
 }
 
 // Transport 表示 sing-box vmess 等协议的传输配置。

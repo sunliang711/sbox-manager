@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/domain"
 	installer "github.com/sunliang711/sbox-manager/internal/install"
 	instancemgr "github.com/sunliang711/sbox-manager/internal/instance"
+	runtimeplan "github.com/sunliang711/sbox-manager/internal/runtime"
 	"github.com/sunliang711/sbox-manager/internal/service"
 )
 
@@ -730,6 +732,10 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
 		return err
 	}
+	draftData, err := os.ReadFile(draft)
+	if err != nil {
+		return fmt.Errorf("读取草稿文件 %s: %w", draft, err)
+	}
 	if len(args) == 0 {
 		loaded, err := config.LoadGlobalConfig(draft, options.baseDir)
 		if err != nil {
@@ -745,11 +751,63 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	} else if err := validateInstanceDraft(draft, filepath.Ext(path), set.Global); err != nil {
 		return err
 	}
+	if bytes.Equal(data, draftData) {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "配置未变化: %s\n", path)
+		return err
+	}
 	if err := os.Rename(draft, path); err != nil {
 		return fmt.Errorf("替换配置文件 %s: %w", path, err)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "配置已更新: %s\n", path)
-	return err
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "配置已更新: %s\n", path); err != nil {
+		return err
+	}
+	if len(args) == 1 {
+		restarted, err := restartEditedInstanceIfRunning(cmd, options, args[0])
+		if err != nil {
+			return err
+		}
+		if restarted {
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "实例运行中，已自动重启: %s\n", args[0])
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "实例未运行，跳过自动重启: %s\n", args[0])
+		return err
+	}
+	return nil
+}
+
+// restartEditedInstanceIfRunning 在实例配置变更后复用 lifecycle restart 刷新 runtime 并重启运行中服务。
+func restartEditedInstanceIfRunning(cmd *cobra.Command, options *rootOptions, name string) (bool, error) {
+	manager, err := newSboxctlServiceManager(options)
+	if err != nil {
+		return false, err
+	}
+	serviceName := service.ServiceNameForKind(manager.Kind(), name)
+	running, err := manager.IsRunning(cmd.Context(), serviceName)
+	if err != nil {
+		return false, err
+	}
+	if !running {
+		return false, nil
+	}
+	set, err := config.LoadAgentConfigSet(options.baseDir)
+	if err != nil {
+		return false, err
+	}
+	plan, err := runtimeplan.BuildPlan(set.Global, set.Instances, name)
+	if err != nil {
+		return false, err
+	}
+	checker := newRuntimeConfigChecker(options, set.Global)
+	runtimeManager, err := newRuntimeServiceManager(options, set.Global)
+	if err != nil {
+		return false, err
+	}
+	_, err = runtimeplan.Restart(cmd.Context(), plan, checker, runtimeManager, runtimeplan.DefaultClock)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func validateInstanceDraft(path string, extension string, global domain.GlobalConfig) error {
@@ -1014,15 +1072,28 @@ outbounds:
     method: 2022-blake3-aes-256-gcm # Shadowsocks 2022 示例方法。
     password: change-me # shadowsocks 必填。
     tls:
-      enabled: false # 当前模型仅支持 TLS 开关。
+      enabled: false # 是否启用 TLS。
+      server_name: ss.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
   - name: vmess-upstream
     type: vmess
     server: vmess.example.com
     port: 443
     uuid: 22222222-2222-4222-8222-222222222222 # vmess 必填。
+    alter_id: 0 # 可选，默认 0。
+    security: auto # VMess 加密方式，常用 auto。
     tls:
       enabled: true
-    network: tcp # vmess 可选；非 tcp 时生成同名 transport type。
+      server_name: vmess.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
+    network: tcp # VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
+    transport:
+      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
+      path: /vmess
+      headers:
+        Host: vmess.example.com
 
 groups:
   - name: auto
@@ -1077,10 +1148,25 @@ inbounds:
       remark: US Shadowsocks
       region: US
 outbounds:
-  - name: direct
-    type: direct
+  - name: vmess-upstream
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    alter_id: 0
+    security: auto
+    tls:
+      enabled: true
+      server_name: vmess.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
+    transport:
+      type: ws
+      path: /vmess
+      headers:
+        Host: vmess.example.com
 route:
-  default: direct
+  default: vmess-upstream
 traffic:
   enabled: true
   scopes: [user, inbound, outbound]
@@ -1357,7 +1443,10 @@ func outboundShadowsocksExample() string {
   method: 2022-blake3-aes-256-gcm # Shadowsocks 必填。
   password: change-me # Shadowsocks 必填。
   tls:
-    enabled: false # 当前模型仅支持 TLS 开关。`
+    enabled: false # 是否启用 TLS。
+    server_name: ss.example.com
+    insecure: false
+    alpn: [h2, http/1.1]`
 }
 
 func outboundVMessExample() string {
@@ -1367,9 +1456,14 @@ func outboundVMessExample() string {
   server: vmess.example.com
   port: 443
   uuid: 22222222-2222-4222-8222-222222222222 # VMess 必填。
+  alter_id: 0 # 可选，默认 0。
+  security: auto # VMess 加密方式，常用 auto。
   tls:
     enabled: true # 是否启用 TLS。
-  network: tcp # 可选；VMess 底层网络，仅支持 tcp、udp。
+    server_name: vmess.example.com # TLS SNI。
+    insecure: false # 是否跳过证书校验，生产环境建议 false。
+    alpn: [h2, http/1.1] # 可选 TLS ALPN。
+  network: tcp # 可选；VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
   transport:
     type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
     path: /vmess
@@ -1388,6 +1482,9 @@ func outboundVLESSExample() string {
   flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
   tls:
     enabled: true # 是否启用 TLS。
+    server_name: vless.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
   transport:
     type: httpupgrade # 可选；支持 http、ws、quic、grpc、httpupgrade。
     host: vless.example.com
@@ -1403,7 +1500,10 @@ func outboundAnyTLSExample() string {
   port: 443
   password: change-me # AnyTLS 必填。
   tls:
-    enabled: true # AnyTLS 必须启用 TLS。`
+    enabled: true # AnyTLS 必须启用 TLS。
+    server_name: anytls.example.com
+    insecure: false
+    alpn: [h2, http/1.1]`
 }
 
 func outboundTrojanExample() string {
@@ -1414,7 +1514,10 @@ func outboundTrojanExample() string {
   port: 443
   password: change-me # Trojan 必填。
   tls:
-    enabled: true # Trojan 通常需要 TLS。`
+    enabled: true # Trojan 通常需要 TLS。
+    server_name: trojan.example.com
+    insecure: false
+    alpn: [h2, http/1.1]`
 }
 
 func outboundHysteria2Example() string {
@@ -1425,7 +1528,10 @@ func outboundHysteria2Example() string {
   port: 443
   password: change-me # Hysteria2 必填。
   tls:
-    enabled: true`
+    enabled: true
+    server_name: hy2.example.com
+    insecure: false
+    alpn: [h2, http/1.1]`
 }
 
 func outboundSocks5Example() string {

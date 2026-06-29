@@ -198,6 +198,9 @@ traffic:
 | `auth.username` | string | password 必填 | 无 | 非空 |
 | `auth.password` | string | password 必填 | 无 | 非空 |
 | `tls.enabled` | bool | AnyTLS 必填 | `false` | AnyTLS 必须为 `true`，其他支持 TLS 的 inbound 可按需启用 |
+| `tls.server_name` | string | 否 | 无 | TLS SNI |
+| `tls.insecure` | bool | 否 | `false` | 是否跳过证书校验，生产环境建议 `false` |
+| `tls.alpn` | string list | 否 | `[]` | TLS ALPN 列表 |
 | `transport` | object | 否 | 无 | VMess/VLESS 的 V2Ray transport 配置 |
 | `users` | list | vmess/vless/anytls/shadowsocks 必填 | 无 | 多用户凭据 |
 | `subscription` | object | 否 | `{enabled:false}` | 是否导出订阅节点 |
@@ -243,6 +246,9 @@ traffic:
 | `auth.username` | string | socks5/http 可选 | socks5/http |
 | `auth.password` | string | socks5/http 可选 | socks5/http |
 | `tls.enabled` | bool | AnyTLS 必填 | 支持 TLS 的远端类型；AnyTLS 必须为 `true` |
+| `tls.server_name` | string | 否 | TLS 远端类型 |
+| `tls.insecure` | bool | 否 | TLS 远端类型 |
+| `tls.alpn` | string list | 否 | TLS 远端类型 |
 | `network` | string | vmess 可选 | 仅表示 VMess 底层网络，支持 `tcp`、`udp`；V2Ray transport 必须写入 `transport.type` |
 | `transport` | object | 否 | VMess/VLESS 的 V2Ray transport 配置 |
 
@@ -506,6 +512,9 @@ nodes:
 | `auth.username` | string | password 必填 | 用户名 |
 | `auth.password` | string | password 必填 | 密码 |
 | `tls.enabled` | bool | AnyTLS 必填 | AnyTLS 必须为 `true`，其他协议按需启用 |
+| `tls.server_name` | string | 否 | TLS SNI |
+| `tls.insecure` | bool | 否 | 是否跳过证书校验 |
+| `tls.alpn` | string list | 否 | TLS ALPN 列表 |
 | `transport` | object | 否 | VMess/VLESS 的 V2Ray transport 配置 |
 | `udp` | bool | 否 | 显式配置时输出到支持该字段的客户端 |
 | `native` | object | sing-box 必填 | sing-box native node 原始片段 |

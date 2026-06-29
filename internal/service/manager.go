@@ -30,6 +30,11 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
+// StreamRunner 表示可把长驻命令输出实时转发到当前终端的执行器。
+type StreamRunner interface {
+	Stream(ctx context.Context, name string, args ...string) error
+}
+
 // CommandRunner 使用 exec.CommandContext 和参数数组执行外部命令。
 type CommandRunner struct{}
 
@@ -41,6 +46,18 @@ func (CommandRunner) Run(ctx context.Context, name string, args ...string) ([]by
 		return output, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
 	return output, nil
+}
+
+// Stream 执行命令并把 stdin/stdout/stderr 直接连接到当前进程。
+func (CommandRunner) Stream(ctx context.Context, name string, args ...string) error {
+	command := exec.CommandContext(ctx, name, args...)
+	command.Stdin = os.Stdin
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return nil
 }
 
 // Options 描述服务管理器运行参数。
@@ -350,6 +367,50 @@ func (m *Manager) Restart(ctx context.Context, services []string) error {
 	return err
 }
 
+// IsRunning 判断服务当前是否处于运行状态，供配置变更后按需重启。
+func (m *Manager) IsRunning(ctx context.Context, serviceName string) (bool, error) {
+	if m == nil {
+		return false, fmt.Errorf("service manager 不能为空")
+	}
+	switch m.kind {
+	case KindSystemd:
+		return m.isSystemdRunning(ctx, serviceName)
+	case KindLaunchd:
+		return m.isLaunchdRunning(ctx, serviceName)
+	default:
+		return false, fmt.Errorf("不支持的 service-manager %q", m.kind)
+	}
+}
+
+// isSystemdRunning 通过 systemctl is-active 判断 systemd 服务是否 active。
+func (m *Manager) isSystemdRunning(ctx context.Context, serviceName string) (bool, error) {
+	output, err := m.runner.Run(ctx, "systemctl", "is-active", serviceName)
+	state := strings.TrimSpace(string(output))
+	if state == "active" {
+		return true, nil
+	}
+	if state != "" || err == nil || isServiceNotLoaded(output, err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("检查服务运行状态 %s: %w", serviceName, err)
+}
+
+// isLaunchdRunning 通过 launchctl print 判断 launchd 服务是否 running。
+func (m *Manager) isLaunchdRunning(ctx context.Context, serviceName string) (bool, error) {
+	instance := InstanceFromServiceName(serviceName)
+	label := LaunchdLabel(instance)
+	target := launchdDomain() + "/" + label
+	output, err := m.runner.Run(ctx, "launchctl", "print", target)
+	if err != nil {
+		if isServiceNotLoaded(output, err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("检查服务运行状态 %s: %w", serviceName, err)
+	}
+	text := strings.ToLower(string(output))
+	return strings.Contains(text, "state = running") || strings.Contains(text, "\npid = "), nil
+}
+
 // Run 执行 start/stop/restart/status/logs/enable/disable。
 func (m *Manager) Run(ctx context.Context, action string, services []string, follow bool) ([]Result, error) {
 	if m == nil {
@@ -378,6 +439,14 @@ func (m *Manager) runOne(ctx context.Context, action string, serviceName string,
 	}
 }
 
+// runStreamOrCapture 优先流式执行 follow 日志命令，测试 runner 不支持时回退为捕获输出。
+func (m *Manager) runStreamOrCapture(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if streamer, ok := m.runner.(StreamRunner); ok {
+		return nil, streamer.Stream(ctx, name, args...)
+	}
+	return m.runner.Run(ctx, name, args...)
+}
+
 func (m *Manager) runSystemd(ctx context.Context, action string, serviceName string, follow bool) ([]byte, error) {
 	switch action {
 	case "start", "stop", "restart", "enable", "disable":
@@ -388,6 +457,7 @@ func (m *Manager) runSystemd(ctx context.Context, action string, serviceName str
 		args := []string{"-u", serviceName, "--no-pager", "-n", "200"}
 		if follow {
 			args = append(args, "-f")
+			return m.runStreamOrCapture(ctx, "journalctl", args...)
 		}
 		return m.runner.Run(ctx, "journalctl", args...)
 	default:
@@ -423,6 +493,7 @@ func (m *Manager) runLaunchd(ctx context.Context, action string, serviceName str
 		if follow {
 			args[0] = "stream"
 			args = args[:len(args)-2]
+			return m.runStreamOrCapture(ctx, "log", args...)
 		}
 		return m.runner.Run(ctx, "log", args...)
 	default:

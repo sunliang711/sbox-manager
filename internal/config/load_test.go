@@ -183,6 +183,51 @@ func TestStrictDecodeRejectsTrailingDocuments(t *testing.T) {
 	}
 }
 
+// TestLoadInstanceSupportsVMessWebSocketTLS 验证项目原生 VMess WebSocket + TLS 出站配置可严格加载。
+func TestLoadInstanceSupportsVMessWebSocketTLS(t *testing.T) {
+	baseDir := t.TempDir()
+	global := domain.DefaultGlobalConfig()
+	path := writeTempFile(t, baseDir, "usa1.yaml", `
+name: usa1
+inbounds:
+  - name: vmess-main
+    type: vmess
+    port: 24000
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+outbounds:
+  - name: vmess-upstream
+    type: vmess
+    server: example.cc
+    port: 443
+    uuid: 244a79b1-522f-4f43-8d58-69c88ef732fe
+    alter_id: 0
+    security: auto
+    tls:
+      enabled: true
+      server_name: example.cc
+      insecure: false
+      alpn: [h2, http/1.1]
+    transport:
+      type: ws
+      path: /vmess-websocket
+      headers:
+        Host: example.cc
+route:
+  default: vmess-upstream
+`)
+
+	instance, err := LoadInstance(path, global)
+	if err != nil {
+		t.Fatalf("load vmess websocket tls instance: %v", err)
+	}
+	outbound := instance.Outbounds[0]
+	if outbound.TLS.ServerName != "example.cc" || outbound.Transport.Type != "ws" || outbound.Transport.Path != "/vmess-websocket" || outbound.Transport.Headers["Host"] != "example.cc" {
+		t.Fatalf("unexpected vmess outbound: %+v", outbound)
+	}
+}
+
 // TestPortRangeParsing 验证端口范围字符串和对象格式。
 func TestPortRangeParsing(t *testing.T) {
 	tests := []struct {

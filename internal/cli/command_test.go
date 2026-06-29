@@ -164,7 +164,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name:    "outbound vmess",
 			args:    []string{"example", "outbound", "vmess"},
-			want:    []string{"# VMess outbound", "uuid:", "tls:", "network: tcp"},
+			want:    []string{"# VMess outbound", "uuid:", "alter_id:", "security: auto", "tls:", "server_name:", "insecure:", "alpn:", "network: tcp", "type: ws", "headers:"},
 			notWant: []string{"type: shadowsocks"},
 		},
 		{
@@ -202,7 +202,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name:    "instance relay",
 			args:    []string{"example", "instance", "relay"},
-			want:    []string{"role: relay", "type: shadowsocks", "traffic:"},
+			want:    []string{"role: relay", "type: shadowsocks", "type: vmess", "default: vmess-upstream", "traffic:"},
 			notWant: []string{"role: edge"},
 		},
 		{
@@ -953,6 +953,76 @@ func TestSboxctlE2EFakeLifecycle(t *testing.T) {
 	}
 }
 
+// TestSboxctlConfigInstanceRestartsRunningService 验证实例配置变化且服务运行时自动刷新 runtime 并重启。
+func TestSboxctlConfigInstanceRestartsRunningService(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	editor := filepath.Join(t.TempDir(), "append-comment.sh")
+	if err := os.WriteFile(editor, []byte("#!/bin/sh\nprintf '\\n# changed by test\\n' >> \"$1\"\n"), 0755); err != nil {
+		t.Fatalf("write editor: %v", err)
+	}
+	runner := &cliRecordingRunner{outputs: map[string][]byte{
+		"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+	}}
+	checker := &cliFakeChecker{}
+	restoreRuntimeHooks(t)
+	newRuntimeConfigChecker = func(*rootOptions, domain.GlobalConfig) runtimeplan.ConfigChecker {
+		return checker
+	}
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "config", "--editor", editor, "edge-us")
+	if err != nil {
+		t.Fatalf("config edit failed: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"配置已更新:",
+		"实例运行中，已自动重启: edge-us",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("config output missing %q:\n%s", want, output)
+		}
+	}
+	for _, want := range []string{
+		"systemctl is-active sbox@edge-us.service",
+		"systemctl restart sbox@edge-us.service",
+	} {
+		if !strings.Contains(runner.joined(), want) {
+			t.Fatalf("config edit should run %q:\n%s", want, runner.joined())
+		}
+	}
+	if checker.calls == 0 {
+		t.Fatal("auto restart should check generated sing-box config")
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "runtime", "manifest.json")); err != nil {
+		t.Fatalf("auto restart should write runtime manifest: %v", err)
+	}
+}
+
+// TestSboxctlConfigInstanceNoChangeSkipsRestart 验证实例配置未变化时不会检查服务状态或重启。
+func TestSboxctlConfigInstanceNoChangeSkipsRestart(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	runner := &cliRecordingRunner{outputs: map[string][]byte{
+		"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+	}}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "config", "--editor", "true", "edge-us")
+	if err != nil {
+		t.Fatalf("config edit failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "配置未变化:") {
+		t.Fatalf("config output should report no change:\n%s", output)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("no-change config edit should not run service commands:\n%s", got)
+	}
+}
+
 // TestRootHelpShowsResponsibilities 验证根命令 help 能区分 agent 与 sub 职责。
 func TestRootHelpShowsResponsibilities(t *testing.T) {
 	sboxctlHelp, err := executeCommand(newSboxctlCommand(), "--help")
@@ -1184,8 +1254,10 @@ func (f *cliFakeChecker) Check(ctx context.Context, instance string, data []byte
 }
 
 type cliRecordingRunner struct {
-	calls []string
-	onRun func(string)
+	calls   []string
+	outputs map[string][]byte
+	errors  map[string]error
+	onRun   func(string)
 }
 
 func (r *cliRecordingRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -1194,7 +1266,7 @@ func (r *cliRecordingRunner) Run(ctx context.Context, name string, args ...strin
 	if r.onRun != nil {
 		r.onRun(call)
 	}
-	return nil, nil
+	return r.outputs[call], r.errors[call]
 }
 
 func (r *cliRecordingRunner) joined() string {

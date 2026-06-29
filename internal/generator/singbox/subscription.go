@@ -319,9 +319,7 @@ func outboundFromSubscriptionNode(node domain.SubscriptionNode) Outbound {
 	if node.Protocol == "vless" {
 		outbound.Flow = node.Flow
 	}
-	if node.TLS.Enabled || node.Protocol == "anytls" {
-		outbound.TLS = &TLS{Enabled: true}
-	}
+	outbound.TLS = convertTLS(node.TLS, node.Protocol == "anytls")
 	if subscriptionNodeSupportsTransport(node.Protocol) {
 		transport := convertTransport(node.Transport)
 		outbound.Transport = transport

@@ -227,9 +227,10 @@ func (m *Manager) runTrafficTimer(ctx context.Context, action string, period str
 		case "status":
 			return m.runner.Run(ctx, "systemctl", "status", "--no-pager", timerName)
 		case "logs", "log":
-			args := []string{"-u", timerName, "--no-pager", "-n", "200"}
+			args := []string{"-u", TrafficSystemdServiceName(period), "--no-pager", "-n", "200"}
 			if follow {
 				args = append(args, "-f")
+				return m.runStreamOrCapture(ctx, "journalctl", args...)
 			}
 			return m.runner.Run(ctx, "journalctl", args...)
 		default:
@@ -263,6 +264,7 @@ func (m *Manager) runTrafficTimer(ctx context.Context, action string, period str
 			if follow {
 				args[0] = "stream"
 				args = args[:len(args)-2]
+				return m.runStreamOrCapture(ctx, "log", args...)
 			}
 			return m.runner.Run(ctx, "log", args...)
 		default:

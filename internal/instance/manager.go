@@ -161,23 +161,27 @@ func templateInstance(global domain.GlobalConfig, existing []domain.Instance, na
 	if template == "" {
 		instance.Role = "edge"
 	}
-	instance.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
 	switch instance.Role {
 	case "edge":
 		if len(members) > 0 {
 			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
 		}
+		instance.Outbounds = []domain.Outbound{vmessOutbound("vmess-upstream")}
 		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
 		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
-		instance.Route = domain.RouteConfig{Default: "direct"}
+		instance.Route = domain.RouteConfig{Default: "vmess-upstream"}
 	case "relay":
 		if len(members) > 0 {
 			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
 		}
+		instance.Outbounds = []domain.Outbound{vmessOutbound("vmess-upstream")}
 		instance.Inbounds = []domain.Inbound{shadowsocksInbound("ss-main", 24000)}
+		instance.Inbounds[0].Subscription.Enabled = true
+		instance.Inbounds[0].Subscription.User = "alice"
+		instance.Inbounds[0].Subscription.Remark = instance.Name
 		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
-		instance.Route = domain.RouteConfig{Default: "direct"}
+		instance.Route = domain.RouteConfig{Default: "vmess-upstream"}
 	case "urltest":
 		if len(members) == 0 {
 			return domain.Instance{}, fmt.Errorf("urltest 模板必须通过 --members 指定已有 instance")
@@ -225,6 +229,29 @@ func shadowsocksInbound(name string, port int) domain.Inbound {
 		},
 	}
 	return inbound
+}
+
+// vmessOutbound 创建默认 VMess 上游出站，供新实例生成后按真实服务参数替换。
+func vmessOutbound(name string) domain.Outbound {
+	return domain.Outbound{
+		Name:     name,
+		Type:     "vmess",
+		Server:   "vmess.example.com",
+		Port:     443,
+		UUID:     "22222222-2222-4222-8222-222222222222",
+		Security: "auto",
+		TLS: domain.TLSConfig{
+			Enabled:    true,
+			ServerName: "vmess.example.com",
+		},
+		Transport: domain.TransportConfig{
+			Type: "ws",
+			Path: "/vmess-websocket",
+			Headers: map[string]string{
+				"Host": "vmess.example.com",
+			},
+		},
+	}
 }
 
 // localProxyInbounds 返回模板默认附带的本地 HTTP/SOCKS 代理入口。
@@ -713,26 +740,37 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	header := `# sbox-manager instance config.
-# 可用模板:
-#   sboxctl add <name> --template edge    # 入口节点，默认 vmess + local socks/http + direct
-#   sboxctl add <name> --template relay   # 中继节点，默认 shadowsocks + local socks/http + direct
-#   sboxctl add <name> --template urltest --members edge-us,relay-us # 基于已有 instance ref 成员创建 urltest 入口节点
-# 常用配置项:
-# name/role/enabled: 实例名称、模板角色和启停开关。
-# api: sing-box stats API；启用后 traffic 命令会读取该监听地址。
-# inbounds: 客户端入口。subscription.enabled=true 时会导出到 sboxsub。
-# outbounds/groups/route: 出站、选择组和默认路由。
-# traffic: 当前实例参与流量统计的开关和统计维度。
-# 订阅字段示例:
-#   subscription:
-#     enabled: true
-#     user: alice
-#     remark: edge-us
-#     region: US
+	header := renderInstanceConfigHeader(instance)
+	footer := "\n" + instanceProtocolTemplateComment()
+	result := append([]byte(header), data...)
+	result = append(result, []byte(footer)...)
+	return result, nil
+}
 
-` + instanceProtocolTemplateComment() + "\n"
-	return append([]byte(header), data...), nil
+// renderInstanceConfigHeader 生成 instance YAML 顶部的最少修改提示。
+func renderInstanceConfigHeader(instance domain.Instance) string {
+	roleHint := "edge/relay 通常保持 vmess-upstream；urltest 通常保持 auto。"
+	switch instance.Role {
+	case "edge":
+		roleHint = "当前 edge 模板默认把入口流量转发到 VMess 上游 vmess-upstream。"
+	case "relay":
+		roleHint = "当前 relay 模板默认把入口流量转发到 VMess 上游 vmess-upstream。"
+	case "urltest":
+		roleHint = "当前 urltest 模板默认通过 auto group 在成员实例之间测速选择。"
+	}
+	return fmt.Sprintf(`# sbox-manager instance config.
+# 生效配置从下方 name 字段开始；文件末尾是完整协议模板参考，默认均为注释。
+# 最少需要确认:
+#   - inbounds[].port: 公网入口端口；自动分配后通常可直接使用。
+#   - inbounds[].users[].uuid/password: 已自动生成，复制给客户端即可；如要自定义请替换。
+#   - outbounds[].server/port/uuid: 默认 VMess 上游占位值，必须改成真实服务端参数。
+#   - inbounds[].subscription.remark/region: 订阅展示名和地区，可按需修改。
+#   - route.default: %s
+# 常用命令:
+#   sboxctl validate %s
+#   sboxctl render sing-box %s
+
+`, roleHint, instance.Name, instance.Name)
 }
 
 // marshalEditableInstanceYAML 输出面向用户编辑的精简 instance YAML。
@@ -896,6 +934,9 @@ inbounds:
     udp: true
     tls:
       enabled: true # 可按需启用 TLS。
+      server_name: proxy.example.com # TLS SNI；为空时由 sing-box 默认处理。
+      insecure: false # 是否跳过证书校验，生产环境建议 false。
+      alpn: [h2, http/1.1] # 可选 TLS ALPN。
     transport:
       type: ws # 支持 http、ws、quic、grpc、httpupgrade。
       host: proxy.example.com
@@ -930,6 +971,9 @@ inbounds:
     udp: true
     tls:
       enabled: true # AnyTLS 必须启用 TLS。
+      server_name: proxy.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
     users:
       - name: alice
         password: change-me # AnyTLS 用户必填密码。
@@ -976,6 +1020,42 @@ inbounds:
       type: password # 支持 noauth、password。
       username: alice
       password: change-me
+transport_examples: # VMess/VLESS 可选 transport；复制其中一个 transport 块到对应 inbound/outbound。
+  http:
+    transport:
+      type: http
+      hosts: [proxy.example.com]
+      path: /v2ray
+      method: GET
+      headers:
+        Host: proxy.example.com
+  ws:
+    transport:
+      type: ws
+      host: proxy.example.com
+      path: /ws
+      headers:
+        Host: proxy.example.com
+      max_early_data: 2048
+      early_data_header_name: Sec-WebSocket-Protocol
+  quic:
+    transport:
+      type: quic
+  grpc:
+    transport:
+      type: grpc
+      service_name: TunService
+      idle_timeout: 30s
+      ping_timeout: 15s
+      permit_without_stream: false
+  httpupgrade:
+    transport:
+      type: httpupgrade
+      host: proxy.example.com
+      path: /upgrade
+      method: GET
+      headers:
+        Host: proxy.example.com
 outbounds:
   - name: direct # 直连出站，不需要 server/port。
     type: direct
@@ -995,11 +1075,14 @@ outbounds:
     server: vmess.example.com
     port: 443
     uuid: 22222222-2222-4222-8222-222222222222
-    security: auto # 可选。
+    security: auto # VMess 加密方式，常用 auto。
     alter_id: 0 # 可选，默认 0。
     tls:
       enabled: true
-    network: tcp # VMess 底层网络，仅支持 tcp、udp。
+      server_name: vmess.example.com # TLS SNI。
+      insecure: false # 是否跳过证书校验，生产环境建议 false。
+      alpn: [h2, http/1.1] # 可选 TLS ALPN。
+    network: tcp # VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
     transport:
       type: ws # 支持 http、ws、quic、grpc、httpupgrade。
       host: vmess.example.com
@@ -1022,6 +1105,9 @@ outbounds:
     flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
     tls:
       enabled: true
+      server_name: vless.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
     transport:
       type: httpupgrade
       host: vless.example.com
@@ -1034,6 +1120,9 @@ outbounds:
     password: change-me
     tls:
       enabled: true # AnyTLS 必须启用 TLS。
+      server_name: anytls.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
   - name: trojan-upstream # Trojan 上游。
     type: trojan
     server: trojan.example.com
@@ -1041,6 +1130,9 @@ outbounds:
     password: change-me
     tls:
       enabled: true
+      server_name: trojan.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
   - name: hy2-upstream # Hysteria2 上游。
     type: hysteria2
     server: hy2.example.com
@@ -1048,6 +1140,9 @@ outbounds:
     password: change-me
     tls:
       enabled: true
+      server_name: hy2.example.com
+      insecure: false
+      alpn: [h2, http/1.1]
   - name: socks5-upstream # SOCKS5 上游。
     type: socks5
     server: socks.example.com

@@ -207,9 +207,7 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 		udp := inbound.UDP
 		result.UDP = &udp
 	}
-	if inbound.TLS.Enabled || inbound.Type == "anytls" {
-		result.TLS = &TLS{Enabled: true}
-	}
+	result.TLS = convertTLS(inbound.TLS, inbound.Type == "anytls")
 	if inboundSupportsTransport(inbound.Type) {
 		result.Transport = convertTransport(inbound.Transport)
 	}
@@ -295,9 +293,7 @@ func convertOutbound(outbound domain.Outbound) (Outbound, error) {
 	if outbound.Type == "vless" {
 		result.Flow = outbound.Flow
 	}
-	if outbound.TLS.Enabled || outbound.Type == "anytls" {
-		result.TLS = &TLS{Enabled: true}
-	}
+	result.TLS = convertTLS(outbound.TLS, outbound.Type == "anytls")
 	if outboundSupportsTransport(outbound.Type) {
 		result.Transport = convertTransport(outbound.Transport)
 	}
@@ -380,6 +376,19 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 		result.Host = transport.Host
 	}
 	return result
+}
+
+// convertTLS 将领域 TLS 配置转换为 sing-box TLS 片段。
+func convertTLS(tls domain.TLSConfig, forceEnabled bool) *TLS {
+	if !tls.Enabled && !forceEnabled {
+		return nil
+	}
+	return &TLS{
+		Enabled:    tls.Enabled || forceEnabled,
+		ServerName: tls.ServerName,
+		Insecure:   tls.Insecure,
+		ALPN:       append([]string(nil), tls.ALPN...),
+	}
 }
 
 // inboundSupportsTransport 判断 inbound 协议是否支持 V2Ray transport。

@@ -211,6 +211,40 @@ func TestVLESSAnyTLSAndTransportsValidate(t *testing.T) {
 	}
 }
 
+// TestVMessWebSocketTLSValidate 验证 VMess WebSocket + TLS 字段可通过校验。
+func TestVMessWebSocketTLSValidate(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Outbounds = []Outbound{
+		{
+			Name:     "vmess-upstream",
+			Type:     "vmess",
+			Server:   "example.cc",
+			Port:     443,
+			UUID:     "244a79b1-522f-4f43-8d58-69c88ef732fe",
+			Security: "auto",
+			TLS: TLSConfig{
+				Enabled:    true,
+				ServerName: "example.cc",
+				Insecure:   false,
+				ALPN:       []string{"h2", "http/1.1"},
+			},
+			Transport: TransportConfig{
+				Type: "ws",
+				Path: "/vmess-websocket",
+				Headers: map[string]string{
+					"Host": "example.cc",
+				},
+			},
+		},
+	}
+	instance.Route = RouteConfig{Default: "vmess-upstream"}
+
+	if err := ValidateInstance(global, &instance); err != nil {
+		t.Fatalf("vmess websocket tls should validate: %v", err)
+	}
+}
+
 // TestInvalidTransportFails 验证未知 V2Ray transport 类型会失败。
 func TestInvalidTransportFails(t *testing.T) {
 	global := DefaultGlobalConfig()

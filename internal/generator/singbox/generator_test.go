@@ -149,6 +149,48 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 	}
 }
 
+// TestGenerateVMessWebSocketTLS 验证 VMess WebSocket + TLS 字段生成到 sing-box JSON。
+func TestGenerateVMessWebSocketTLS(t *testing.T) {
+	global, instance := testConfig()
+	instance.Outbounds = []domain.Outbound{
+		{
+			Name:     "vmess-upstream",
+			Type:     "vmess",
+			Server:   "example.cc",
+			Port:     443,
+			UUID:     "244a79b1-522f-4f43-8d58-69c88ef732fe",
+			Security: "auto",
+			TLS: domain.TLSConfig{
+				Enabled:    true,
+				ServerName: "example.cc",
+				Insecure:   true,
+				ALPN:       []string{"h2", "http/1.1"},
+			},
+			Transport: domain.TransportConfig{
+				Type: "ws",
+				Path: "/vmess-websocket",
+				Headers: map[string]string{
+					"Host": "example.cc",
+				},
+			},
+		},
+	}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "vmess-upstream"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	for _, want := range []string{`"type": "vmess"`, `"security": "auto"`, `"tls": {`, `"server_name": "example.cc"`, `"insecure": true`, `"alpn": [`, `"type": "ws"`, `"path": "/vmess-websocket"`, `"Host": "example.cc"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("generated config missing %s: %s", want, output)
+		}
+	}
+}
+
 // TestBuildSubscriptionInputIncludesNewProtocolFields 验证 inbound 订阅节点保留新增协议字段。
 func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 	global, instance := testConfig()

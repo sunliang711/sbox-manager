@@ -80,6 +80,35 @@ func TestArchiveTraversalRejected(t *testing.T) {
 	}
 }
 
+// TestInstallRulesNormalizesDirectoryMetadata 验证 rules 替换后目录权限保持服务可访问。
+func TestInstallRulesNormalizesDirectoryMetadata(t *testing.T) {
+	global := installerFixtureGlobal(t)
+	archive := tarGz(t, map[string][]byte{
+		"nested/geosite.db": []byte("ok"),
+	})
+	source := writeSource(t, archive)
+
+	if err := NewInstaller().Run(context.Background(), global, Options{
+		Operation: OperationInstall,
+		Resource:  ResourceRules,
+		Source:    source,
+	}); err != nil {
+		t.Fatalf("install rules: %v", err)
+	}
+	for _, path := range []string{
+		global.Paths.Rules,
+		filepath.Join(global.Paths.Rules, "nested"),
+	} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat rules dir %s: %v", path, err)
+		}
+		if got := info.Mode().Perm(); got != 0750 {
+			t.Fatalf("rules dir %s mode = %o, want 0750", path, got)
+		}
+	}
+}
+
 // TestInstallSingBoxWithSHA256AndArchiveMember 验证 sha256 和 archive member 安装路径。
 func TestInstallSingBoxWithSHA256AndArchiveMember(t *testing.T) {
 	global := installerFixtureGlobal(t)

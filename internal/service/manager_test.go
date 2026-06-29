@@ -412,12 +412,75 @@ func TestSystemdActionsUseArgumentArrays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
+	if _, err := manager.Run(context.Background(), "logs", []string{"sbox@edge-us.service"}, false); err != nil {
+		t.Fatalf("run logs: %v", err)
+	}
+	want := "journalctl -u sbox@edge-us.service --no-pager -n 200"
+	if got := runner.joined(); got != want {
+		t.Fatalf("unexpected command: got %q want %q", got, want)
+	}
+}
+
+// TestSystemdLogsFollowStreamsOutput 验证 systemd follow 日志使用流式执行器实时输出。
+func TestSystemdLogsFollowStreamsOutput(t *testing.T) {
+	runner := &streamingRecordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
 	if _, err := manager.Run(context.Background(), "logs", []string{"sbox@edge-us.service"}, true); err != nil {
 		t.Fatalf("run logs: %v", err)
 	}
 	want := "journalctl -u sbox@edge-us.service --no-pager -n 200 -f"
-	if got := runner.joined(); got != want {
-		t.Fatalf("unexpected command: got %q want %q", got, want)
+	if got := runner.streamJoined(); got != want {
+		t.Fatalf("unexpected stream command: got %q want %q", got, want)
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("follow logs should not use captured runner, got %q", got)
+	}
+}
+
+// TestSystemdIsRunningUsesIsActive 验证 systemd 运行态通过 is-active 判断。
+func TestSystemdIsRunningUsesIsActive(t *testing.T) {
+	runner := &commandResultRunner{outputs: map[string][]byte{
+		"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+	}}
+	manager, err := NewManager(Options{Kind: KindSystemd, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	running, err := manager.IsRunning(context.Background(), "sbox@edge-us.service")
+	if err != nil {
+		t.Fatalf("is running: %v", err)
+	}
+	if !running {
+		t.Fatal("active service should be running")
+	}
+	if got := runner.joined(); got != "systemctl is-active sbox@edge-us.service" {
+		t.Fatalf("unexpected command: %q", got)
+	}
+}
+
+// TestSystemdIsRunningTreatsInactiveAsStopped 验证 inactive 状态不会作为错误返回。
+func TestSystemdIsRunningTreatsInactiveAsStopped(t *testing.T) {
+	runner := &commandResultRunner{
+		outputs: map[string][]byte{
+			"systemctl is-active sbox@edge-us.service": []byte("inactive\n"),
+		},
+		errors: map[string]error{
+			"systemctl is-active sbox@edge-us.service": errors.New("exit status 3"),
+		},
+	}
+	manager, err := NewManager(Options{Kind: KindSystemd, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	running, err := manager.IsRunning(context.Background(), "sbox@edge-us.service")
+	if err != nil {
+		t.Fatalf("is running should ignore inactive: %v", err)
+	}
+	if running {
+		t.Fatal("inactive service should not be running")
 	}
 }
 
@@ -461,6 +524,33 @@ func TestLaunchdEnableBootstrapsThenEnables(t *testing.T) {
 	got := runner.joined()
 	if !strings.Contains(got, "launchctl bootstrap gui/") || !strings.Contains(got, "launchctl enable gui/") {
 		t.Fatalf("launchd enable should bootstrap then enable, got %q", got)
+	}
+}
+
+// TestTrafficTimerLogsUseServiceUnits 验证 systemd timer 日志查看实际执行的 oneshot service。
+func TestTrafficTimerLogsUseServiceUnits(t *testing.T) {
+	runner := &streamingRecordingRunner{}
+	manager, err := NewManager(Options{Kind: KindSystemd, Runner: runner})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if _, err := manager.RunTrafficTimers(context.Background(), "logs", true); err != nil {
+		t.Fatalf("traffic timer logs: %v", err)
+	}
+	for _, want := range []string{
+		"journalctl -u sbox-traffic-hourly.service --no-pager -n 200 -f",
+		"journalctl -u sbox-traffic-daily.service --no-pager -n 200 -f",
+		"journalctl -u sbox-traffic-monthly.service --no-pager -n 200 -f",
+	} {
+		if !strings.Contains(runner.streamJoined(), want) {
+			t.Fatalf("traffic timer logs missing %q: %q", want, runner.streamJoined())
+		}
+	}
+	if strings.Contains(runner.streamJoined(), "journalctl -u sbox-traffic-hourly.timer") {
+		t.Fatalf("traffic timer logs should not query timer unit: %q", runner.streamJoined())
+	}
+	if got := runner.joined(); got != "" {
+		t.Fatalf("traffic timer follow logs should not use captured runner, got %q", got)
 	}
 }
 
@@ -515,6 +605,32 @@ func (r *recordingRunner) Run(ctx context.Context, name string, args ...string) 
 
 func (r *recordingRunner) joined() string {
 	return strings.Join(r.calls, "\n")
+}
+
+type streamingRecordingRunner struct {
+	recordingRunner
+	streamCalls []string
+}
+
+func (r *streamingRecordingRunner) Stream(ctx context.Context, name string, args ...string) error {
+	r.streamCalls = append(r.streamCalls, strings.Join(append([]string{name}, args...), " "))
+	return nil
+}
+
+func (r *streamingRecordingRunner) streamJoined() string {
+	return strings.Join(r.streamCalls, "\n")
+}
+
+type commandResultRunner struct {
+	recordingRunner
+	outputs map[string][]byte
+	errors  map[string]error
+}
+
+func (r *commandResultRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	call := strings.Join(append([]string{name}, args...), " ")
+	r.calls = append(r.calls, call)
+	return r.outputs[call], r.errors[call]
 }
 
 type missingTimerRunner struct {

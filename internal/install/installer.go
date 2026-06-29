@@ -779,6 +779,9 @@ func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, 
 }
 
 func replaceRulesDir(rulesDir string, tempDir string) error {
+	if err := prepareRulesTreeMetadata(rulesDir, tempDir); err != nil {
+		return err
+	}
 	backupDir := rulesDir + ".previous"
 	_ = os.RemoveAll(backupDir)
 	hadExisting := false
@@ -798,6 +801,17 @@ func replaceRulesDir(rulesDir string, tempDir string) error {
 	}
 	if hadExisting {
 		_ = os.RemoveAll(backupDir)
+	}
+	return nil
+}
+
+// prepareRulesTreeMetadata 让新 rules 目录继承 base-dir owner，并固定目录权限。
+func prepareRulesTreeMetadata(rulesDir string, tempDir string) error {
+	if err := os.Chmod(tempDir, 0750); err != nil {
+		return fmt.Errorf("设置 rules 目录权限 %s: %w", tempDir, err)
+	}
+	if err := chownTreeLike(tempDir, filepath.Dir(rulesDir)); err != nil {
+		return fmt.Errorf("设置 rules 目录 owner %s: %w", tempDir, err)
 	}
 	return nil
 }
