@@ -60,6 +60,7 @@ func newSboxctlCommand() *cobra.Command {
 
 	addSboxctlCommandGroups(root)
 	addSboxctlFlags(root)
+	localizeCommandHelp(root)
 	return root
 }
 

@@ -86,7 +86,7 @@ func newSboxctlRenderCommand() *cobra.Command {
 		Use:   "render",
 		Short: "渲染模型、sing-box 配置或订阅 bundle",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return notImplementedError(cmd)
+			return cmd.Help()
 		},
 	}
 	render.PersistentFlags().Bool("skip-system-ports", false, "跳过系统端口检查")

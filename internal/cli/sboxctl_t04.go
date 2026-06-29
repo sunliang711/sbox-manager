@@ -627,6 +627,9 @@ func runSboxctlRuntimeLifecycle(cmd *cobra.Command, action string, args []string
 	lifecycle := newSboxctlLifecycleCommand(action)
 	lifecycle.SetOut(cmd.OutOrStdout())
 	lifecycle.SetErr(cmd.ErrOrStderr())
+	if args == nil {
+		args = []string{}
+	}
 	lifecycle.SetArgs(args)
 	lifecycle.SetContext(cmd.Context())
 	return lifecycle.Execute()

@@ -149,7 +149,7 @@ sboxctl [--base-dir DIR] traffic timer run hourly|daily|monthly
 流量子命令保留 `xray-traffic` 的动词和名词结构；差异是 `hourly` 使用 sing-box 累计计数和本项目 baseline 自算 delta，不依赖 reset 语义。
 
 - `--instance ALL` 表示全部配置实例，`ALL` 只在 traffic 命令中作为特殊值。
-- `show` 查询为空时输出 `No records found` 并返回 0；采集目标不可达时返回非零。
+- `show` 查询为空时输出 `未找到记录` 并返回 0；采集目标不可达时返回非零。
 - `summarize` 输出查询范围、instance、scope、name 和汇总表。
 - `export` 默认输出 CSV 到 stdout，指定 `--output` 时写文件。
 - `cleanup records --dry-run` 只输出将删除的记录数量，不删除数据；hourly/daily 使用 `retention_days`，monthly 使用 `monthly_retention_months`。

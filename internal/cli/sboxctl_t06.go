@@ -391,7 +391,7 @@ func runTrafficCollectWithTarget(cmd *cobra.Command, period string, target strin
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "collect %s 完成，records=%d\n", period, len(records))
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic collect %s 完成，记录数=%d\n", period, len(records))
 	return err
 }
 
@@ -581,7 +581,7 @@ func runTrafficCheckConfig(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic config OK\ndb: %s\ntimezone: %s\n", ctx.options.DBPath, ctx.options.Timezone)
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic 配置正常\ndb: %s\ntimezone: %s\n", ctx.options.DBPath, ctx.options.Timezone)
 	return err
 }
 
@@ -602,12 +602,12 @@ func runTrafficCheckHealth(cmd *cobra.Command, args []string) error {
 		counters, queryErr := client.Query(cmd.Context(), target)
 		if queryErr != nil {
 			failed = append(failed, target.Instance)
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s ERROR %v\n", target.Instance, queryErr); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 异常: %v\n", target.Instance, queryErr); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s OK counters=%d\n", target.Instance, len(counters)); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 正常，计数器=%d\n", target.Instance, len(counters)); err != nil {
 			return err
 		}
 	}

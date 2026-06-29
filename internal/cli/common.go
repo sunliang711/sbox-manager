@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -37,6 +38,42 @@ type rootOptionsContextKey struct{}
 const (
 	commandGroupHelp = "help"
 )
+
+const localizedHelpTemplate = `{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces}}
+
+{{end}}{{.UsageString}}`
+
+const localizedUsageTemplate = `用法:{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+别名:
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+示例:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
+
+可用命令:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+
+{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+
+其他命令:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+选项:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+全局选项:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+更多帮助主题:
+{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+使用 "{{.CommandPath}} [command] --help" 查看子命令说明。{{end}}
+`
 
 // RunSboxctl 执行 sboxctl 命令入口，适用于 cmd/sboxctl/main.go。
 func RunSboxctl() {
@@ -115,6 +152,58 @@ func getRootOptions(cmd *cobra.Command) (*rootOptions, error) {
 func addCommandGroups(parent *cobra.Command, groups ...*cobra.Group) {
 	parent.AddGroup(groups...)
 	parent.SetHelpCommandGroupID(commandGroupHelp)
+}
+
+// localizeCommandBasics 统一单个命令的 help 模板和 -h 文案。
+func localizeCommandBasics(command *cobra.Command) {
+	command.SetHelpTemplate(localizedHelpTemplate)
+	command.SetUsageTemplate(localizedUsageTemplate)
+	command.InitDefaultHelpFlag()
+	if helpFlag := command.Flags().Lookup("help"); helpFlag != nil {
+		helpFlag.Usage = "显示帮助信息"
+	}
+}
+
+// localizeCommandHelp 统一 CLI help 模板，降低中文用户阅读成本。
+func localizeCommandHelp(command *cobra.Command) {
+	localizeCommandBasics(command)
+	var helpCommand *cobra.Command
+	if command.HasSubCommands() {
+		helpCommand = newLocalizedHelpCommand()
+		localizeCommandBasics(helpCommand)
+		command.SetHelpCommand(helpCommand)
+	}
+	for _, child := range command.Commands() {
+		if child == helpCommand {
+			continue
+		}
+		localizeCommandHelp(child)
+	}
+}
+
+// newLocalizedHelpCommand 创建中文 help 子命令。
+func newLocalizedHelpCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "help [command]",
+		Short:   "查看命令帮助",
+		Long:    "查看任意命令的帮助说明。",
+		GroupID: commandGroupHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parent := cmd.Parent()
+			if parent == nil {
+				parent = cmd.Root()
+			}
+			target := parent
+			if len(args) > 0 {
+				found, _, err := parent.Find(args)
+				if err != nil || found == nil {
+					return fmt.Errorf("未知帮助主题 %q", strings.Join(args, " "))
+				}
+				target = found
+			}
+			return target.Help()
+		},
+	}
 }
 
 // setCommandGroup 将指定子命令绑定到 usage 功能分组。

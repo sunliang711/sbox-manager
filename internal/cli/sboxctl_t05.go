@@ -98,7 +98,7 @@ func newSboxctlSubValidateInputsCommand() *cobra.Command {
 // writeSubExportSummary 输出不含敏感信息的订阅导出摘要。
 func writeSubExportSummary(cmd *cobra.Command, result *subscription.ExportResult, dryRun bool) error {
 	if dryRun {
-		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "dry-run: no files written"); err != nil {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "预览模式: 不会写入文件"); err != nil {
 			return err
 		}
 	}
@@ -106,11 +106,11 @@ func writeSubExportSummary(cmd *cobra.Command, result *subscription.ExportResult
 	for _, summary := range result.Summaries {
 		totalNodes += summary.Nodes
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "bundle summary: inputs=%d nodes=%d template=%s\n", len(result.Summaries), totalNodes, result.Manifest.TemplateVersion); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "订阅 bundle 摘要: inputs=%d nodes=%d template=%s\n", len(result.Summaries), totalNodes, result.Manifest.TemplateVersion); err != nil {
 		return err
 	}
 	for _, summary := range result.Summaries {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "input %s source=%s nodes=%d users=%v\n", summary.File, summary.Source, summary.Nodes, summary.Users); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- 输入文件 %s: source=%s nodes=%d users=%v\n", summary.File, summary.Source, summary.Nodes, summary.Users); err != nil {
 			return err
 		}
 	}

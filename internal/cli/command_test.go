@@ -342,6 +342,19 @@ func TestSboxctlCheckIsReadOnly(t *testing.T) {
 	}
 }
 
+// TestSboxctlRenderGroupShowsHelp 验证 render 分组直接执行时展示帮助，避免误报未实现。
+func TestSboxctlRenderGroupShowsHelp(t *testing.T) {
+	output, err := executeCommand(newSboxctlCommand(), "render")
+	if err != nil {
+		t.Fatalf("execute render group: %v\n%s", err, output)
+	}
+	for _, want := range []string{"渲染模型、sing-box 配置或订阅 bundle", "sing-box", "sub"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("render help missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestSboxctlRenderCommands 验证 render sing-box 和 render sub 的基础路径。
 func TestSboxctlRenderCommands(t *testing.T) {
 	baseDir := writeAgentFixture(t)
@@ -388,8 +401,11 @@ func TestSboxctlSubExportDryRunAndSummaryDoNotWritePublish(t *testing.T) {
 		if err != nil {
 			t.Fatalf("execute %v: %v\n%s", args, err, output)
 		}
-		if !strings.Contains(output, "bundle summary") {
+		if !strings.Contains(output, "订阅 bundle 摘要") {
 			t.Fatalf("expected summary output, got %s", output)
+		}
+		if args[len(args)-1] == "--dry-run" && !strings.Contains(output, "预览模式: 不会写入文件") {
+			t.Fatalf("expected dry-run output, got %s", output)
 		}
 		if _, err := os.Stat(filepath.Join(baseDir, "publish")); !os.IsNotExist(err) {
 			t.Fatalf("%v should not create publish, stat err: %v", args, err)
@@ -745,6 +761,38 @@ func TestSboxctlSetupOrder(t *testing.T) {
 	}
 }
 
+// TestSboxctlSetupStartDoesNotReparseRootFlags 验证 setup --start 内部复用 start 时不会误解析外层 root flags。
+func TestSboxctlSetupStartDoesNotReparseRootFlags(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	runner := &cliRecordingRunner{}
+	checker := &cliFakeChecker{}
+	restoreRuntimeHooks(t)
+	restoreResourceInstaller(t)
+	newRuntimeConfigChecker = func(*rootOptions, domain.GlobalConfig) runtimeplan.ConfigChecker {
+		return checker
+	}
+	newResourceInstaller = func() resourceInstallerRunner {
+		return cliFakeInstaller{}
+	}
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(t.TempDir(), "units"), Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "setup", "--start")
+	if err != nil {
+		t.Fatalf("execute setup --start: %v\n%s", err, output)
+	}
+	if checker.calls == 0 {
+		t.Fatal("setup --start should run runtime config check")
+	}
+	if !strings.Contains(runner.joined(), "systemctl start sbox@edge-us.service") {
+		t.Fatalf("setup --start should start instance service, got %q", runner.joined())
+	}
+	if strings.Contains(output, "unknown flag: --base-dir") {
+		t.Fatalf("setup --start reparsed root flags:\n%s", output)
+	}
+}
+
 // TestInvalidServiceManager 验证 service-manager 全局参数只接受约定值。
 func TestInvalidServiceManager(t *testing.T) {
 	_, err := executeCommand(newSboxsubCommand(), "--service-manager", "noop", "version")
@@ -799,7 +847,7 @@ func TestTrafficShowDoesNotCreateDBWhenNoRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("traffic show hourly should succeed without DB: %v\n%s", err, output)
 	}
-	if !strings.Contains(output, "No records found") {
+	if !strings.Contains(output, "未找到记录") {
 		t.Fatalf("expected empty result output, got %s", output)
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, "traffic", "traffic.db")); !os.IsNotExist(err) {
@@ -904,6 +952,9 @@ func TestRootHelpShowsResponsibilities(t *testing.T) {
 	if !strings.Contains(sboxctlHelp, "agent") || !strings.Contains(sboxctlHelp, "实例生命周期") {
 		t.Fatalf("sboxctl help does not describe agent responsibility: %s", sboxctlHelp)
 	}
+	if !strings.Contains(sboxctlHelp, "用法:") || !strings.Contains(sboxctlHelp, "选项:") || !strings.Contains(sboxctlHelp, "查看命令帮助") {
+		t.Fatalf("sboxctl help is not localized enough: %s", sboxctlHelp)
+	}
 
 	sboxsubHelp, err := executeCommand(newSboxsubCommand(), "--help")
 	if err != nil {
@@ -911,6 +962,9 @@ func TestRootHelpShowsResponsibilities(t *testing.T) {
 	}
 	if !strings.Contains(sboxsubHelp, "订阅服务") || !strings.Contains(sboxsubHelp, "不读取 agent 配置") {
 		t.Fatalf("sboxsub help does not describe sub responsibility: %s", sboxsubHelp)
+	}
+	if !strings.Contains(sboxsubHelp, "用法:") || !strings.Contains(sboxsubHelp, "选项:") || !strings.Contains(sboxsubHelp, "查看命令帮助") {
+		t.Fatalf("sboxsub help is not localized enough: %s", sboxsubHelp)
 	}
 }
 

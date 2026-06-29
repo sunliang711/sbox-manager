@@ -43,6 +43,7 @@ func newSboxsubCommand() *cobra.Command {
 
 	addSboxsubCommandGroups(root)
 	addSboxsubFlags(root)
+	localizeCommandHelp(root)
 	return root
 }
 
