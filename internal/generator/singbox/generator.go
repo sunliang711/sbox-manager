@@ -203,7 +203,7 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 		Listen:     inbound.Listen,
 		ListenPort: inbound.Port,
 	}
-	result.TLS = convertTLS(inbound.TLS, inbound.Type == "anytls")
+	result.TLS = convertTLS(inbound.TLS, inbound.Type == "anytls", true)
 	if inboundSupportsTransport(inbound.Type) {
 		result.Transport = convertInboundTransport(inbound.Transport)
 	}
@@ -288,7 +288,7 @@ func convertOutbound(outbound domain.Outbound) (Outbound, error) {
 	if outbound.Type == "vless" {
 		result.Flow = outbound.Flow
 	}
-	result.TLS = convertTLS(outbound.TLS, outbound.Type == "anytls")
+	result.TLS = convertTLS(outbound.TLS, outbound.Type == "anytls", false)
 	if outboundSupportsTransport(outbound.Type) {
 		result.Transport = convertTransport(outbound.Transport)
 	}
@@ -366,7 +366,6 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 	result := &Transport{
 		Type:                transport.Type,
 		Path:                transport.Path,
-		Method:              transport.Method,
 		Headers:             transport.Headers,
 		IdleTimeout:         transport.IdleTimeout,
 		PingTimeout:         transport.PingTimeout,
@@ -374,6 +373,9 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 		EarlyDataHeaderName: transport.EarlyDataHeaderName,
 		ServiceName:         transport.ServiceName,
 		PermitWithoutStream: transport.PermitWithoutStream,
+	}
+	if transport.Type != "httpupgrade" {
+		result.Method = transport.Method
 	}
 	if transport.Type == "http" && len(transport.Hosts) > 0 {
 		result.Host = append([]string(nil), transport.Hosts...)
@@ -388,18 +390,75 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 }
 
 // convertTLS 将领域 TLS 配置转换为 sing-box TLS 片段。
-func convertTLS(tls domain.TLSConfig, forceEnabled bool) *TLS {
-	if !tls.Enabled && !forceEnabled {
+func convertTLS(tls domain.TLSConfig, forceEnabled bool, inbound bool) *TLS {
+	realityEnabled := tls.Reality.Enabled
+	utlsEnabled := tls.UTLS.Enabled
+	if !tls.Enabled && !forceEnabled && !realityEnabled && !utlsEnabled {
 		return nil
 	}
 	return &TLS{
-		Enabled:         tls.Enabled || forceEnabled,
+		Enabled:         tls.Enabled || forceEnabled || realityEnabled || utlsEnabled,
 		ServerName:      tls.ServerName,
 		Insecure:        tls.Insecure,
 		ALPN:            append([]string(nil), tls.ALPN...),
 		CertificatePath: tls.CertificatePath,
 		KeyPath:         tls.KeyPath,
+		Reality:         convertReality(tls.Reality, inbound),
+		UTLS:            convertUTLS(tls.UTLS, inbound),
 	}
+}
+
+// convertReality 按 inbound/outbound 侧字段差异转换 REALITY 配置。
+func convertReality(reality domain.RealityConfig, inbound bool) *Reality {
+	if !reality.Enabled {
+		return nil
+	}
+	result := &Reality{
+		Enabled: true,
+	}
+	if inbound {
+		if reality.HandshakeServer != "" || reality.HandshakeServerPort != 0 {
+			result.Handshake = &RealityHandshake{
+				Server:     reality.HandshakeServer,
+				ServerPort: reality.HandshakeServerPort,
+			}
+		}
+		result.PrivateKey = reality.PrivateKey
+		if shortIDs := realityShortIDs(reality); len(shortIDs) > 0 {
+			result.ShortID = shortIDs
+		}
+		result.MaxTimeDifference = reality.MaxTimeDifference
+		return result
+	}
+	result.PublicKey = reality.PublicKey
+	if reality.ShortID != "" {
+		result.ShortID = reality.ShortID
+	} else if len(reality.ShortIDs) > 0 {
+		result.ShortID = reality.ShortIDs[0]
+	}
+	return result
+}
+
+// convertUTLS 只在 outbound 侧输出 uTLS 指纹配置。
+func convertUTLS(utls domain.UTLSConfig, inbound bool) *UTLS {
+	if !utls.Enabled || inbound {
+		return nil
+	}
+	return &UTLS{
+		Enabled:     true,
+		Fingerprint: utls.Fingerprint,
+	}
+}
+
+// realityShortIDs 兼容单个 short_id 和服务端 short_ids 列表两种写法。
+func realityShortIDs(reality domain.RealityConfig) []string {
+	if len(reality.ShortIDs) > 0 {
+		return append([]string(nil), reality.ShortIDs...)
+	}
+	if reality.ShortID != "" {
+		return []string{reality.ShortID}
+	}
+	return nil
 }
 
 // inboundSupportsTransport 判断 inbound 协议是否支持 V2Ray transport。

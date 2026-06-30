@@ -1,0 +1,13 @@
+# VLESS QUIC outbound。
+- name: vless-quic-upstream
+  type: vless
+  server: vless.example.com
+  port: 443
+  uuid: "{{ .VlessUUID }}"
+  tls:
+    enabled: true
+    server_name: vless.example.com
+    insecure: false
+    alpn: [h3]
+  transport:
+    type: quic

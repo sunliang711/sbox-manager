@@ -125,6 +125,10 @@ func buildSubscriptionNode(global domain.GlobalConfig, instance domain.Instance,
 	}
 	node.TLS.CertificatePath = ""
 	node.TLS.KeyPath = ""
+	node.TLS.Reality.PrivateKey = ""
+	node.TLS.Reality.HandshakeServer = ""
+	node.TLS.Reality.HandshakeServerPort = 0
+	node.TLS.Reality.MaxTimeDifference = ""
 	switch inbound.Type {
 	case "vmess":
 		node.UUID = user.UUID
@@ -321,7 +325,7 @@ func outboundFromSubscriptionNode(node domain.SubscriptionNode) Outbound {
 	if node.Protocol == "vless" {
 		outbound.Flow = node.Flow
 	}
-	outbound.TLS = convertTLS(node.TLS, node.Protocol == "anytls")
+	outbound.TLS = convertTLS(node.TLS, node.Protocol == "anytls", false)
 	if subscriptionNodeSupportsTransport(node.Protocol) {
 		transport := convertTransport(node.Transport)
 		outbound.Transport = transport

@@ -1,0 +1,18 @@
+# VLESS HTTP outbound。
+- name: vless-http-upstream
+  type: vless
+  server: vless.example.com
+  port: 443
+  uuid: "{{ .VlessUUID }}"
+  tls:
+    enabled: true
+    server_name: vless.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  transport:
+    type: http
+    hosts: [vless.example.com]
+    path: /vless-http
+    method: GET
+    headers:
+      Host: vless.example.com

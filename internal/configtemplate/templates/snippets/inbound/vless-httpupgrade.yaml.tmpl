@@ -1,0 +1,31 @@
+# VLESS HTTPUpgrade inbound，可放入 instance.inbounds。
+- name: vless-httpupgrade
+  type: vless
+  listen: 0.0.0.0
+  port: 24114
+  tag: vless-vless-httpupgrade
+  udp: true
+  tls:
+    enabled: true
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
+  transport:
+    type: httpupgrade
+    host: proxy.example.com
+    path: /vless-upgrade
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VlessUUID }}"
+      remark: US VLESS HTTPUpgrade
+      tag: edge-us-vless-httpupgrade
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VLESS HTTPUpgrade
+    region: US

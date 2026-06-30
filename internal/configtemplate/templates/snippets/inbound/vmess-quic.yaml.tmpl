@@ -1,0 +1,21 @@
+# VMess QUIC inbound，可放入 instance.inbounds。
+- name: vmess-quic
+  type: vmess
+  listen: 0.0.0.0
+  port: 24104
+  tag: vmess-vmess-quic
+  udp: true
+  transport:
+    type: quic
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}"
+      alter_id: 0
+      remark: US VMess QUIC
+      tag: edge-us-vmess-quic
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VMess QUIC
+    region: US

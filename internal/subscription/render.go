@@ -340,8 +340,8 @@ func singBoxOutbound(node domain.SubscriptionNode) map[string]interface{} {
 	if node.UDP {
 		outbound["udp"] = true
 	}
-	if node.TLS.Enabled || node.Protocol == "anytls" {
-		outbound["tls"] = map[string]interface{}{"enabled": true}
+	if tls := singBoxTLS(node.TLS, node.Protocol == "anytls"); len(tls) > 0 {
+		outbound["tls"] = tls
 	}
 	if subscriptionNodeSupportsTransport(node.Protocol) {
 		if transport := singBoxTransport(node.Transport); len(transport) > 0 {
@@ -377,6 +377,59 @@ func singBoxOutbound(node domain.SubscriptionNode) map[string]interface{} {
 		}
 	}
 	return outbound
+}
+
+// singBoxTLS 将订阅节点 TLS 配置转换为 sing-box outbound TLS 对象。
+func singBoxTLS(tls domain.TLSConfig, forceEnabled bool) map[string]interface{} {
+	realityEnabled := tls.Reality.Enabled
+	utlsEnabled := tls.UTLS.Enabled
+	if !tls.Enabled && !forceEnabled && !realityEnabled && !utlsEnabled {
+		return nil
+	}
+	result := map[string]interface{}{
+		"enabled": true,
+	}
+	if tls.ServerName != "" {
+		result["server_name"] = tls.ServerName
+	}
+	if tls.Insecure {
+		result["insecure"] = true
+	}
+	if len(tls.ALPN) > 0 {
+		result["alpn"] = append([]string(nil), tls.ALPN...)
+	}
+	if reality := singBoxTLSReality(tls.Reality); len(reality) > 0 {
+		result["reality"] = reality
+	}
+	if tls.UTLS.Enabled {
+		utls := map[string]interface{}{
+			"enabled": true,
+		}
+		if tls.UTLS.Fingerprint != "" {
+			utls["fingerprint"] = tls.UTLS.Fingerprint
+		}
+		result["utls"] = utls
+	}
+	return result
+}
+
+// singBoxTLSReality 转换 outbound 侧 REALITY 公钥配置。
+func singBoxTLSReality(reality domain.RealityConfig) map[string]interface{} {
+	if !reality.Enabled {
+		return nil
+	}
+	result := map[string]interface{}{
+		"enabled": true,
+	}
+	if reality.PublicKey != "" {
+		result["public_key"] = reality.PublicKey
+	}
+	if reality.ShortID != "" {
+		result["short_id"] = reality.ShortID
+	} else if len(reality.ShortIDs) > 0 {
+		result["short_id"] = reality.ShortIDs[0]
+	}
+	return result
 }
 
 // subscriptionNodeSupportsTransport 判断订阅节点协议是否支持 V2Ray transport。

@@ -157,12 +157,32 @@ type Outbound struct {
 
 // TLSConfig 表示 inbound/outbound 连接的 TLS 配置。
 type TLSConfig struct {
-	Enabled         bool     `yaml:"enabled" json:"enabled"`
-	ServerName      string   `yaml:"server_name" json:"server_name"`
-	Insecure        bool     `yaml:"insecure" json:"insecure"`
-	ALPN            []string `yaml:"alpn" json:"alpn"`
-	CertificatePath string   `yaml:"certificate_path" json:"certificate_path"`
-	KeyPath         string   `yaml:"key_path" json:"key_path"`
+	Enabled         bool          `yaml:"enabled" json:"enabled"`
+	ServerName      string        `yaml:"server_name" json:"server_name"`
+	Insecure        bool          `yaml:"insecure" json:"insecure"`
+	ALPN            []string      `yaml:"alpn" json:"alpn"`
+	CertificatePath string        `yaml:"certificate_path" json:"certificate_path"`
+	KeyPath         string        `yaml:"key_path" json:"key_path"`
+	Reality         RealityConfig `yaml:"reality" json:"reality"`
+	UTLS            UTLSConfig    `yaml:"utls" json:"utls"`
+}
+
+// RealityConfig 表示 sing-box TLS REALITY 扩展配置。
+type RealityConfig struct {
+	Enabled             bool     `yaml:"enabled" json:"enabled"`
+	HandshakeServer     string   `yaml:"handshake_server" json:"handshake_server"`
+	HandshakeServerPort int      `yaml:"handshake_server_port" json:"handshake_server_port"`
+	PrivateKey          string   `yaml:"private_key" json:"private_key"`
+	PublicKey           string   `yaml:"public_key" json:"public_key"`
+	ShortID             string   `yaml:"short_id" json:"short_id"`
+	ShortIDs            []string `yaml:"short_ids" json:"short_ids"`
+	MaxTimeDifference   string   `yaml:"max_time_difference" json:"max_time_difference"`
+}
+
+// UTLSConfig 表示 sing-box outbound 侧 uTLS 指纹配置。
+type UTLSConfig struct {
+	Enabled     bool   `yaml:"enabled" json:"enabled"`
+	Fingerprint string `yaml:"fingerprint" json:"fingerprint"`
 }
 
 // TransportConfig 表示 VMess/VLESS 使用的 V2Ray transport 配置。

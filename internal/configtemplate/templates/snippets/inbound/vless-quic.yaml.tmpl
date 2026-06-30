@@ -1,0 +1,27 @@
+# VLESS QUIC inbound，可放入 instance.inbounds。
+- name: vless-quic
+  type: vless
+  listen: 0.0.0.0
+  port: 24113
+  tag: vless-vless-quic
+  udp: true
+  tls:
+    enabled: true
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h3]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
+  transport:
+    type: quic
+  users:
+    - name: alice
+      uuid: "{{ .VlessUUID }}"
+      remark: US VLESS QUIC
+      tag: edge-us-vless-quic
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VLESS QUIC
+    region: US

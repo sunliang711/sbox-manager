@@ -1,0 +1,21 @@
+# VMess HTTP outbound。
+- name: vmess-http-upstream
+  type: vmess
+  server: vmess.example.com
+  port: 443
+  uuid: "{{ .VmessOutboundUUID }}"
+  alter_id: 0
+  security: auto
+  tls:
+    enabled: true
+    server_name: vmess.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  network: tcp
+  transport:
+    type: http
+    hosts: [vmess.example.com]
+    path: /vmess-http
+    method: GET
+    headers:
+      Host: vmess.example.com

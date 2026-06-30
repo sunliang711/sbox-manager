@@ -1,0 +1,26 @@
+# VMess HTTP inbound，可放入 instance.inbounds。
+- name: vmess-http
+  type: vmess
+  listen: 0.0.0.0
+  port: 24103
+  tag: vmess-vmess-http
+  udp: true
+  transport:
+    type: http
+    hosts: [proxy.example.com]
+    path: /vmess-http
+    method: GET
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}"
+      alter_id: 0
+      remark: US VMess HTTP
+      tag: edge-us-vmess-http
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VMess HTTP
+    region: US

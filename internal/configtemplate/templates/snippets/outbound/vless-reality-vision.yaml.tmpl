@@ -1,0 +1,18 @@
+# VLESS REALITY Vision outbound。
+- name: vless-reality-vision-upstream
+  type: vless
+  server: vless.example.com
+  port: 443
+  uuid: "{{ .VlessUUID }}"
+  flow: xtls-rprx-vision
+  tls:
+    enabled: true
+    server_name: {{ .RealityServerName }}
+    insecure: false
+    utls:
+      enabled: true
+      fingerprint: chrome
+    reality:
+      enabled: true
+      public_key: "{{ .RealityPublicKey }}"
+      short_id: "{{ .RealityShortID }}"

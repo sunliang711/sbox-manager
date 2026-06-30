@@ -80,6 +80,30 @@ type TLS struct {
 	ALPN            []string `json:"alpn,omitempty"`
 	CertificatePath string   `json:"certificate_path,omitempty"`
 	KeyPath         string   `json:"key_path,omitempty"`
+	Reality         *Reality `json:"reality,omitempty"`
+	UTLS            *UTLS    `json:"utls,omitempty"`
+}
+
+// Reality 表示 sing-box TLS REALITY 配置。
+type Reality struct {
+	Enabled           bool              `json:"enabled"`
+	Handshake         *RealityHandshake `json:"handshake,omitempty"`
+	PrivateKey        string            `json:"private_key,omitempty"`
+	PublicKey         string            `json:"public_key,omitempty"`
+	ShortID           interface{}       `json:"short_id,omitempty"`
+	MaxTimeDifference string            `json:"max_time_difference,omitempty"`
+}
+
+// RealityHandshake 表示 REALITY 服务端握手目标。
+type RealityHandshake struct {
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+}
+
+// UTLS 表示 sing-box outbound 侧 uTLS 指纹配置。
+type UTLS struct {
+	Enabled     bool   `json:"enabled"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // Transport 表示 sing-box vmess 等协议的传输配置。

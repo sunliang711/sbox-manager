@@ -649,7 +649,14 @@ func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationE
 
 // validateInboundTLS 校验启用 TLS 的 inbound 是否具备服务端证书。
 func validateInboundTLS(path string, tls TLSConfig, errs *ValidationErrors) {
+	validateTLSReality(path+".reality", tls.Reality, true, errs)
+	if tls.UTLS.Enabled {
+		errs.Add(path+".utls", "inbound tls does not support utls")
+	}
 	if !tls.Enabled {
+		return
+	}
+	if tls.Reality.Enabled {
 		return
 	}
 	if strings.TrimSpace(tls.CertificatePath) == "" {
@@ -657,6 +664,32 @@ func validateInboundTLS(path string, tls TLSConfig, errs *ValidationErrors) {
 	}
 	if strings.TrimSpace(tls.KeyPath) == "" {
 		errs.Add(path+".key_path", "tls inbound requires key_path")
+	}
+}
+
+// validateOutboundTLS 校验 outbound TLS 扩展配置。
+func validateOutboundTLS(path string, tls TLSConfig, errs *ValidationErrors) {
+	validateTLSReality(path+".reality", tls.Reality, false, errs)
+	if tls.UTLS.Enabled && strings.TrimSpace(tls.UTLS.Fingerprint) == "" {
+		errs.Add(path+".utls.fingerprint", "utls requires fingerprint")
+	}
+}
+
+// validateTLSReality 校验 REALITY 在 inbound/outbound 两侧的关键字段。
+func validateTLSReality(path string, reality RealityConfig, inbound bool, errs *ValidationErrors) {
+	if !reality.Enabled {
+		return
+	}
+	if inbound {
+		validateHost(path+".handshake_server", reality.HandshakeServer, errs)
+		validatePort(path+".handshake_server_port", reality.HandshakeServerPort, errs)
+		if strings.TrimSpace(reality.PrivateKey) == "" {
+			errs.Add(path+".private_key", "reality inbound requires private_key")
+		}
+		return
+	}
+	if strings.TrimSpace(reality.PublicKey) == "" {
+		errs.Add(path+".public_key", "reality outbound requires public_key")
 	}
 }
 
@@ -811,6 +844,7 @@ func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErro
 		errs.Add(path+".server", "%s outbound requires server", outbound.Type)
 	}
 	validatePort(path+".port", outbound.Port, errs)
+	validateOutboundTLS(path+".tls", outbound.TLS, errs)
 	switch outbound.Type {
 	case "vmess":
 		if strings.TrimSpace(outbound.UUID) == "" {

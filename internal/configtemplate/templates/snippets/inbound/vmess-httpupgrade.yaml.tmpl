@@ -1,0 +1,25 @@
+# VMess HTTPUpgrade inbound，可放入 instance.inbounds。
+- name: vmess-httpupgrade
+  type: vmess
+  listen: 0.0.0.0
+  port: 24105
+  tag: vmess-vmess-httpupgrade
+  udp: true
+  transport:
+    type: httpupgrade
+    host: proxy.example.com
+    path: /vmess-upgrade
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}"
+      alter_id: 0
+      remark: US VMess HTTPUpgrade
+      tag: edge-us-vmess-httpupgrade
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VMess HTTPUpgrade
+    region: US

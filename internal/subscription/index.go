@@ -195,6 +195,7 @@ func RedactInput(input domain.SubscriptionInput) domain.SubscriptionInput {
 		node.UUID = redactSecret(node.UUID)
 		node.Password = redactSecret(node.Password)
 		node.Auth.Password = redactSecret(node.Auth.Password)
+		node.TLS.Reality.PrivateKey = redactSecret(node.TLS.Reality.PrivateKey)
 		redacted.Nodes[index] = node
 	}
 	return redacted

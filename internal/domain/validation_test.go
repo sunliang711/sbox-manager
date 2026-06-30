@@ -313,16 +313,79 @@ func TestVMessWebSocketTLSValidate(t *testing.T) {
 
 // TestInvalidTransportFails 验证未知 V2Ray transport 类型会失败。
 func TestInvalidTransportFails(t *testing.T) {
+	for _, transportType := range []string{"mkcp", "xhttp"} {
+		global := DefaultGlobalConfig()
+		instance := validInstance("edge-us", 24000)
+		instance.Inbounds[0].Transport = TransportConfig{Type: transportType}
+
+		err := ValidateInstance(global, &instance)
+		if err == nil {
+			t.Fatalf("expected invalid transport error for %s", transportType)
+		}
+		if !strings.Contains(err.Error(), transportType) {
+			t.Fatalf("expected transport type in error: %v", err)
+		}
+	}
+}
+
+// TestVLESSRealityVisionValidate 验证 VLESS REALITY Vision 组合可通过校验。
+func TestVLESSRealityVisionValidate(t *testing.T) {
 	global := DefaultGlobalConfig()
 	instance := validInstance("edge-us", 24000)
-	instance.Inbounds[0].Transport = TransportConfig{Type: "mkcp"}
-
-	err := ValidateInstance(global, &instance)
-	if err == nil {
-		t.Fatal("expected invalid transport error")
+	instance.Inbounds = []Inbound{
+		{
+			Name:   "vless-reality-vision",
+			Type:   "vless",
+			Listen: "0.0.0.0",
+			Port:   24000,
+			TLS: TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: RealityConfig{
+					Enabled:             true,
+					HandshakeServer:     "www.cloudflare.com",
+					HandshakeServerPort: 443,
+					PrivateKey:          "change-me-reality-private-key",
+					PublicKey:           "change-me-reality-public-key",
+					ShortIDs:            []string{"0123456789abcdef"},
+				},
+			},
+			Users: []InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+					Flow: "xtls-rprx-vision",
+				},
+			},
+		},
 	}
-	if !strings.Contains(err.Error(), "mkcp") {
-		t.Fatalf("expected transport type in error: %v", err)
+	instance.Outbounds = []Outbound{
+		{
+			Name:   "vless-reality-vision-upstream",
+			Type:   "vless",
+			Server: "vless.example.com",
+			Port:   443,
+			UUID:   "22222222-2222-4222-8222-222222222222",
+			Flow:   "xtls-rprx-vision",
+			TLS: TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: RealityConfig{
+					Enabled:   true,
+					PublicKey: "change-me-reality-public-key",
+					ShortID:   "0123456789abcdef",
+				},
+				UTLS: UTLSConfig{
+					Enabled:     true,
+					Fingerprint: "chrome",
+				},
+			},
+		},
+	}
+	instance.Route = RouteConfig{Default: "vless-reality-vision-upstream"}
+
+	if err := ValidateInstance(global, &instance); err != nil {
+		t.Fatalf("vless reality vision should validate: %v", err)
 	}
 }
 

@@ -26,6 +26,10 @@ type Context struct {
 	VmessRemark            string
 	VmessUserTag           string
 	VlessUUID              string
+	RealityServerName      string
+	RealityPrivateKey      string
+	RealityPublicKey       string
+	RealityShortID         string
 	AnyTLSPassword         string
 	ShadowsocksInboundName string
 	ShadowsocksInboundPort int
@@ -64,8 +68,15 @@ var snippetDefinitions = []snippetDefinition{
 	{ID: "inbound.vmess-raw", Kind: "inbound", Type: "vmess-raw", Description: "VMess raw inbound", Path: "templates/snippets/inbound/vmess-raw.yaml.tmpl", Aliases: []string{"vmess"}},
 	{ID: "inbound.vmess-websocket", Kind: "inbound", Type: "vmess-websocket", Description: "VMess WebSocket inbound", Path: "templates/snippets/inbound/vmess-websocket.yaml.tmpl"},
 	{ID: "inbound.vmess-grpc", Kind: "inbound", Type: "vmess-grpc", Description: "VMess gRPC inbound", Path: "templates/snippets/inbound/vmess-grpc.yaml.tmpl"},
+	{ID: "inbound.vmess-http", Kind: "inbound", Type: "vmess-http", Description: "VMess HTTP inbound", Path: "templates/snippets/inbound/vmess-http.yaml.tmpl"},
+	{ID: "inbound.vmess-quic", Kind: "inbound", Type: "vmess-quic", Description: "VMess QUIC inbound", Path: "templates/snippets/inbound/vmess-quic.yaml.tmpl"},
+	{ID: "inbound.vmess-httpupgrade", Kind: "inbound", Type: "vmess-httpupgrade", Description: "VMess HTTPUpgrade inbound", Path: "templates/snippets/inbound/vmess-httpupgrade.yaml.tmpl"},
 	{ID: "inbound.vless-websocket", Kind: "inbound", Type: "vless-websocket", Description: "VLESS WebSocket inbound", Path: "templates/snippets/inbound/vless-websocket.yaml.tmpl", Aliases: []string{"vless"}},
 	{ID: "inbound.vless-grpc", Kind: "inbound", Type: "vless-grpc", Description: "VLESS gRPC inbound", Path: "templates/snippets/inbound/vless-grpc.yaml.tmpl"},
+	{ID: "inbound.vless-http", Kind: "inbound", Type: "vless-http", Description: "VLESS HTTP inbound", Path: "templates/snippets/inbound/vless-http.yaml.tmpl"},
+	{ID: "inbound.vless-quic", Kind: "inbound", Type: "vless-quic", Description: "VLESS QUIC inbound", Path: "templates/snippets/inbound/vless-quic.yaml.tmpl"},
+	{ID: "inbound.vless-httpupgrade", Kind: "inbound", Type: "vless-httpupgrade", Description: "VLESS HTTPUpgrade inbound", Path: "templates/snippets/inbound/vless-httpupgrade.yaml.tmpl"},
+	{ID: "inbound.vless-reality-vision", Kind: "inbound", Type: "vless-reality-vision", Description: "VLESS REALITY Vision inbound", Path: "templates/snippets/inbound/vless-reality-vision.yaml.tmpl", Aliases: []string{"vless-reality", "vless-vision", "reality-vision"}},
 	{ID: "inbound.anytls", Kind: "inbound", Type: "anytls", Description: "AnyTLS inbound", Path: "templates/snippets/inbound/anytls.yaml.tmpl"},
 	{ID: "inbound.shadowsocks", Kind: "inbound", Type: "shadowsocks", Description: "Shadowsocks inbound", Path: "templates/snippets/inbound/shadowsocks.yaml.tmpl", Aliases: []string{"ss", "shadowsocks22", "shadowsocks2022"}},
 	{ID: "inbound.socks5", Kind: "inbound", Type: "socks5", Description: "SOCKS5 inbound", Path: "templates/snippets/inbound/socks5.yaml.tmpl", Aliases: []string{"socks"}},
@@ -78,8 +89,15 @@ var snippetDefinitions = []snippetDefinition{
 	{ID: "outbound.vmess-raw", Kind: "outbound", Type: "vmess-raw", Description: "VMess raw outbound", Path: "templates/snippets/outbound/vmess-raw.yaml.tmpl"},
 	{ID: "outbound.vmess-websocket", Kind: "outbound", Type: "vmess-websocket", Description: "VMess WebSocket outbound", Path: "templates/snippets/outbound/vmess-websocket.yaml.tmpl", Aliases: []string{"vmess"}},
 	{ID: "outbound.vmess-grpc", Kind: "outbound", Type: "vmess-grpc", Description: "VMess gRPC outbound", Path: "templates/snippets/outbound/vmess-grpc.yaml.tmpl"},
+	{ID: "outbound.vmess-http", Kind: "outbound", Type: "vmess-http", Description: "VMess HTTP outbound", Path: "templates/snippets/outbound/vmess-http.yaml.tmpl"},
+	{ID: "outbound.vmess-quic", Kind: "outbound", Type: "vmess-quic", Description: "VMess QUIC outbound", Path: "templates/snippets/outbound/vmess-quic.yaml.tmpl"},
+	{ID: "outbound.vmess-httpupgrade", Kind: "outbound", Type: "vmess-httpupgrade", Description: "VMess HTTPUpgrade outbound", Path: "templates/snippets/outbound/vmess-httpupgrade.yaml.tmpl"},
 	{ID: "outbound.vless-websocket", Kind: "outbound", Type: "vless-websocket", Description: "VLESS WebSocket outbound", Path: "templates/snippets/outbound/vless-websocket.yaml.tmpl", Aliases: []string{"vless"}},
 	{ID: "outbound.vless-grpc", Kind: "outbound", Type: "vless-grpc", Description: "VLESS gRPC outbound", Path: "templates/snippets/outbound/vless-grpc.yaml.tmpl"},
+	{ID: "outbound.vless-http", Kind: "outbound", Type: "vless-http", Description: "VLESS HTTP outbound", Path: "templates/snippets/outbound/vless-http.yaml.tmpl"},
+	{ID: "outbound.vless-quic", Kind: "outbound", Type: "vless-quic", Description: "VLESS QUIC outbound", Path: "templates/snippets/outbound/vless-quic.yaml.tmpl"},
+	{ID: "outbound.vless-httpupgrade", Kind: "outbound", Type: "vless-httpupgrade", Description: "VLESS HTTPUpgrade outbound", Path: "templates/snippets/outbound/vless-httpupgrade.yaml.tmpl"},
+	{ID: "outbound.vless-reality-vision", Kind: "outbound", Type: "vless-reality-vision", Description: "VLESS REALITY Vision outbound", Path: "templates/snippets/outbound/vless-reality-vision.yaml.tmpl", Aliases: []string{"vless-reality", "vless-vision", "reality-vision"}},
 	{ID: "outbound.anytls", Kind: "outbound", Type: "anytls", Description: "AnyTLS outbound", Path: "templates/snippets/outbound/anytls.yaml.tmpl"},
 	{ID: "outbound.trojan", Kind: "outbound", Type: "trojan", Description: "Trojan outbound", Path: "templates/snippets/outbound/trojan.yaml.tmpl"},
 	{ID: "outbound.hysteria2", Kind: "outbound", Type: "hysteria2", Description: "Hysteria2 outbound", Path: "templates/snippets/outbound/hysteria2.yaml.tmpl", Aliases: []string{"hy2"}},
@@ -118,6 +136,10 @@ func DefaultContext() Context {
 		VmessRemark:            "US VMess",
 		VmessUserTag:           "edge-us-vmess-main",
 		VlessUUID:              "33333333-3333-4333-8333-333333333333",
+		RealityServerName:      "www.cloudflare.com",
+		RealityPrivateKey:      "change-me-reality-private-key",
+		RealityPublicKey:       "change-me-reality-public-key",
+		RealityShortID:         "0123456789abcdef",
 		AnyTLSPassword:         "change-me",
 		ShadowsocksInboundName: "ss-main",
 		ShadowsocksInboundPort: 24200,

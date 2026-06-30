@@ -138,7 +138,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "inbound all protocols",
 			args: []string{"example", "inbound"},
-			want: []string{"VMess inbound（raw）", "VMess WebSocket inbound", "VMess gRPC inbound", "VLESS inbound（WebSocket）", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
+			want: []string{"VMess inbound（raw）", "VMess WebSocket inbound", "VMess gRPC inbound", "VMess HTTP inbound", "VMess QUIC inbound", "VMess HTTPUpgrade inbound", "VLESS inbound（WebSocket）", "VLESS REALITY Vision inbound", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
 		},
 		{
 			name: "inbound vmess websocket",
@@ -150,6 +150,11 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			args:    []string{"example", "inbound", "vless"},
 			want:    []string{"# VLESS inbound", "type: vless", "uuid:", "transport:"},
 			notWant: []string{"type: anytls"},
+		},
+		{
+			name: "inbound vless reality vision",
+			args: []string{"example", "inbound", "vless-reality-vision"},
+			want: []string{"# VLESS REALITY Vision inbound", "flow: xtls-rprx-vision", "reality:", "private_key:", "short_ids:"},
 		},
 		{
 			name:    "inbound anytls",
@@ -165,7 +170,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "outbound all protocols",
 			args: []string{"example", "outbound"},
-			want: []string{"type: direct", "type: block", "type: ref", "type: shadowsocks", "VMess raw outbound", "VMess outbound（WebSocket）", "VMess gRPC outbound", "VLESS outbound（WebSocket）", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+			want: []string{"type: direct", "type: block", "type: ref", "type: shadowsocks", "VMess raw outbound", "VMess outbound（WebSocket）", "VMess gRPC outbound", "VMess HTTP outbound", "VMess QUIC outbound", "VMess HTTPUpgrade outbound", "VLESS outbound（WebSocket）", "VLESS REALITY Vision outbound", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
 		},
 		{
 			name: "outbound vmess grpc",
@@ -188,6 +193,11 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			args:    []string{"example", "outbound", "vless"},
 			want:    []string{"# VLESS outbound", "type: vless", "uuid:", "transport:"},
 			notWant: []string{"type: vmess"},
+		},
+		{
+			name: "outbound vless reality alias",
+			args: []string{"example", "outbound", "vless-reality"},
+			want: []string{"# VLESS REALITY Vision outbound", "flow: xtls-rprx-vision", "utls:", "fingerprint: chrome", "public_key:", "short_id:"},
 		},
 		{
 			name:    "outbound anytls",

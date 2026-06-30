@@ -94,3 +94,44 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 		t.Fatalf("sing-box output should not emit unsupported httpupgrade method: %s", outboundsJSON)
 	}
 }
+
+// TestSingBoxSubscriptionRendersVLESSRealityVision 验证 sing-box 订阅保留 VLESS REALITY Vision 字段。
+func TestSingBoxSubscriptionRendersVLESSRealityVision(t *testing.T) {
+	nodes := []domain.SubscriptionNode{
+		{
+			Protocol: "vless",
+			Server:   "vless.example.com",
+			Port:     443,
+			Tag:      "vless-reality-vision",
+			Remark:   "US VLESS REALITY Vision",
+			UUID:     "22222222-2222-4222-8222-222222222222",
+			Flow:     "xtls-rprx-vision",
+			TLS: domain.TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: domain.RealityConfig{
+					Enabled:   true,
+					PublicKey: "change-me-reality-public-key",
+					ShortID:   "0123456789abcdef",
+				},
+				UTLS: domain.UTLSConfig{
+					Enabled:     true,
+					Fingerprint: "chrome",
+				},
+			},
+		},
+	}
+
+	outboundsJSON, err := singBoxOutboundsJSON(nodes)
+	if err != nil {
+		t.Fatalf("render sing-box outbounds: %v", err)
+	}
+	for _, want := range []string{`"flow": "xtls-rprx-vision"`, `"server_name": "www.cloudflare.com"`, `"reality": {`, `"public_key": "change-me-reality-public-key"`, `"short_id": "0123456789abcdef"`, `"utls": {`, `"fingerprint": "chrome"`} {
+		if !strings.Contains(outboundsJSON, want) {
+			t.Fatalf("sing-box output missing %s: %s", want, outboundsJSON)
+		}
+	}
+	if strings.Contains(outboundsJSON, `"private_key":`) {
+		t.Fatalf("sing-box output should not expose reality private key: %s", outboundsJSON)
+	}
+}

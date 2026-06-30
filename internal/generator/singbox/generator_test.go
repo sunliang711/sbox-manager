@@ -164,6 +164,78 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 	}
 }
 
+// TestGenerateVLESSRealityVision 验证 VLESS REALITY Vision 字段生成到 sing-box JSON。
+func TestGenerateVLESSRealityVision(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "vless-reality-vision",
+			Type:   "vless",
+			Listen: "0.0.0.0",
+			Port:   24110,
+			TLS: domain.TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: domain.RealityConfig{
+					Enabled:             true,
+					HandshakeServer:     "www.cloudflare.com",
+					HandshakeServerPort: 443,
+					PrivateKey:          "change-me-reality-private-key",
+					PublicKey:           "change-me-reality-public-key",
+					ShortIDs:            []string{"0123456789abcdef"},
+				},
+			},
+			Users: []domain.InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+					Flow: "xtls-rprx-vision",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []domain.Outbound{
+		{
+			Name:   "vless-reality-vision-upstream",
+			Type:   "vless",
+			Server: "vless.example.com",
+			Port:   443,
+			UUID:   "22222222-2222-4222-8222-222222222222",
+			Flow:   "xtls-rprx-vision",
+			TLS: domain.TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: domain.RealityConfig{
+					Enabled:   true,
+					PublicKey: "change-me-reality-public-key",
+					ShortID:   "0123456789abcdef",
+				},
+				UTLS: domain.UTLSConfig{
+					Enabled:     true,
+					Fingerprint: "chrome",
+				},
+			},
+		},
+	}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "vless-reality-vision-upstream"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	for _, want := range []string{`"flow": "xtls-rprx-vision"`, `"reality": {`, `"handshake": {`, `"server": "www.cloudflare.com"`, `"server_port": 443`, `"private_key": "change-me-reality-private-key"`, `"short_id": [`, `"public_key": "change-me-reality-public-key"`, `"utls": {`, `"fingerprint": "chrome"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("generated reality config missing %s: %s", want, output)
+		}
+	}
+	if strings.Contains(output, `"certificate_path":`) || strings.Contains(output, `"key_path":`) {
+		t.Fatalf("generated reality config should not require certificate files: %s", output)
+	}
+}
+
 // TestGenerateVMessWebSocketTLS 验证 VMess WebSocket + TLS 字段生成到 sing-box JSON。
 func TestGenerateVMessWebSocketTLS(t *testing.T) {
 	global, instance := testConfig()
@@ -339,6 +411,18 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 			Type:   "vless",
 			Listen: "0.0.0.0",
 			Port:   24101,
+			TLS: domain.TLSConfig{
+				Enabled:    true,
+				ServerName: "www.cloudflare.com",
+				Reality: domain.RealityConfig{
+					Enabled:             true,
+					HandshakeServer:     "www.cloudflare.com",
+					HandshakeServerPort: 443,
+					PrivateKey:          "change-me-reality-private-key",
+					PublicKey:           "change-me-reality-public-key",
+					ShortIDs:            []string{"0123456789abcdef"},
+				},
+			},
 			Transport: domain.TransportConfig{
 				Type: "ws",
 				Path: "/ws",
@@ -391,6 +475,9 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 	}
 	if input.Nodes[0].Protocol != "vless" || input.Nodes[0].Transport.Type != "ws" || input.Nodes[0].Flow != "" {
 		t.Fatalf("vless node missing fields: %+v", input.Nodes[0])
+	}
+	if !input.Nodes[0].TLS.Reality.Enabled || input.Nodes[0].TLS.Reality.PrivateKey != "" || input.Nodes[0].TLS.Reality.PublicKey != "change-me-reality-public-key" {
+		t.Fatalf("vless node should keep public reality fields only: %+v", input.Nodes[0].TLS.Reality)
 	}
 	if input.Nodes[1].Protocol != "anytls" || input.Nodes[1].Password != "change-me" || !input.Nodes[1].TLS.Enabled {
 		t.Fatalf("anytls node missing fields: %+v", input.Nodes[1])

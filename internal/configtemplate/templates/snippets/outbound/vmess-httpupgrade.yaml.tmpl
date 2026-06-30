@@ -1,0 +1,21 @@
+# VMess HTTPUpgrade outbound。
+- name: vmess-httpupgrade-upstream
+  type: vmess
+  server: vmess.example.com
+  port: 443
+  uuid: "{{ .VmessOutboundUUID }}"
+  alter_id: 0
+  security: auto
+  tls:
+    enabled: true
+    server_name: vmess.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  network: tcp
+  transport:
+    type: httpupgrade
+    host: vmess.example.com
+    path: /vmess-upgrade
+    method: GET
+    headers:
+      Host: vmess.example.com

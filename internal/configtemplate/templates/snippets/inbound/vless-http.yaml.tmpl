@@ -1,0 +1,32 @@
+# VLESS HTTP inbound，可放入 instance.inbounds。
+- name: vless-http
+  type: vless
+  listen: 0.0.0.0
+  port: 24112
+  tag: vless-vless-http
+  udp: true
+  tls:
+    enabled: true
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
+  transport:
+    type: http
+    hosts: [proxy.example.com]
+    path: /vless-http
+    method: GET
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VlessUUID }}"
+      remark: US VLESS HTTP
+      tag: edge-us-vless-http
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VLESS HTTP
+    region: US
