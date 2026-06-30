@@ -193,7 +193,7 @@ traffic:
 | `listen` | string | 否 | `0.0.0.0` | host，不含端口 |
 | `port` | int | 是 | 无 | `1-65535` |
 | `tag` | string | 否 | `<type>-<name>` | sing-box tag，instance 内唯一 |
-| `udp` | bool | 否 | 协议默认 | 适用于支持 UDP 的协议 |
+| `udp` | bool | 否 | 协议默认 | 领域配置字段；当前 sing-box runtime 生成不输出该字段 |
 | `auth.type` | string | socks5/http 必填 | `noauth` | `noauth`、`password` |
 | `auth.username` | string | password 必填 | 无 | 非空 |
 | `auth.password` | string | password 必填 | 无 | 非空 |
@@ -240,7 +240,7 @@ traffic:
 | `server` | string | 远端类型必填 | 远端类型 |
 | `port` | int | 远端类型必填 | 远端类型 |
 | `uuid` | string | vmess/vless 必填 | vmess、vless |
-| `password` | string | shadowsocks/anytls/trojan/hysteria2 可必填 | 对应协议 |
+| `password` | string | shadowsocks/anytls/trojan/hysteria2 必填 | 对应协议 |
 | `method` | string | shadowsocks 必填 | shadowsocks |
 | `security` | string | 否 | vmess 加密参数，Surge 输出为 `encrypt-method` |
 | `flow` | string | 否 | vless，支持 `xtls-rprx-vision`，不能和 `transport` 同时使用 |
@@ -259,7 +259,7 @@ traffic:
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `type` | string | 是 | `http`、`ws`、`quic`、`grpc`、`httpupgrade` |
-| `host` | string | 否 | HTTPUpgrade 或 WebSocket Host |
+| `host` | string | 否 | HTTPUpgrade host；WebSocket Host 请写入 `headers.Host` |
 | `hosts` | string list | 否 | HTTP transport 的 host 列表 |
 | `path` | string | 否 | HTTP/WebSocket/HTTPUpgrade 请求路径 |
 | `method` | string | 否 | HTTP transport 请求方法 |
@@ -506,7 +506,7 @@ nodes:
 | `uuid` | string | vmess/vless 必填 | UUID |
 | `network` | string | 否 | VMess 底层网络，支持 `tcp`、`udp`；V2Ray transport 必须写入 `transport.type` |
 | `security` | string | 否 | VMess 加密参数 |
-| `flow` | string | 否 | VLESS flow，不能和 `transport` 同时使用 |
+| `flow` | string | 否 | VLESS flow；instance inbound/outbound 配置中不能和 `transport` 同时使用 |
 | `alter_id` | int | 否 | VMess alterId，`0` 表示 AEAD |
 | `method` | string | shadowsocks 必填 | 加密方法 |
 | `password` | string | shadowsocks/anytls 必填 | 密码 |

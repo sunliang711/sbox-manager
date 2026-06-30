@@ -13,7 +13,8 @@
 
 - 单 sing-box core 的多实例管理。
 - systemd 和 launchd 服务文件生成与生命周期管理。
-- VMess、VLESS、AnyTLS、Shadowsocks、Socks、HTTP、sing-box native 等订阅节点输入与输出。
+- `sboxctl` instance 配置支持 VMess、VLESS、AnyTLS、Shadowsocks、SOCKS5、HTTP inbound，支持 direct、block、ref、Shadowsocks、VMess、VLESS、AnyTLS、Trojan、Hysteria2、SOCKS5、HTTP outbound。
+- 订阅 input 支持 VMess、VLESS、AnyTLS、Shadowsocks、SOCKS5、HTTP 和 sing-box native 节点；不同订阅格式会按客户端支持范围过滤。
 - Clash、Premium Clash、Surge、sing-box 订阅输出。
 - 基于 sing-box stats API 的流量采集、小时/日/月聚合、年度展示、CSV 导出和保留期清理。
 - `doctor`、`ipinfo`、配置备份与恢复。
@@ -101,6 +102,323 @@ sboxctl --base-dir /opt/sbox-manager sub export edge-us -o /tmp/sbox-sub-bundle.
 sboxsub --base-dir /opt/sbox-sub import /tmp/sbox-sub-bundle.zip
 sboxsub --base-dir /opt/sbox-sub config check
 sboxsub --base-dir /opt/sbox-sub serve
+```
+
+## 协议配置示例
+
+以下片段可复制到 instance YAML 的 `inbounds` 或 `outbounds` 中，并按实际端口、证书、凭据和路由引用调整。VMess/VLESS 的 `transport` 支持 `http`、`ws`、`quic`、`grpc`、`httpupgrade`；WebSocket Host 通过 `transport.headers.Host` 配置。
+
+VMess/VLESS 可选 transport 片段，使用时复制其中一个 `transport` 块：
+
+```yaml
+# HTTP transport
+transport:
+  type: http
+  hosts: [proxy.example.com]
+  path: /v2ray
+  method: GET
+  headers:
+    Host: proxy.example.com
+
+# WebSocket transport
+transport:
+  type: ws
+  path: /ws
+  headers:
+    Host: proxy.example.com
+  max_early_data: 2048
+  early_data_header_name: Sec-WebSocket-Protocol
+
+# QUIC transport
+transport:
+  type: quic
+
+# gRPC transport
+transport:
+  type: grpc
+  service_name: TunService
+  idle_timeout: 30s
+  ping_timeout: 15s
+  permit_without_stream: false
+
+# HTTPUpgrade transport
+transport:
+  type: httpupgrade
+  host: proxy.example.com
+  path: /upgrade
+  method: GET
+  headers:
+    Host: proxy.example.com
+```
+
+Inbound 支持 `http`、`socks5`、`shadowsocks`、`vmess`、`vless`、`anytls`：
+
+```yaml
+inbounds:
+  - name: http-main
+    type: http
+    listen: 127.0.0.1
+    port: 18000
+    auth:
+      type: password
+      username: alice
+      password: change-me
+
+  - name: socks-main
+    type: socks5
+    listen: 127.0.0.1
+    port: 17000
+    udp: true
+    auth:
+      type: password
+      username: alice
+      password: change-me
+
+  - name: ss-main
+    type: shadowsocks
+    listen: 0.0.0.0
+    port: 24200
+    method: aes-128-gcm
+    users:
+      - name: alice
+        password: change-me
+
+  - name: vmess-raw
+    type: vmess
+    listen: 0.0.0.0
+    port: 24100
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+        alter_id: 0
+
+  - name: vmess-ws
+    type: vmess
+    listen: 0.0.0.0
+    port: 24101
+    transport:
+      type: ws
+      path: /vmess-websocket
+      headers:
+        Host: proxy.example.com
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+        alter_id: 0
+
+  - name: vmess-grpc
+    type: vmess
+    listen: 0.0.0.0
+    port: 24102
+    transport:
+      type: grpc
+      service_name: TunService
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+        alter_id: 0
+
+  - name: vless-raw
+    type: vless
+    listen: 0.0.0.0
+    port: 24110
+    users:
+      - name: alice
+        uuid: 33333333-3333-4333-8333-333333333333
+
+  - name: vless-ws
+    type: vless
+    listen: 0.0.0.0
+    port: 24111
+    tls:
+      enabled: true
+      server_name: proxy.example.com
+      certificate_path: /etc/ssl/sbox/fullchain.pem
+      key_path: /etc/ssl/sbox/private.key
+    transport:
+      type: ws
+      path: /vless-websocket
+      headers:
+        Host: proxy.example.com
+    users:
+      - name: alice
+        uuid: 33333333-3333-4333-8333-333333333333
+
+  - name: vless-grpc
+    type: vless
+    listen: 0.0.0.0
+    port: 24112
+    tls:
+      enabled: true
+      server_name: proxy.example.com
+      certificate_path: /etc/ssl/sbox/fullchain.pem
+      key_path: /etc/ssl/sbox/private.key
+    transport:
+      type: grpc
+      service_name: TunService
+    users:
+      - name: alice
+        uuid: 33333333-3333-4333-8333-333333333333
+
+  - name: anytls-main
+    type: anytls
+    listen: 0.0.0.0
+    port: 24120
+    tls:
+      enabled: true
+      server_name: proxy.example.com
+      certificate_path: /etc/ssl/sbox/fullchain.pem
+      key_path: /etc/ssl/sbox/private.key
+    users:
+      - name: alice
+        password: change-me
+```
+
+Outbound 支持 `direct`、`block`、`ref`、`http`、`socks5`、`shadowsocks`、`vmess`、`vless`、`anytls`、`trojan`、`hysteria2`：
+
+```yaml
+outbounds:
+  - name: direct
+    type: direct
+
+  - name: block
+    type: block
+
+  - name: edge-us-local-socks
+    type: ref
+    ref: edge-us.local-socks
+
+  - name: http-upstream
+    type: http
+    server: http-proxy.example.com
+    port: 8080
+    auth:
+      type: password
+      username: alice
+      password: change-me
+
+  - name: socks5-upstream
+    type: socks5
+    server: socks.example.com
+    port: 1080
+    auth:
+      type: password
+      username: alice
+      password: change-me
+
+  - name: ss-upstream
+    type: shadowsocks
+    server: ss.example.com
+    port: 443
+    method: aes-128-gcm
+    password: change-me
+
+  - name: vmess-raw-upstream
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    alter_id: 0
+    security: auto
+    network: tcp
+
+  - name: vmess-ws-upstream
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    alter_id: 0
+    security: auto
+    network: tcp
+    tls:
+      enabled: true
+      server_name: vmess.example.com
+      insecure: false
+    transport:
+      type: ws
+      path: /vmess-websocket
+      headers:
+        Host: vmess.example.com
+
+  - name: vmess-grpc-upstream
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    alter_id: 0
+    security: auto
+    network: tcp
+    tls:
+      enabled: true
+      server_name: vmess.example.com
+      insecure: false
+    transport:
+      type: grpc
+      service_name: TunService
+
+  - name: vless-raw-upstream
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 33333333-3333-4333-8333-333333333333
+
+  - name: vless-ws-upstream
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 33333333-3333-4333-8333-333333333333
+    tls:
+      enabled: true
+      server_name: vless.example.com
+      insecure: false
+    transport:
+      type: ws
+      path: /vless-websocket
+      headers:
+        Host: vless.example.com
+
+  - name: vless-grpc-upstream
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 33333333-3333-4333-8333-333333333333
+    tls:
+      enabled: true
+      server_name: vless.example.com
+      insecure: false
+    transport:
+      type: grpc
+      service_name: TunService
+
+  - name: anytls-upstream
+    type: anytls
+    server: anytls.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true
+      server_name: anytls.example.com
+      insecure: false
+
+  - name: trojan-upstream
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true
+      server_name: trojan.example.com
+      insecure: false
+
+  - name: hysteria2-upstream
+    type: hysteria2
+    server: hy2.example.com
+    port: 443
+    password: change-me
+    tls:
+      enabled: true
+      server_name: hy2.example.com
+      insecure: false
 ```
 
 ## 常用命令

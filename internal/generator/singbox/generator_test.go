@@ -127,9 +127,10 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 			Port:   443,
 			UUID:   "22222222-2222-4222-8222-222222222222",
 			Transport: domain.TransportConfig{
-				Type: "httpupgrade",
-				Host: "vless.example.com",
-				Path: "/upgrade",
+				Type:   "httpupgrade",
+				Host:   "vless.example.com",
+				Path:   "/upgrade",
+				Method: "GET",
 			},
 		},
 		{
@@ -154,6 +155,9 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("generated config missing %s: %s", want, output)
 		}
+	}
+	if strings.Contains(output, `"method":`) {
+		t.Fatalf("generated httpupgrade transport should not emit method field: %s", output)
 	}
 	if strings.Contains(output, `"udp"`) {
 		t.Fatalf("generated config should not emit unsupported inbound udp field: %s", output)
@@ -279,6 +283,50 @@ func TestGenerateInboundWebSocketOmitsClientHost(t *testing.T) {
 	}
 	if !strings.Contains(output, `"Host": "proxy.example.com"`) {
 		t.Fatalf("generated inbound transport should keep headers: %s", output)
+	}
+}
+
+// TestGenerateInboundHTTPUpgradeOmitsClientMethod 验证 inbound HTTPUpgrade 不生成客户端侧 method 字段。
+func TestGenerateInboundHTTPUpgradeOmitsClientMethod(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "vmess-upgrade",
+			Type:   "vmess",
+			Listen: "127.0.0.1",
+			Port:   24103,
+			Transport: domain.TransportConfig{
+				Type:   "httpupgrade",
+				Host:   "proxy.example.com",
+				Path:   "/upgrade",
+				Method: "GET",
+				Headers: map[string]string{
+					"Host": "proxy.example.com",
+				},
+			},
+			Users: []domain.InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "direct"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	if strings.Contains(output, `"method":`) {
+		t.Fatalf("generated inbound httpupgrade transport should not emit method field: %s", output)
+	}
+	if !strings.Contains(output, `"type": "httpupgrade"`) || !strings.Contains(output, `"path": "/upgrade"`) {
+		t.Fatalf("generated inbound httpupgrade transport missing expected fields: %s", output)
 	}
 }
 

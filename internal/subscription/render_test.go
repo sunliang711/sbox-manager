@@ -70,9 +70,10 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 			UUID:     "22222222-2222-4222-8222-222222222222",
 			TLS:      domain.TLSConfig{Enabled: true},
 			Transport: domain.TransportConfig{
-				Type: "httpupgrade",
-				Host: "vless.example.com",
-				Path: "/upgrade",
+				Type:   "httpupgrade",
+				Host:   "vless.example.com",
+				Path:   "/upgrade",
+				Method: "GET",
 			},
 		},
 	}
@@ -88,5 +89,8 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 	}
 	if strings.Contains(outboundsJSON, `"network": "httpupgrade"`) {
 		t.Fatalf("sing-box output should not mix transport into network: %s", outboundsJSON)
+	}
+	if strings.Contains(outboundsJSON, `"method":`) {
+		t.Fatalf("sing-box output should not emit unsupported httpupgrade method: %s", outboundsJSON)
 	}
 }

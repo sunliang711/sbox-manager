@@ -15,11 +15,21 @@
 | 场景 | 验收标准 |
 | --- | --- |
 | VMess inbound | 多用户生成稳定 JSON，用户字段正确 |
-| Shadowsocks inbound | method/password/udp 正确 |
+| VLESS inbound | 用户 UUID、flow 和 transport 字段按协议生成 |
+| AnyTLS inbound | TLS 和用户 password 正确，缺 TLS 配置时校验失败 |
+| Shadowsocks inbound | method/password 和用户字段正确，不向 sing-box runtime 输出不兼容的 udp 字段 |
 | SOCKS inbound | noauth/password 两种模式正确 |
 | HTTP inbound | 认证和监听正确 |
 | direct outbound | 生成 sing-box direct |
+| block outbound | 生成 sing-box block，阻断行为可验证 |
+| ref outbound | 仅允许引用跨 instance 的 socks5/http inbound，生成时解析为 socks/http outbound |
 | socks/http outbound | server、port、auth 正确 |
+| Shadowsocks outbound | method/password 正确 |
+| VMess outbound | raw、WebSocket、gRPC 等配置生成正确，network 仅表达 tcp/udp |
+| VLESS outbound | raw、WebSocket、gRPC 等配置生成正确，flow 不与 transport 混用 |
+| AnyTLS outbound | password 和 TLS 配置正确 |
+| Trojan outbound | password 和 TLS 配置正确 |
+| Hysteria2 outbound | password 和 TLS 配置正确 |
 | selector group | 生成 selector outbound |
 | urltest group | 生成 urltest outbound，url/interval 正确 |
 | route rules | 使用 sing-box rule action，默认出站正确 |

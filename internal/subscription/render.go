@@ -400,7 +400,7 @@ func singBoxTransport(transport domain.TransportConfig) map[string]interface{} {
 	if transport.Path != "" {
 		result["path"] = transport.Path
 	}
-	if transport.Method != "" {
+	if transport.Method != "" && transport.Type != "httpupgrade" {
 		result["method"] = transport.Method
 	}
 	if len(transport.Headers) > 0 {

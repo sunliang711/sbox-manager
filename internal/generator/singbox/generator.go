@@ -380,6 +380,10 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 	} else if transport.Type == "httpupgrade" && transport.Host != "" {
 		result.Host = transport.Host
 	}
+	if transport.Type == "httpupgrade" {
+		// sing-box httpupgrade transport 不接受 method 字段。
+		result.Method = ""
+	}
 	return result
 }
 
