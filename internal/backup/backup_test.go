@@ -66,7 +66,7 @@ func TestReadRejectsUnsafeBackupMember(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unsafe path error")
 	}
-	if !strings.Contains(err.Error(), "路径") && !strings.Contains(err.Error(), "成员") {
+	if !strings.Contains(err.Error(), "unsafe") && !strings.Contains(err.Error(), "must be config.yaml or instances/*") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -81,7 +81,7 @@ func TestImportRejectsWrongPackages(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected subscription bundle rejection")
 		}
-		if !strings.Contains(err.Error(), "订阅 bundle") {
+		if !strings.Contains(err.Error(), "subscription bundle") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})

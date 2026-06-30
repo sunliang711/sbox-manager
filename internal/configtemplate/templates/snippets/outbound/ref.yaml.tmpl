@@ -1,0 +1,4 @@
+# Ref outbound，引用已有 instance 的 socks5/http inbound。
+- name: {{ .RefOutboundName }}
+  type: ref # sbox-manager 抽象类型，生成 sing-box 时解析为 socks5/http outbound。
+  ref: {{ .Ref }} # 格式为 <instance>.<inbound>。

@@ -101,7 +101,7 @@ func (i *Installer) Run(ctx context.Context, global domain.GlobalConfig, options
 				return err
 			}
 		default:
-			return fmt.Errorf("不支持的安装动作 %q", options.Operation)
+			return fmt.Errorf("unsupported install action %q", options.Operation)
 		}
 	}
 	if options.Operation == OperationUninstall && options.Purge {
@@ -133,7 +133,7 @@ func PurgeManaged(global domain.GlobalConfig) error {
 			continue
 		}
 		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("清理受管目录 %s: %w", path, err)
+			return fmt.Errorf("clean managed directory %s: %w", path, err)
 		}
 	}
 	return nil
@@ -145,7 +145,7 @@ func pathExists(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+		return false, fmt.Errorf("check path %s: %w", path, err)
 	}
 	return true, nil
 }
@@ -159,7 +159,7 @@ func expandResources(resource string) ([]string, error) {
 	case ResourceAll:
 		return []string{ResourceSingBox, ResourceRules}, nil
 	default:
-		return nil, fmt.Errorf("不支持的资源 %q", resource)
+		return nil, fmt.Errorf("unsupported resource %q", resource)
 	}
 }
 
@@ -209,7 +209,7 @@ func (i *Installer) installOne(ctx context.Context, global domain.GlobalConfig, 
 	switch options.Resource {
 	case ResourceSingBox:
 		if len(source.Files) > 0 {
-			return fmt.Errorf("sing-box source 不支持 multi-file")
+			return fmt.Errorf("sing-box source does not support multi-file")
 		}
 		if options.Operation == OperationInstall && source.SHA256 != "" {
 			installed, err := singBoxSourceInstalled(global.Paths.Bin, source.SHA256, source.ArchiveMember)
@@ -266,7 +266,7 @@ func (i *Installer) installOne(ctx context.Context, global domain.GlobalConfig, 
 		emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
 		return nil
 	default:
-		return fmt.Errorf("不支持的资源 %q", options.Resource)
+		return fmt.Errorf("unsupported resource %q", options.Resource)
 	}
 }
 
@@ -281,7 +281,7 @@ func (i *Installer) resolveSource(options Options) (Source, error) {
 			builtin, ok = i.Sources[builtinKey(options.Resource, "")]
 		}
 		if !ok {
-			return Source{}, fmt.Errorf("%s 未配置内置 source，请使用 --source", options.Resource)
+			return Source{}, fmt.Errorf("%s has no built-in source configured; use --source", options.Resource)
 		}
 		if err := validateTrustedSource(options.Resource, builtin); err != nil {
 			return Source{}, err
@@ -289,7 +289,7 @@ func (i *Installer) resolveSource(options Options) (Source, error) {
 		return builtin, nil
 	}
 	if isRemoteSource(source) && shaText == "" {
-		return Source{}, fmt.Errorf("自定义远端 source %s 必须显式提供 --sha256", source)
+		return Source{}, fmt.Errorf("custom remote source %s requires explicit --sha256", source)
 	}
 	return Source{URL: source, SHA256: shaText, ArchiveMember: member}, nil
 }
@@ -304,19 +304,19 @@ func builtinKey(resource string, version string) string {
 func validateTrustedSource(resource string, source Source) error {
 	if len(source.Files) == 0 {
 		if strings.TrimSpace(source.URL) == "" {
-			return fmt.Errorf("%s 内置 source 缺少 URL", resource)
+			return fmt.Errorf("%s built-in source missing URL", resource)
 		}
 		if strings.TrimSpace(source.SHA256) == "" {
-			return fmt.Errorf("%s 内置 source 缺少可信 sha256", resource)
+			return fmt.Errorf("%s built-in source missing trusted sha256", resource)
 		}
 		return nil
 	}
 	for _, file := range source.Files {
 		if strings.TrimSpace(file.URL) == "" {
-			return fmt.Errorf("%s 内置 source 文件缺少 URL", resource)
+			return fmt.Errorf("%s built-in source file missing URL", resource)
 		}
 		if strings.TrimSpace(file.SHA256) == "" {
-			return fmt.Errorf("%s 内置 source 文件 %s 缺少可信 sha256", resource, file.Path)
+			return fmt.Errorf("%s built-in source file %s missing trusted sha256", resource, file.Path)
 		}
 		if err := validateArchiveName(file.Path); err != nil {
 			return err
@@ -338,7 +338,7 @@ func (i *Installer) fetch(ctx context.Context, downloadsDir string, source strin
 		emitProgress(progress, "source: read local %s", source)
 		data, err = os.ReadFile(source)
 		if err != nil {
-			return nil, fmt.Errorf("读取 source %s: %w", source, err)
+			return nil, fmt.Errorf("read source %s: %w", source, err)
 		}
 		emitProgress(progress, "source: complete local %s bytes=%d", source, len(data))
 	}
@@ -364,18 +364,18 @@ func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
-		return nil, fmt.Errorf("创建下载请求 %s: %w", source, err)
+		return nil, fmt.Errorf("create download request %s: %w", source, err)
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("下载 source %s: %w", source, err)
+		return nil, fmt.Errorf("download source %s: %w", source, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("下载 source %s 返回状态 %s", source, response.Status)
+		return nil, fmt.Errorf("download source %s returned status %s", source, response.Status)
 	}
 	if err := os.MkdirAll(downloadsDir, 0750); err != nil {
-		return nil, fmt.Errorf("创建下载目录 %s: %w", downloadsDir, err)
+		return nil, fmt.Errorf("create download directory %s: %w", downloadsDir, err)
 	}
 	var buffer bytes.Buffer
 	readBuffer := make([]byte, 32*1024)
@@ -389,7 +389,7 @@ func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source
 		n, readErr := response.Body.Read(readBuffer)
 		if n > 0 {
 			if _, err := buffer.Write(readBuffer[:n]); err != nil {
-				return nil, fmt.Errorf("缓存下载内容 %s: %w", source, err)
+				return nil, fmt.Errorf("cache download content %s: %w", source, err)
 			}
 			downloaded += int64(n)
 			if shouldEmitDownloadProgress(downloaded, lastProgress, total) {
@@ -401,7 +401,7 @@ func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source
 			break
 		}
 		if readErr != nil {
-			return nil, fmt.Errorf("读取下载内容 %s: %w", source, readErr)
+			return nil, fmt.Errorf("read downloaded content %s: %w", source, readErr)
 		}
 	}
 	if downloaded > 0 && lastProgress != downloaded {
@@ -410,7 +410,7 @@ func (i *Installer) fetchRemote(ctx context.Context, downloadsDir string, source
 	data := buffer.Bytes()
 	cachePath := filepath.Join(downloadsDir, safeCacheName(source))
 	if err := os.WriteFile(cachePath, data, 0640); err != nil {
-		return nil, fmt.Errorf("写入下载缓存 %s: %w", cachePath, err)
+		return nil, fmt.Errorf("write download cache %s: %w", cachePath, err)
 	}
 	return data, nil
 }
@@ -460,10 +460,10 @@ func safeCacheName(source string) string {
 func verifySHA256(data []byte, shaText string) error {
 	shaText = strings.ToLower(strings.TrimSpace(shaText))
 	if len(shaText) != sha256.Size*2 {
-		return fmt.Errorf("sha256 长度无效")
+		return fmt.Errorf("invalid sha256 length")
 	}
 	if _, err := hex.DecodeString(shaText); err != nil {
-		return fmt.Errorf("sha256 必须是 hex: %w", err)
+		return fmt.Errorf("sha256 must be hex: %w", err)
 	}
 	if got := hashBytes(data); got != shaText {
 		return fmt.Errorf("sha256 mismatch: got %s want %s", got, shaText)
@@ -532,7 +532,7 @@ func defaultSingBoxSource() (Source, bool) {
 
 func installSingBox(binDir string, payload []byte, payloadSHA string, sourceSHA string, archiveMember string) error {
 	if err := os.MkdirAll(binDir, 0750); err != nil {
-		return fmt.Errorf("创建 bin 目录 %s: %w", binDir, err)
+		return fmt.Errorf("create bin directory %s: %w", binDir, err)
 	}
 	target := filepath.Join(binDir, "sing-box")
 	if err := rejectUnmanagedSymlink(target, filepath.Join(binDir, singBoxManagedMarker)); err != nil {
@@ -612,7 +612,7 @@ func readManagedMarkerFields(path string) (map[string]string, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("读取管理标记 %s: %w", path, err)
+		return nil, fmt.Errorf("read managed marker %s: %w", path, err)
 	}
 	fields := map[string]string{}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -636,7 +636,7 @@ func readManagedMarkerFields(path string) (map[string]string, error) {
 func writeTempFile(dir string, pattern string, data []byte, mode os.FileMode) (string, error) {
 	tempFile, err := os.CreateTemp(dir, pattern)
 	if err != nil {
-		return "", fmt.Errorf("创建临时文件 %s: %w", dir, err)
+		return "", fmt.Errorf("create temp file %s: %w", dir, err)
 	}
 	tempPath := tempFile.Name()
 	closed := false
@@ -649,14 +649,14 @@ func writeTempFile(dir string, pattern string, data []byte, mode os.FileMode) (s
 		}
 	}()
 	if err = tempFile.Chmod(mode); err != nil {
-		return "", fmt.Errorf("设置临时文件权限 %s: %w", tempPath, err)
+		return "", fmt.Errorf("set temp file permissions %s: %w", tempPath, err)
 	}
 	if _, err = tempFile.Write(data); err != nil {
-		return "", fmt.Errorf("写入临时文件 %s: %w", tempPath, err)
+		return "", fmt.Errorf("write temp file %s: %w", tempPath, err)
 	}
 	if err = tempFile.Close(); err != nil {
 		closed = true
-		return "", fmt.Errorf("关闭临时文件 %s: %w", tempPath, err)
+		return "", fmt.Errorf("close temp file %s: %w", tempPath, err)
 	}
 	closed = true
 	return tempPath, nil
@@ -684,13 +684,13 @@ func replacePair(target string, targetTemp string, marker string, markerTemp str
 		restoreFile(targetBackup, target, targetExisted)
 		restoreFile(markerBackup, marker, markerExisted)
 		_ = os.Remove(markerTemp)
-		return fmt.Errorf("替换 sing-box 二进制 %s: %w", target, err)
+		return fmt.Errorf("replace sing-box binary %s: %w", target, err)
 	}
 	if err := os.Rename(markerTemp, marker); err != nil {
 		_ = os.Remove(target)
 		restoreFile(targetBackup, target, targetExisted)
 		restoreFile(markerBackup, marker, markerExisted)
-		return fmt.Errorf("写入 sing-box 管理标记 %s: %w", marker, err)
+		return fmt.Errorf("write sing-box managed marker %s: %w", marker, err)
 	}
 	_ = os.Remove(targetBackup)
 	_ = os.Remove(markerBackup)
@@ -700,11 +700,11 @@ func replacePair(target string, targetTemp string, marker string, markerTemp str
 func renameIfExists(path string, backup string) (bool, error) {
 	if _, err := os.Lstat(path); err == nil {
 		if err := os.Rename(path, backup); err != nil {
-			return false, fmt.Errorf("备份路径 %s: %w", path, err)
+			return false, fmt.Errorf("backup path %s: %w", path, err)
 		}
 		return true, nil
 	} else if !os.IsNotExist(err) {
-		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+		return false, fmt.Errorf("check path %s: %w", path, err)
 	}
 	return false, nil
 }
@@ -720,21 +720,21 @@ func restoreFile(backup string, path string, existed bool) {
 func installRules(rulesDir string, archiveData []byte) error {
 	parent := filepath.Dir(rulesDir)
 	if err := os.MkdirAll(parent, 0750); err != nil {
-		return fmt.Errorf("创建 rules 父目录 %s: %w", parent, err)
+		return fmt.Errorf("create rules parent directory %s: %w", parent, err)
 	}
 	if err := rejectUnmanagedSymlink(rulesDir, filepath.Join(rulesDir, rulesManagedMarker)); err != nil {
 		return err
 	}
 	tempDir, err := os.MkdirTemp(parent, ".rules.tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建 rules 临时目录 %s: %w", parent, err)
+		return fmt.Errorf("create rules temp directory %s: %w", parent, err)
 	}
 	defer os.RemoveAll(tempDir)
 	if err := extractArchiveToDir(archiveData, tempDir); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(tempDir, rulesManagedMarker), []byte(hashBytes(archiveData)+"\n"), 0640); err != nil {
-		return fmt.Errorf("写入 rules 管理标记 %s: %w", filepath.Join(tempDir, rulesManagedMarker), err)
+		return fmt.Errorf("write rules managed marker %s: %w", filepath.Join(tempDir, rulesManagedMarker), err)
 	}
 	return replaceRulesDir(rulesDir, tempDir)
 }
@@ -742,14 +742,14 @@ func installRules(rulesDir string, archiveData []byte) error {
 func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, rulesDir string, files []SourceFile, operation string, progress Progress) error {
 	parent := filepath.Dir(rulesDir)
 	if err := os.MkdirAll(parent, 0750); err != nil {
-		return fmt.Errorf("创建 rules 父目录 %s: %w", parent, err)
+		return fmt.Errorf("create rules parent directory %s: %w", parent, err)
 	}
 	if err := rejectUnmanagedSymlink(rulesDir, filepath.Join(rulesDir, rulesManagedMarker)); err != nil {
 		return err
 	}
 	tempDir, err := os.MkdirTemp(parent, ".rules.tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建 rules 临时目录 %s: %w", parent, err)
+		return fmt.Errorf("create rules temp directory %s: %w", parent, err)
 	}
 	defer os.RemoveAll(tempDir)
 	markerLines := make([]string, 0, len(files))
@@ -764,16 +764,16 @@ func (i *Installer) installRulesFiles(ctx context.Context, downloadsDir string, 
 		}
 		target := filepath.Join(tempDir, filepath.Clean(file.Path))
 		if err := os.MkdirAll(filepath.Dir(target), 0750); err != nil {
-			return fmt.Errorf("创建 rules 文件目录 %s: %w", filepath.Dir(target), err)
+			return fmt.Errorf("create rules file directory %s: %w", filepath.Dir(target), err)
 		}
 		if err := os.WriteFile(target, data, 0644); err != nil {
-			return fmt.Errorf("写入 rules 文件 %s: %w", target, err)
+			return fmt.Errorf("write rules file %s: %w", target, err)
 		}
 		emitProgress(progress, "%s: staged rules file %s", operation, file.Path)
 		markerLines = append(markerLines, file.Path+" "+hashBytes(data))
 	}
 	if err := os.WriteFile(filepath.Join(tempDir, rulesManagedMarker), []byte(strings.Join(markerLines, "\n")+"\n"), 0640); err != nil {
-		return fmt.Errorf("写入 rules 管理标记 %s: %w", filepath.Join(tempDir, rulesManagedMarker), err)
+		return fmt.Errorf("write rules managed marker %s: %w", filepath.Join(tempDir, rulesManagedMarker), err)
 	}
 	return replaceRulesDir(rulesDir, tempDir)
 }
@@ -788,16 +788,16 @@ func replaceRulesDir(rulesDir string, tempDir string) error {
 	if _, err := os.Lstat(rulesDir); err == nil {
 		hadExisting = true
 		if err := os.Rename(rulesDir, backupDir); err != nil {
-			return fmt.Errorf("备份 rules 目录 %s: %w", rulesDir, err)
+			return fmt.Errorf("backup rules directory %s: %w", rulesDir, err)
 		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("检查 rules 目录 %s: %w", rulesDir, err)
+		return fmt.Errorf("check rules directory %s: %w", rulesDir, err)
 	}
 	if err := os.Rename(tempDir, rulesDir); err != nil {
 		if hadExisting {
 			_ = os.Rename(backupDir, rulesDir)
 		}
-		return fmt.Errorf("替换 rules 目录 %s: %w", rulesDir, err)
+		return fmt.Errorf("replace rules directory %s: %w", rulesDir, err)
 	}
 	if hadExisting {
 		_ = os.RemoveAll(backupDir)
@@ -808,10 +808,10 @@ func replaceRulesDir(rulesDir string, tempDir string) error {
 // prepareRulesTreeMetadata 让新 rules 目录继承 base-dir owner，并固定目录权限。
 func prepareRulesTreeMetadata(rulesDir string, tempDir string) error {
 	if err := os.Chmod(tempDir, 0750); err != nil {
-		return fmt.Errorf("设置 rules 目录权限 %s: %w", tempDir, err)
+		return fmt.Errorf("set rules directory permissions %s: %w", tempDir, err)
 	}
 	if err := chownTreeLike(tempDir, filepath.Dir(rulesDir)); err != nil {
-		return fmt.Errorf("设置 rules 目录 owner %s: %w", tempDir, err)
+		return fmt.Errorf("set rules directory owner %s: %w", tempDir, err)
 	}
 	return nil
 }
@@ -822,7 +822,7 @@ func rejectUnmanagedSymlink(target string, markerPath string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("检查目标路径 %s: %w", target, err)
+		return fmt.Errorf("check target path %s: %w", target, err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		return nil
@@ -831,9 +831,9 @@ func rejectUnmanagedSymlink(target string, markerPath string) error {
 		return nil
 	}
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("检查管理标记 %s: %w", markerPath, err)
+		return fmt.Errorf("check managed marker %s: %w", markerPath, err)
 	}
-	return fmt.Errorf("拒绝覆盖非受管 symlink %s", target)
+	return fmt.Errorf("refuse to overwrite unmanaged symlink %s", target)
 }
 
 func (i *Installer) uninstallOne(global domain.GlobalConfig, options Options) error {
@@ -848,7 +848,7 @@ func (i *Installer) uninstallOne(global domain.GlobalConfig, options Options) er
 			return err
 		}
 	default:
-		return fmt.Errorf("不支持的资源 %q", options.Resource)
+		return fmt.Errorf("unsupported resource %q", options.Resource)
 	}
 	emitProgress(options.Progress, "%s: complete %s", options.Operation, options.Resource)
 	return nil
@@ -861,10 +861,10 @@ func uninstallSingBox(binDir string) error {
 		return err
 	}
 	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 sing-box 二进制 %s: %w", target, err)
+		return fmt.Errorf("delete sing-box binary %s: %w", target, err)
 	}
 	if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 sing-box 管理标记 %s: %w", marker, err)
+		return fmt.Errorf("delete sing-box managed marker %s: %w", marker, err)
 	}
 	return nil
 }
@@ -882,7 +882,7 @@ func uninstallRules(rulesDir string) error {
 		return err
 	}
 	if err := os.RemoveAll(rulesDir); err != nil {
-		return fmt.Errorf("删除 rules 目录 %s: %w", rulesDir, err)
+		return fmt.Errorf("delete rules directory %s: %w", rulesDir, err)
 	}
 	return nil
 }
@@ -895,7 +895,7 @@ func extractSingBox(data []byte, member string) ([]byte, error) {
 		return payload, err
 	}
 	if strings.TrimSpace(member) != "" {
-		return nil, fmt.Errorf("source 不是可识别归档，不能使用 --archive-member")
+		return nil, fmt.Errorf("source is not a recognized archive, cannot use --archive-member")
 	}
 	return data, nil
 }
@@ -918,16 +918,16 @@ func extractSingBoxFromZip(data []byte, member string) ([]byte, bool, error) {
 		}
 	}
 	if selected == nil {
-		return nil, true, fmt.Errorf("归档中找不到 sing-box 成员 %q", member)
+		return nil, true, fmt.Errorf("sing-box member %q not found in archive", member)
 	}
 	handle, err := selected.Open()
 	if err != nil {
-		return nil, true, fmt.Errorf("打开归档成员 %s: %w", selected.Name, err)
+		return nil, true, fmt.Errorf("open archive member %s: %w", selected.Name, err)
 	}
 	defer handle.Close()
 	payload, err := io.ReadAll(handle)
 	if err != nil {
-		return nil, true, fmt.Errorf("读取归档成员 %s: %w", selected.Name, err)
+		return nil, true, fmt.Errorf("read archive member %s: %w", selected.Name, err)
 	}
 	return payload, true, nil
 }
@@ -946,7 +946,7 @@ func extractSingBoxFromTarGz(data []byte, member string) ([]byte, bool, error) {
 			break
 		}
 		if err != nil {
-			return nil, true, fmt.Errorf("读取 tar.gz: %w", err)
+			return nil, true, fmt.Errorf("read tar.gz: %w", err)
 		}
 		if err := validateArchiveName(header.Name); err != nil {
 			return nil, true, err
@@ -957,7 +957,7 @@ func extractSingBoxFromTarGz(data []byte, member string) ([]byte, bool, error) {
 		if selected == nil && matchesArchiveMember(header.Name, member) {
 			payload, err := io.ReadAll(tarReader)
 			if err != nil {
-				return nil, true, fmt.Errorf("读取归档成员 %s: %w", header.Name, err)
+				return nil, true, fmt.Errorf("read archive member %s: %w", header.Name, err)
 			}
 			selected = payload
 		}
@@ -965,7 +965,7 @@ func extractSingBoxFromTarGz(data []byte, member string) ([]byte, bool, error) {
 	if selected != nil {
 		return selected, true, nil
 	}
-	return nil, true, fmt.Errorf("归档中找不到 sing-box 成员 %q", member)
+	return nil, true, fmt.Errorf("sing-box member %q not found in archive", member)
 }
 
 func extractArchiveToDir(data []byte, targetDir string) error {
@@ -975,7 +975,7 @@ func extractArchiveToDir(data []byte, targetDir string) error {
 	if ok, err := extractTarGzToDir(data, targetDir); ok || err != nil {
 		return err
 	}
-	return fmt.Errorf("rules source 必须是 zip 或 tar.gz 归档")
+	return fmt.Errorf("rules source must be a zip or tar.gz archive")
 }
 
 func extractZipToDir(data []byte, targetDir string) (bool, error) {
@@ -992,7 +992,7 @@ func extractZipToDir(data []byte, targetDir string) (bool, error) {
 		}
 		handle, err := file.Open()
 		if err != nil {
-			return true, fmt.Errorf("打开归档成员 %s: %w", file.Name, err)
+			return true, fmt.Errorf("open archive member %s: %w", file.Name, err)
 		}
 		if err := writeArchiveFile(targetDir, file.Name, handle, file.Mode()); err != nil {
 			_ = handle.Close()
@@ -1016,7 +1016,7 @@ func extractTarGzToDir(data []byte, targetDir string) (bool, error) {
 			break
 		}
 		if err != nil {
-			return true, fmt.Errorf("读取 tar.gz: %w", err)
+			return true, fmt.Errorf("read tar.gz: %w", err)
 		}
 		if err := validateArchiveName(header.Name); err != nil {
 			return true, err
@@ -1034,7 +1034,7 @@ func extractTarGzToDir(data []byte, targetDir string) (bool, error) {
 func writeArchiveFile(targetDir string, name string, reader io.Reader, mode os.FileMode) error {
 	path := filepath.Join(targetDir, filepath.Clean(name))
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-		return fmt.Errorf("创建归档成员目录 %s: %w", filepath.Dir(path), err)
+		return fmt.Errorf("create archive member directory %s: %w", filepath.Dir(path), err)
 	}
 	if mode == 0 {
 		mode = 0644
@@ -1044,33 +1044,33 @@ func writeArchiveFile(targetDir string, name string, reader io.Reader, mode os.F
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm())
 	if err != nil {
-		return fmt.Errorf("创建归档成员文件 %s: %w", path, err)
+		return fmt.Errorf("create archive member file %s: %w", path, err)
 	}
 	defer file.Close()
 	if _, err := io.Copy(file, reader); err != nil {
-		return fmt.Errorf("写入归档成员文件 %s: %w", path, err)
+		return fmt.Errorf("write archive member file %s: %w", path, err)
 	}
 	return nil
 }
 
 func validateArchiveName(name string) error {
 	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("归档成员路径不能为空")
+		return fmt.Errorf("archive member path cannot be empty")
 	}
 	if strings.Contains(name, "\\") {
-		return fmt.Errorf("归档成员路径不安全: %s", name)
+		return fmt.Errorf("archive member path is unsafe: %s", name)
 	}
 	if strings.HasPrefix(name, "/") || filepath.VolumeName(name) != "" {
-		return fmt.Errorf("归档成员路径不安全: %s", name)
+		return fmt.Errorf("archive member path is unsafe: %s", name)
 	}
 	for _, segment := range strings.Split(name, "/") {
 		if segment == ".." {
-			return fmt.Errorf("归档成员路径不安全: %s", name)
+			return fmt.Errorf("archive member path is unsafe: %s", name)
 		}
 	}
 	cleaned := filepath.Clean(name)
 	if cleaned == "." || filepath.IsAbs(cleaned) {
-		return fmt.Errorf("归档成员路径不安全: %s", name)
+		return fmt.Errorf("archive member path is unsafe: %s", name)
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 // NormalizeGlobalPaths 将全局配置中的路径清理为规范绝对路径。
 func NormalizeGlobalPaths(baseDir string, config *domain.GlobalConfig) error {
 	if config == nil {
-		return fmt.Errorf("GlobalConfig 不能为空")
+		return fmt.Errorf("GlobalConfig cannot be nil")
 	}
 
 	resolvedBase, err := normalizeBaseDir(baseDir)
@@ -53,7 +53,7 @@ func NormalizeGlobalPaths(baseDir string, config *domain.GlobalConfig) error {
 // NormalizeSubConfigPaths 将订阅服务配置中的路径清理为规范绝对路径。
 func NormalizeSubConfigPaths(baseDir string, config *domain.SubConfig) error {
 	if config == nil {
-		return fmt.Errorf("SubConfig 不能为空")
+		return fmt.Errorf("SubConfig cannot be nil")
 	}
 
 	resolvedBase, err := normalizeBaseDir(baseDir)
@@ -70,14 +70,14 @@ func NormalizeSubConfigPaths(baseDir string, config *domain.SubConfig) error {
 // normalizeBaseDir 清理并转为绝对 base dir。
 func normalizeBaseDir(baseDir string) (string, error) {
 	if strings.TrimSpace(baseDir) == "" {
-		return "", fmt.Errorf("base dir 不能为空")
+		return "", fmt.Errorf("base dir cannot be empty")
 	}
 	if hasTraversalSegment(baseDir) {
-		return "", fmt.Errorf("base dir 不允许路径穿越")
+		return "", fmt.Errorf("base dir must not contain path traversal")
 	}
 	absolute, err := filepath.Abs(baseDir)
 	if err != nil {
-		return "", fmt.Errorf("清理 base dir: %w", err)
+		return "", fmt.Errorf("clean base dir: %w", err)
 	}
 	return filepath.Clean(absolute), nil
 }
@@ -85,10 +85,10 @@ func normalizeBaseDir(baseDir string) (string, error) {
 // normalizePathField 清理单个路径字段。
 func normalizePathField(baseDir string, value string) (string, error) {
 	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("不能为空")
+		return "", fmt.Errorf("cannot be empty")
 	}
 	if hasTraversalSegment(value) {
-		return "", fmt.Errorf("不允许路径穿越")
+		return "", fmt.Errorf("path traversal is not allowed")
 	}
 	cleaned := filepath.Clean(value)
 	if filepath.IsAbs(cleaned) {
@@ -97,7 +97,7 @@ func normalizePathField(baseDir string, value string) (string, error) {
 
 	resolved := filepath.Clean(filepath.Join(baseDir, cleaned))
 	if !isPathUnder(baseDir, resolved) && resolved != baseDir {
-		return "", fmt.Errorf("相对路径必须位于 base dir 下")
+		return "", fmt.Errorf("relative path must be under base dir")
 	}
 	return resolved, nil
 }

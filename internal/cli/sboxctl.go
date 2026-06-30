@@ -19,8 +19,8 @@ func newSboxctlCommand() *cobra.Command {
 	root := newRootCommand(
 		"sboxctl",
 		sboxctlDefaultBaseDir,
-		"管理 sing-box agent 实例",
-		"sboxctl 管理本机 sing-box agent 配置、实例生命周期、安装、订阅导出、流量统计、诊断和备份。",
+		"Manage sing-box agent instances",
+		"sboxctl manages local sing-box agent configuration, instance lifecycle, installation, subscription export, traffic statistics, diagnostics, and backups.",
 		false,
 	)
 
@@ -66,14 +66,14 @@ func newSboxctlCommand() *cobra.Command {
 // addSboxctlCommandGroups 设置 sboxctl 根命令 usage 的功能分组。
 func addSboxctlCommandGroups(root *cobra.Command) {
 	addCommandGroups(root,
-		&cobra.Group{ID: sboxctlGroupConfig, Title: "环境与配置"},
-		&cobra.Group{ID: sboxctlGroupInstance, Title: "实例管理"},
-		&cobra.Group{ID: sboxctlGroupRender, Title: "生成与订阅"},
-		&cobra.Group{ID: sboxctlGroupService, Title: "生命周期与服务"},
-		&cobra.Group{ID: sboxctlGroupResource, Title: "安装与资源"},
-		&cobra.Group{ID: sboxctlGroupTraffic, Title: "流量统计"},
-		&cobra.Group{ID: sboxctlGroupDiagnostics, Title: "诊断与备份"},
-		&cobra.Group{ID: commandGroupHelp, Title: "帮助"},
+		&cobra.Group{ID: sboxctlGroupConfig, Title: "Setup and Configuration"},
+		&cobra.Group{ID: sboxctlGroupInstance, Title: "Instances"},
+		&cobra.Group{ID: sboxctlGroupRender, Title: "Render and Subscription"},
+		&cobra.Group{ID: sboxctlGroupService, Title: "Runtime and Services"},
+		&cobra.Group{ID: sboxctlGroupResource, Title: "Resources"},
+		&cobra.Group{ID: sboxctlGroupTraffic, Title: "Traffic Statistics"},
+		&cobra.Group{ID: sboxctlGroupDiagnostics, Title: "Diagnostics and Backups"},
+		&cobra.Group{ID: commandGroupHelp, Title: "Help"},
 	)
 	setCommandGroup(root, sboxctlGroupConfig, "setup", "config", "example", "validate")
 	setCommandGroup(root, sboxctlGroupInstance, "add", "list", "clone", "member", "remove")
@@ -92,61 +92,61 @@ func addSboxctlFlags(root *cobra.Command) {
 	addSboxctlSetupLocalFlags(mustCommand(root, "setup", "all"))
 
 	config := mustCommand(root, "config")
-	config.Flags().String("editor", "", "指定编辑器命令")
-	config.Flags().Bool("check-only", false, "只检查配置不写入")
+	config.Flags().String("editor", "", "editor command")
+	config.Flags().Bool("check-only", false, "check configuration without writing changes")
 
 	add := mustCommand(root, "add")
-	add.Flags().String("template", "edge", "实例模板：edge、relay、urltest")
-	add.Flags().String("from-file", "", "从指定文件创建实例")
-	add.Flags().String("members", "", "urltest 模板成员 instance，逗号分隔")
-	add.Flags().Bool("allocate-ports", true, "自动分配端口")
-	add.Flags().Bool("keep-template-ports", false, "保留模板端口")
-	add.Flags().Bool("edit", true, "创建后打开编辑器")
-	add.Flags().Bool("no-edit", false, "创建后不打开编辑器")
-	add.Flags().String("editor", "", "指定编辑器命令")
+	add.Flags().String("template", "edge", "instance template: edge, relay, urltest")
+	add.Flags().String("from-file", "", "create instance from file")
+	add.Flags().String("members", "", "urltest template member instances, comma-separated")
+	add.Flags().Bool("allocate-ports", true, "allocate ports automatically")
+	add.Flags().Bool("keep-template-ports", false, "keep template ports")
+	add.Flags().Bool("edit", true, "open editor after creation")
+	add.Flags().Bool("no-edit", false, "do not open editor after creation")
+	add.Flags().String("editor", "", "editor command")
 
 	list := mustCommand(root, "list")
-	list.Flags().Bool("verbose", false, "输出详细信息")
-	list.Flags().Bool("check-system-ports", false, "检查系统端口占用")
+	list.Flags().Bool("verbose", false, "print detailed information")
+	list.Flags().Bool("check-system-ports", false, "check system port usage")
 
 	clone := mustCommand(root, "clone")
-	clone.Flags().Bool("allocate-ports", true, "自动分配端口")
-	clone.Flags().Bool("edit", true, "克隆后打开编辑器")
-	clone.Flags().Bool("no-edit", false, "克隆后不打开编辑器")
-	clone.Flags().String("editor", "", "指定编辑器命令")
+	clone.Flags().Bool("allocate-ports", true, "allocate ports automatically")
+	clone.Flags().Bool("edit", true, "open editor after cloning")
+	clone.Flags().Bool("no-edit", false, "do not open editor after cloning")
+	clone.Flags().String("editor", "", "editor command")
 
-	mustCommand(root, "remove").Flags().Bool("purge", false, "清理关联生成物")
-	mustCommand(root, "logs").Flags().BoolP("follow", "f", false, "持续跟随日志")
-	mustCommand(root, "sub", "export").Flags().StringP("output", "o", "", "输出文件")
-	mustCommand(root, "sub", "export").Flags().Bool("summary", false, "只输出摘要")
-	mustCommand(root, "sub", "export").Flags().Bool("dry-run", false, "预览导出结果")
-	mustCommand(root, "sub", "validate-inputs").Flags().String("input-dir", "", "订阅 input 目录")
-	mustCommand(root, "export").Flags().StringP("output", "o", "", "输出文件")
-	mustCommand(root, "import").Flags().Bool("force", false, "强制导入")
-	mustCommand(root, "ipinfo").Flags().String("family", "all", "地址族：all、ipv4、ipv6")
-	mustCommand(root, "ipinfo").Flags().Int("timeout", 0, "超时时间，单位秒")
+	mustCommand(root, "remove").Flags().Bool("purge", false, "clean related generated artifacts")
+	mustCommand(root, "logs").Flags().BoolP("follow", "f", false, "follow logs")
+	mustCommand(root, "sub", "export").Flags().StringP("output", "o", "", "output file")
+	mustCommand(root, "sub", "export").Flags().Bool("summary", false, "print summary only")
+	mustCommand(root, "sub", "export").Flags().Bool("dry-run", false, "preview export result")
+	mustCommand(root, "sub", "validate-inputs").Flags().String("input-dir", "", "subscription input directory")
+	mustCommand(root, "export").Flags().StringP("output", "o", "", "output file")
+	mustCommand(root, "import").Flags().Bool("force", false, "force import")
+	mustCommand(root, "ipinfo").Flags().String("family", "all", "address family: all, ipv4, ipv6")
+	mustCommand(root, "ipinfo").Flags().Int("timeout", 0, "timeout in seconds")
 }
 
 // addSboxctlSetupLocalFlags 为会创建或覆盖本机配置的 setup 命令添加参数。
 func addSboxctlSetupLocalFlags(cmd *cobra.Command) {
-	cmd.Flags().String("external-host", "", "外部访问域名或地址")
-	cmd.Flags().Bool("force", false, "覆盖已有初始化结果")
+	cmd.Flags().String("external-host", "", "external access hostname or address")
+	cmd.Flags().Bool("force", false, "overwrite existing initialization result")
 }
 
 // newSboxctlInstallCommand 创建 sing-box 和规则资源安装命令。
 func newSboxctlInstallCommand() *cobra.Command {
-	return newResourceCommand("install", "安装 sing-box、规则资源或全部资源")
+	return newResourceCommand("install", "Install sing-box, rule resources, or all resources")
 }
 
 // newSboxctlUpdateCommand 创建 sing-box 和规则资源更新命令。
 func newSboxctlUpdateCommand() *cobra.Command {
-	return newResourceCommand("update", "更新 sing-box、规则资源或全部资源")
+	return newResourceCommand("update", "Update sing-box, rule resources, or all resources")
 }
 
 // newSboxctlUninstallCommand 创建 sing-box 和规则资源卸载命令。
 func newSboxctlUninstallCommand() *cobra.Command {
-	cmd := newResourceCommand("uninstall", "卸载 sing-box、规则资源或全部资源")
-	cmd.Flags().Bool("purge", false, "清理下载缓存和受管文件")
+	cmd := newResourceCommand("uninstall", "Uninstall sing-box, rule resources, or all resources")
+	cmd.Flags().Bool("purge", false, "remove download cache and managed files")
 	return cmd
 }
 
@@ -164,27 +164,27 @@ func newSboxctlTrafficCommand() *cobra.Command {
 func newSboxctlTrafficCommandStub() *cobra.Command {
 	traffic := newStubGroup(
 		"traffic",
-		"采集、查询、导出和维护流量统计数据",
+		"Collect, query, export, and maintain traffic statistics",
 		newTrafficCollectCommand(),
 		newTrafficShowCommand(),
 		newTrafficWatchCommand(),
 		newTrafficSummarizeCommand(),
 		newTrafficExportCommand(),
-		newStubGroup("list", "列出流量统计资源", newStubCommand("instances", "列出统计实例")),
-		newStubGroup("cleanup", "清理历史流量记录", newStubCommand("records", "清理历史记录")),
-		newStubGroup("check", "检查流量统计配置或健康状态", newStubCommand("config", "检查流量配置"), newStubCommand("health", "检查统计健康状态")),
-		newStubGroup("edit", "编辑流量统计配置", newStubCommand("config", "编辑流量配置")),
+		newStubGroup("list", "List traffic statistic resources", newStubCommand("instances", "List statistic instances")),
+		newStubGroup("cleanup", "Clean historical traffic records", newStubCommand("records", "Clean historical records")),
+		newStubGroup("check", "Check traffic statistic configuration or health", newStubCommand("config", "Check traffic configuration"), newStubCommand("health", "Check statistic health")),
+		newStubGroup("edit", "Edit traffic statistic configuration", newStubCommand("config", "Edit traffic configuration")),
 		newTrafficTimerCommand(),
 	)
 
-	traffic.PersistentFlags().String("db", "", "流量统计 SQLite 文件")
-	traffic.PersistentFlags().String("timezone", "", "统计时区")
-	traffic.PersistentFlags().Int("retention-days", 0, "hourly/daily 保留天数")
-	traffic.PersistentFlags().Int("timeout", 0, "请求超时时间，单位秒")
-	mustCommand(traffic, "cleanup", "records").Flags().Int("monthly-retention-months", 0, "monthly 保留月数")
-	mustCommand(traffic, "cleanup", "records").Flags().String("period", "all", "清理周期：hourly、daily、monthly、all")
-	mustCommand(traffic, "cleanup", "records").Flags().Bool("dry-run", false, "只预览不删除")
-	mustCommand(traffic, "edit", "config").Flags().String("editor", "", "指定编辑器命令")
+	traffic.PersistentFlags().String("db", "", "traffic statistics SQLite file")
+	traffic.PersistentFlags().String("timezone", "", "statistics timezone")
+	traffic.PersistentFlags().Int("retention-days", 0, "hourly/daily retention days")
+	traffic.PersistentFlags().Int("timeout", 0, "request timeout in seconds")
+	mustCommand(traffic, "cleanup", "records").Flags().Int("monthly-retention-months", 0, "monthly retention months")
+	mustCommand(traffic, "cleanup", "records").Flags().String("period", "all", "cleanup period: hourly, daily, monthly, all")
+	mustCommand(traffic, "cleanup", "records").Flags().Bool("dry-run", false, "preview without deleting")
+	mustCommand(traffic, "edit", "config").Flags().String("editor", "", "editor command")
 	return traffic
 }
 
@@ -192,18 +192,18 @@ func newSboxctlTrafficCommandStub() *cobra.Command {
 func newTrafficCollectCommand() *cobra.Command {
 	collect := newStubGroup(
 		"collect",
-		"采集周期流量数据",
-		newStubCommand("hourly", "采集小时流量"),
-		newStubCommand("daily", "聚合日流量"),
-		newStubCommand("monthly", "聚合月流量"),
+		"Collect periodic traffic data",
+		newStubCommand("hourly", "Collect hourly traffic"),
+		newStubCommand("daily", "Aggregate daily traffic"),
+		newStubCommand("monthly", "Aggregate monthly traffic"),
 	)
 	for _, name := range []string{"hourly", "daily", "monthly"} {
 		child := mustCommand(collect, name)
-		child.Flags().String("instance", "", "实例名称或 ALL")
+		child.Flags().String("instance", "", "instance name or ALL")
 	}
-	mustCommand(collect, "hourly").Flags().String("at", "", "采集时间，RFC3339")
-	mustCommand(collect, "daily").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(collect, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
+	mustCommand(collect, "hourly").Flags().String("at", "", "collection time, RFC3339")
+	mustCommand(collect, "daily").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(collect, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
 	return collect
 }
 
@@ -211,32 +211,32 @@ func newTrafficCollectCommand() *cobra.Command {
 func newTrafficShowCommand() *cobra.Command {
 	show := newStubGroup(
 		"show",
-		"查询流量统计数据",
-		newStubCommand("current", "查询当前周期流量"),
-		newStubCommand("hourly", "查询小时流量"),
-		newStubCommand("daily", "查询日流量"),
-		newStubCommand("monthly", "查询月流量"),
-		newStubCommand("yearly", "查询年流量"),
+		"Query traffic statistics",
+		newStubCommand("current", "Query current-period traffic"),
+		newStubCommand("hourly", "Query hourly traffic"),
+		newStubCommand("daily", "Query daily traffic"),
+		newStubCommand("monthly", "Query monthly traffic"),
+		newStubCommand("yearly", "Query yearly traffic"),
 	)
 	for _, name := range []string{"current", "hourly", "daily", "monthly", "yearly"} {
 		child := mustCommand(show, name)
 		addTrafficQueryFlags(child)
 	}
-	mustCommand(show, "hourly").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(show, "daily").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(show, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
-	mustCommand(show, "yearly").Flags().String("year", "", "统计年份，YYYY")
+	mustCommand(show, "hourly").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(show, "daily").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(show, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
+	mustCommand(show, "yearly").Flags().String("year", "", "statistics year, YYYY")
 	return show
 }
 
 // newTrafficWatchCommand 创建流量 watch 命令组。
 func newTrafficWatchCommand() *cobra.Command {
-	watch := newStubGroup("watch", "持续观察流量数据", newStubCommand("current", "观察当前周期流量"))
+	watch := newStubGroup("watch", "Watch traffic data continuously", newStubCommand("current", "Watch current-period traffic"))
 	current := mustCommand(watch, "current")
 	addTrafficQueryFlags(current)
-	current.Flags().Int("interval", 0, "刷新间隔，单位秒")
-	current.Flags().Int("count", 0, "刷新次数")
-	current.Flags().Bool("no-clear", false, "刷新时不清屏")
+	current.Flags().Int("interval", 0, "refresh interval in seconds")
+	current.Flags().Int("count", 0, "refresh count")
+	current.Flags().Bool("no-clear", false, "do not clear the screen on refresh")
 	return watch
 }
 
@@ -244,17 +244,17 @@ func newTrafficWatchCommand() *cobra.Command {
 func newTrafficSummarizeCommand() *cobra.Command {
 	summarize := newStubGroup(
 		"summarize",
-		"汇总流量统计数据",
-		newStubCommand("hourly", "汇总小时流量"),
-		newStubCommand("daily", "汇总日流量"),
-		newStubCommand("monthly", "汇总月流量"),
+		"Summarize traffic statistics",
+		newStubCommand("hourly", "Summarize hourly traffic"),
+		newStubCommand("daily", "Summarize daily traffic"),
+		newStubCommand("monthly", "Summarize monthly traffic"),
 	)
 	for _, name := range []string{"hourly", "daily", "monthly"} {
 		child := mustCommand(summarize, name)
 		addTrafficQueryFlags(child)
-		child.Flags().String("date", "", "统计日期，YYYY-MM-DD")
+		child.Flags().String("date", "", "statistics date, YYYY-MM-DD")
 	}
-	mustCommand(summarize, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
+	mustCommand(summarize, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
 	return summarize
 }
 
@@ -262,17 +262,17 @@ func newTrafficSummarizeCommand() *cobra.Command {
 func newTrafficExportCommand() *cobra.Command {
 	export := newStubGroup(
 		"export",
-		"导出流量统计数据",
-		newStubCommand("hourly", "导出小时流量"),
-		newStubCommand("daily", "导出日流量"),
-		newStubCommand("monthly", "导出月流量"),
+		"Export traffic statistics",
+		newStubCommand("hourly", "Export hourly traffic"),
+		newStubCommand("daily", "Export daily traffic"),
+		newStubCommand("monthly", "Export monthly traffic"),
 	)
 	for _, name := range []string{"hourly", "daily", "monthly"} {
 		child := mustCommand(export, name)
 		addTrafficQueryFlags(child)
-		child.Flags().String("date", "", "统计日期，YYYY-MM-DD")
-		child.Flags().String("format", "csv", "导出格式")
-		child.Flags().String("output", "", "输出文件")
+		child.Flags().String("date", "", "statistics date, YYYY-MM-DD")
+		child.Flags().String("format", "csv", "export format")
+		child.Flags().String("output", "", "output file")
 	}
 	return export
 }
@@ -281,30 +281,30 @@ func newTrafficExportCommand() *cobra.Command {
 func newTrafficTimerCommand() *cobra.Command {
 	timer := newStubGroup(
 		"timer",
-		"管理流量统计调度器",
-		newStubCommand("install", "安装调度器服务文件"),
-		newStubCommand("uninstall", "卸载调度器服务文件"),
-		newStubCommand("enable", "启用调度器"),
-		newStubCommand("disable", "禁用调度器"),
-		newStubCommand("status", "查看调度器状态"),
-		newStubCommand("logs", "查看调度器日志"),
-		newStubGroup("run", "立即运行一次统计任务", newStubCommand("hourly", "立即运行 hourly 任务"), newStubCommand("daily", "立即运行 daily 任务"), newStubCommand("monthly", "立即运行 monthly 任务")),
+		"Manage the traffic statistics scheduler",
+		newStubCommand("install", "Install scheduler service files"),
+		newStubCommand("uninstall", "Uninstall scheduler service files"),
+		newStubCommand("enable", "Enable scheduler"),
+		newStubCommand("disable", "Disable scheduler"),
+		newStubCommand("status", "Show scheduler status"),
+		newStubCommand("logs", "Show scheduler logs"),
+		newStubGroup("run", "Run a statistics task immediately", newStubCommand("hourly", "Run the hourly task immediately"), newStubCommand("daily", "Run the daily task immediately"), newStubCommand("monthly", "Run the monthly task immediately")),
 	)
-	mustCommand(timer, "logs").Flags().BoolP("follow", "f", false, "持续跟随日志")
+	mustCommand(timer, "logs").Flags().BoolP("follow", "f", false, "follow logs")
 	return timer
 }
 
 // addTrafficQueryFlags 为流量查询类命令追加共享参数。
 func addTrafficQueryFlags(cmd *cobra.Command) {
-	cmd.Flags().String("instance", "", "实例名称或 ALL")
-	cmd.Flags().String("scope", "", "统计维度：user、inbound、outbound")
-	cmd.Flags().String("name", "", "维度名称")
-	cmd.Flags().String("from", "", "起始日期，YYYY-MM-DD")
-	cmd.Flags().String("to", "", "结束日期，YYYY-MM-DD")
-	cmd.Flags().Int("days", 0, "最近天数")
-	cmd.Flags().Int("months", 0, "最近月数")
-	cmd.Flags().Int("years", 0, "最近年数")
-	cmd.Flags().Int("limit", 0, "最大返回行数")
+	cmd.Flags().String("instance", "", "instance name or ALL")
+	cmd.Flags().String("scope", "", "statistics scope: user, inbound, outbound")
+	cmd.Flags().String("name", "", "scope name")
+	cmd.Flags().String("from", "", "start date, YYYY-MM-DD")
+	cmd.Flags().String("to", "", "end date, YYYY-MM-DD")
+	cmd.Flags().Int("days", 0, "recent day count")
+	cmd.Flags().Int("months", 0, "recent month count")
+	cmd.Flags().Int("years", 0, "recent year count")
+	cmd.Flags().Int("limit", 0, "maximum number of rows")
 }
 
 // mustCommand 按路径查找已注册命令，路径错误表示命令树定义自身有问题。

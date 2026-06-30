@@ -16,7 +16,7 @@ import (
 func newSboxctlExportCommandT07() *cobra.Command {
 	return &cobra.Command{
 		Use:   "export",
-		Short: "导出 agent 配置备份",
+		Short: "Export an agent config backup",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -39,15 +39,17 @@ func newSboxctlExportCommandT07() *cobra.Command {
 			if err := backup.WriteFileAtomic(output, result.Data, 0640); err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "agent backup 已导出: %s\n", output); err != nil {
+			if err := writeStatus(cmd, outputStatusOK, "Agent backup exported.",
+				outputKV("Archive", output),
+				outputKV("Files", fmt.Sprintf("%d", len(result.Files))),
+			); err != nil {
 				return err
 			}
+			rows := make([][]string, 0, len(result.Files))
 			for _, file := range result.Files {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "backup file: %s\n", file); err != nil {
-					return err
-				}
+				rows = append(rows, []string{file})
 			}
-			return nil
+			return writeTable(cmd, []string{"BACKED UP FILE"}, rows)
 		},
 	}
 }
@@ -56,7 +58,7 @@ func newSboxctlExportCommandT07() *cobra.Command {
 func newSboxctlImportCommandT07() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import BACKUP",
-		Short: "导入 agent 配置备份",
+		Short: "Import an agent config backup",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -68,15 +70,17 @@ func newSboxctlImportCommandT07() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "agent backup 已导入: files=%d force=%t\n", len(result.Files), result.Force); err != nil {
+			if err := writeStatus(cmd, outputStatusOK, "Agent backup imported.",
+				outputKV("Files", fmt.Sprintf("%d", len(result.Files))),
+				outputKV("Force", fmt.Sprintf("%t", result.Force)),
+			); err != nil {
 				return err
 			}
+			rows := make([][]string, 0, len(result.Files))
 			for _, file := range result.Files {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "imported file: %s\n", file); err != nil {
-					return err
-				}
+				rows = append(rows, []string{file})
 			}
-			return nil
+			return writeTable(cmd, []string{"IMPORTED FILE"}, rows)
 		},
 	}
 }
@@ -85,7 +89,7 @@ func newSboxctlImportCommandT07() *cobra.Command {
 func newSboxctlDoctorCommandT07() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "执行 agent 诊断检查",
+		Short: "Run agent diagnostics",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -97,7 +101,7 @@ func newSboxctlDoctorCommandT07() *cobra.Command {
 				return err
 			}
 			if diagnostics.HasIssue(checks) {
-				return fmt.Errorf("doctor found ISSUE")
+				return fmt.Errorf("doctor found issues")
 			}
 			return nil
 		},
@@ -108,7 +112,7 @@ func newSboxctlDoctorCommandT07() *cobra.Command {
 func newSboxctlIPInfoCommandT07() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ipinfo INSTANCE",
-		Short: "查询实例出口 IP 信息",
+		Short: "Query instance egress IP information",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -117,7 +121,7 @@ func newSboxctlIPInfoCommandT07() *cobra.Command {
 			}
 			instance, ok := set.FindInstance(args[0])
 			if !ok {
-				return fmt.Errorf("instance %q 不存在", args[0])
+				return fmt.Errorf("instance %q does not exist", args[0])
 			}
 			family, _ := cmd.Flags().GetString("family")
 			timeoutSeconds, _ := cmd.Flags().GetInt("timeout")
@@ -129,22 +133,34 @@ func newSboxctlIPInfoCommandT07() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			rows := make([][]string, 0, len(results))
 			for _, result := range results {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", result.Family, result.IP, result.Proxy.String(), result.Endpoint); err != nil {
-					return err
-				}
+				rows = append(rows, []string{result.Family, result.IP, result.Proxy.String(), result.Endpoint})
 			}
-			return nil
+			return writeTable(cmd, []string{"FAMILY", "IP", "PROXY", "ENDPOINT"}, rows)
 		},
 	}
 }
 
 // writeDiagnosticChecks 输出 doctor 检查项。
 func writeDiagnosticChecks(cmd *cobra.Command, checks []diagnostics.Check) error {
+	okCount := 0
+	issueCount := 0
+	rows := make([][]string, 0, len(checks))
 	for _, check := range checks {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", check.Module, check.Status, check.Message); err != nil {
-			return err
+		switch check.Status {
+		case diagnostics.StatusOK:
+			okCount++
+		case diagnostics.StatusIssue:
+			issueCount++
 		}
+		rows = append(rows, []string{check.Module, check.Status, check.Message})
 	}
-	return nil
+	if err := writeSectionFields(cmd, "Doctor",
+		outputKV("OK", fmt.Sprintf("%d", okCount)),
+		outputKV("Issues", fmt.Sprintf("%d", issueCount)),
+	); err != nil {
+		return err
+	}
+	return writeTable(cmd, []string{"CHECK", "STATUS", "MESSAGE"}, rows)
 }

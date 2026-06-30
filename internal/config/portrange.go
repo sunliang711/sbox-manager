@@ -16,16 +16,16 @@ import (
 func ParsePortRange(text string) (domain.PortRange, error) {
 	parts := strings.Split(strings.TrimSpace(text), "-")
 	if len(parts) != 2 {
-		return domain.PortRange{}, fmt.Errorf("端口范围必须是 start-end 格式")
+		return domain.PortRange{}, fmt.Errorf("port range must use start-end format")
 	}
 
 	start, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 	if err != nil {
-		return domain.PortRange{}, fmt.Errorf("端口范围 start 必须是整数: %w", err)
+		return domain.PortRange{}, fmt.Errorf("port range start must be an integer: %w", err)
 	}
 	end, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 	if err != nil {
-		return domain.PortRange{}, fmt.Errorf("端口范围 end 必须是整数: %w", err)
+		return domain.PortRange{}, fmt.Errorf("port range end must be an integer: %w", err)
 	}
 	portRange := domain.PortRange{Start: start, End: end}
 	if err := validateParsedPortRange(portRange); err != nil {
@@ -44,19 +44,19 @@ func FirstAvailablePort(portRange domain.PortRange, used map[int]struct{}) (int,
 			return port, nil
 		}
 	}
-	return 0, fmt.Errorf("端口范围 %d-%d 已无可用端口", portRange.Start, portRange.End)
+	return 0, fmt.Errorf("port range %d-%d has no available ports", portRange.Start, portRange.End)
 }
 
 // validateParsedPortRange 校验端口范围边界。
 func validateParsedPortRange(portRange domain.PortRange) error {
 	if portRange.Start < 1 || portRange.Start > 65535 {
-		return fmt.Errorf("端口范围 start 必须在 1-65535 范围内")
+		return fmt.Errorf("port range start must be in range 1-65535")
 	}
 	if portRange.End < 1 || portRange.End > 65535 {
-		return fmt.Errorf("端口范围 end 必须在 1-65535 范围内")
+		return fmt.Errorf("port range end must be in range 1-65535")
 	}
 	if portRange.Start > portRange.End {
-		return fmt.Errorf("端口范围 start 必须小于或等于 end")
+		return fmt.Errorf("port range start must be less than or equal to end")
 	}
 	return nil
 }
@@ -79,7 +79,7 @@ func (v *portRangeValue) UnmarshalYAML(node *yaml.Node) error {
 		for index := 0; index < len(node.Content); index += 2 {
 			key := node.Content[index].Value
 			if key != "start" && key != "end" {
-				return fmt.Errorf("端口范围包含未知字段 %q", key)
+				return fmt.Errorf("port range contains unknown field %q", key)
 			}
 		}
 		var decoded struct {
@@ -96,7 +96,7 @@ func (v *portRangeValue) UnmarshalYAML(node *yaml.Node) error {
 		v.value = portRange
 		return nil
 	default:
-		return fmt.Errorf("端口范围必须是 start-end 字符串或 {start,end} 对象")
+		return fmt.Errorf("port range must be a start-end string or {start,end} object")
 	}
 }
 

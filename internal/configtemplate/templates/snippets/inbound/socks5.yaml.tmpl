@@ -1,0 +1,13 @@
+# SOCKS5 inbound，本地监听可 noauth，公网监听建议 password。
+- name: {{ .LocalSocksName }}
+  type: socks5
+  listen: 127.0.0.1
+  port: {{ .LocalSocksPort }}
+  tag: socks5-{{ .LocalSocksName }}
+  udp: true
+{{ if .IncludeProxyAuth }}
+  auth:
+    type: password # 支持 noauth、password。
+    username: alice # type=password 时必填。
+    password: change-me # type=password 时必填。
+{{ end }}

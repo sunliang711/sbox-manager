@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sunliang711/sbox-manager/internal/config"
+	"github.com/sunliang711/sbox-manager/internal/configtemplate"
 	"github.com/sunliang711/sbox-manager/internal/domain"
 	"github.com/sunliang711/sbox-manager/internal/generator/singbox"
 	"github.com/sunliang711/sbox-manager/internal/subscription"
@@ -113,6 +114,44 @@ func TestAddWritesCommentedInstanceConfig(t *testing.T) {
 	}
 	if _, err := config.LoadInstance(path, *global); err != nil {
 		t.Fatalf("load commented instance: %v", err)
+	}
+}
+
+// TestAddBuiltInTemplateBodyUsesSharedSnippets 验证 add 生效正文来自 example 共用片段。
+func TestAddBuiltInTemplateBodyUsesSharedSnippets(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := Init(baseDir, InitOptions{ExternalHost: "proxy.example.com"}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := Add(baseDir, AddOptions{Name: "edge-shared", Template: "edge", AllocatePorts: true}); err != nil {
+		t.Fatalf("add edge: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(baseDir, "instances", "edge-shared.yaml"))
+	if err != nil {
+		t.Fatalf("read instance: %v", err)
+	}
+	text := string(data)
+	bodyStart := strings.Index(text, "\nname: edge-shared\n")
+	templateStart := strings.Index(text, "\n# 协议模板参考")
+	if bodyStart < 0 || templateStart < 0 {
+		t.Fatalf("instance body or reference template missing:\n%s", text)
+	}
+	body := text[bodyStart:templateStart]
+	for _, query := range []struct {
+		kind string
+		typ  string
+	}{
+		{kind: "inbound", typ: "vmess-raw"},
+		{kind: "outbound", typ: "vmess-websocket"},
+	} {
+		snippet, err := configtemplate.RenderExample(query.kind, query.typ, configtemplate.DefaultContext())
+		if err != nil {
+			t.Fatalf("render shared snippet %s/%s: %v", query.kind, query.typ, err)
+		}
+		marker := strings.SplitN(snippet, "\n", 2)[0]
+		if !strings.Contains(body, marker) {
+			t.Fatalf("active body missing shared snippet marker %q:\n%s", marker, body)
+		}
 	}
 }
 

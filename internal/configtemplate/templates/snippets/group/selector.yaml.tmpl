@@ -1,0 +1,4 @@
+# Selector group，客户端或运行时可在多个 outbound 间选择。
+- name: manual
+  type: selector
+  outbounds: [ss-upstream, vmess-upstream, direct] # 必须引用已定义 outbound。

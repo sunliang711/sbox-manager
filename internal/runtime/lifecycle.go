@@ -26,27 +26,27 @@ func (c CommandConfigChecker) Check(ctx context.Context, instance string, data [
 	if binary == "" {
 		found, err := exec.LookPath("sing-box")
 		if err != nil {
-			return fmt.Errorf("找不到 sing-box 二进制: %w", err)
+			return fmt.Errorf("sing-box binary not found: %w", err)
 		}
 		binary = found
 	}
 
 	tempFile, err := os.CreateTemp("", "sbox-manager-check-*.json")
 	if err != nil {
-		return fmt.Errorf("创建 sing-box check 临时文件: %w", err)
+		return fmt.Errorf("create sing-box check temp file: %w", err)
 	}
 	tempPath := tempFile.Name()
 	defer os.Remove(tempPath)
 	if err := tempFile.Chmod(0600); err != nil {
 		_ = tempFile.Close()
-		return fmt.Errorf("设置 sing-box check 临时文件权限: %w", err)
+		return fmt.Errorf("set sing-box check temp file permissions: %w", err)
 	}
 	if _, err := tempFile.Write(data); err != nil {
 		_ = tempFile.Close()
-		return fmt.Errorf("写入 sing-box check 临时文件: %w", err)
+		return fmt.Errorf("write sing-box check temp file: %w", err)
 	}
 	if err := tempFile.Close(); err != nil {
-		return fmt.Errorf("关闭 sing-box check 临时文件: %w", err)
+		return fmt.Errorf("close sing-box check temp file: %w", err)
 	}
 
 	command := exec.CommandContext(ctx, binary, "check", "-c", tempPath)
@@ -76,10 +76,10 @@ func (NoopServiceManager) Restart(ctx context.Context, services []string) error 
 // CheckPlan 对 plan 中所有期望配置执行 checker，过程发生在 apply 之前。
 func CheckPlan(ctx context.Context, plan *Plan, checker ConfigChecker) error {
 	if plan == nil {
-		return fmt.Errorf("plan 不能为空")
+		return fmt.Errorf("plan cannot be empty")
 	}
 	if checker == nil {
-		return fmt.Errorf("config checker 不能为空，显式跳过检查请注入 NoopConfigChecker")
+		return fmt.Errorf("config checker cannot be empty; inject NoopConfigChecker to skip checks explicitly")
 	}
 	for _, desired := range plan.DesiredFiles {
 		if err := checker.Check(ctx, desired.Instance, desired.Data); err != nil {

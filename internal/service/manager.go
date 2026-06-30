@@ -91,7 +91,7 @@ func NewManager(options Options) (*Manager, error) {
 	if options.LaunchAgentDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("解析 launchd plist 目录: %w", err)
+			return nil, fmt.Errorf("resolve launchd plist directory: %w", err)
 		}
 		options.LaunchAgentDir = filepath.Join(home, "Library", "LaunchAgents")
 	}
@@ -113,12 +113,12 @@ func ResolveKind(kind string) (string, error) {
 		case "darwin":
 			return KindLaunchd, nil
 		default:
-			return "", fmt.Errorf("当前平台 %s 不支持 auto service-manager", runtime.GOOS)
+			return "", fmt.Errorf("current platform %s does not support auto service-manager", runtime.GOOS)
 		}
 	case KindSystemd, KindLaunchd:
 		return kind, nil
 	default:
-		return "", fmt.Errorf("不支持的 service-manager %q", kind)
+		return "", fmt.Errorf("unsupported service-manager %q", kind)
 	}
 }
 
@@ -201,11 +201,11 @@ func SubscriptionServiceNameForKind(kind string) string {
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 	tempFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件 %s: %w", dir, err)
+		return fmt.Errorf("create temp file %s: %w", dir, err)
 	}
 	tempPath := tempFile.Name()
 	closed := false
@@ -216,18 +216,18 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 		_ = os.Remove(tempPath)
 	}()
 	if err := tempFile.Chmod(mode); err != nil {
-		return fmt.Errorf("设置临时文件权限 %s: %w", tempPath, err)
+		return fmt.Errorf("set temp file permissions %s: %w", tempPath, err)
 	}
 	if _, err := tempFile.Write(data); err != nil {
-		return fmt.Errorf("写入临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("write temp file %s: %w", tempPath, err)
 	}
 	if err := tempFile.Close(); err != nil {
 		closed = true
-		return fmt.Errorf("关闭临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("close temp file %s: %w", tempPath, err)
 	}
 	closed = true
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", path, err)
+		return fmt.Errorf("replace file %s: %w", path, err)
 	}
 	return nil
 }
@@ -370,7 +370,7 @@ func (m *Manager) Restart(ctx context.Context, services []string) error {
 // IsRunning 判断服务当前是否处于运行状态，供配置变更后按需重启。
 func (m *Manager) IsRunning(ctx context.Context, serviceName string) (bool, error) {
 	if m == nil {
-		return false, fmt.Errorf("service manager 不能为空")
+		return false, fmt.Errorf("service manager cannot be empty")
 	}
 	switch m.kind {
 	case KindSystemd:
@@ -378,7 +378,7 @@ func (m *Manager) IsRunning(ctx context.Context, serviceName string) (bool, erro
 	case KindLaunchd:
 		return m.isLaunchdRunning(ctx, serviceName)
 	default:
-		return false, fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return false, fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 
@@ -392,7 +392,7 @@ func (m *Manager) isSystemdRunning(ctx context.Context, serviceName string) (boo
 	if state != "" || err == nil || isServiceNotLoaded(output, err) {
 		return false, nil
 	}
-	return false, fmt.Errorf("检查服务运行状态 %s: %w", serviceName, err)
+	return false, fmt.Errorf("check service running status %s: %w", serviceName, err)
 }
 
 // isLaunchdRunning 通过 launchctl print 判断 launchd 服务是否 running。
@@ -405,7 +405,7 @@ func (m *Manager) isLaunchdRunning(ctx context.Context, serviceName string) (boo
 		if isServiceNotLoaded(output, err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("检查服务运行状态 %s: %w", serviceName, err)
+		return false, fmt.Errorf("check service running status %s: %w", serviceName, err)
 	}
 	text := strings.ToLower(string(output))
 	return strings.Contains(text, "state = running") || strings.Contains(text, "\npid = "), nil
@@ -414,7 +414,7 @@ func (m *Manager) isLaunchdRunning(ctx context.Context, serviceName string) (boo
 // Run 执行 start/stop/restart/status/logs/enable/disable。
 func (m *Manager) Run(ctx context.Context, action string, services []string, follow bool) ([]Result, error) {
 	if m == nil {
-		return nil, fmt.Errorf("service manager 不能为空")
+		return nil, fmt.Errorf("service manager cannot be empty")
 	}
 	services = stableServices(services)
 	results := make([]Result, 0, len(services))
@@ -435,7 +435,7 @@ func (m *Manager) runOne(ctx context.Context, action string, serviceName string,
 	case KindLaunchd:
 		return m.runLaunchd(ctx, action, serviceName, follow)
 	default:
-		return nil, fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return nil, fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 
@@ -461,7 +461,7 @@ func (m *Manager) runSystemd(ctx context.Context, action string, serviceName str
 		}
 		return m.runner.Run(ctx, "journalctl", args...)
 	default:
-		return nil, fmt.Errorf("不支持的服务动作 %q", action)
+		return nil, fmt.Errorf("unsupported service action %q", action)
 	}
 }
 
@@ -497,7 +497,7 @@ func (m *Manager) runLaunchd(ctx context.Context, action string, serviceName str
 		}
 		return m.runner.Run(ctx, "log", args...)
 	default:
-		return nil, fmt.Errorf("不支持的服务动作 %q", action)
+		return nil, fmt.Errorf("unsupported service action %q", action)
 	}
 }
 

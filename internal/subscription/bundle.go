@@ -45,7 +45,7 @@ type ImportResult struct {
 // BuildBundle 将订阅 input 编码为安全 zip bundle。
 func BuildBundle(inputs []domain.SubscriptionInput, generatedAt time.Time) (*ExportResult, error) {
 	if len(inputs) == 0 {
-		return nil, fmt.Errorf("没有可导出的订阅 input")
+		return nil, fmt.Errorf("no exportable subscription inputs")
 	}
 	if _, err := BuildIndexFromInputs(inputs); err != nil {
 		return nil, err
@@ -55,14 +55,14 @@ func BuildBundle(inputs []domain.SubscriptionInput, generatedAt time.Time) (*Exp
 	for _, input := range inputs {
 		name := input.Source + ".json"
 		if err := domain.ValidateSubscriptionInputFilename(name); err != nil {
-			return nil, fmt.Errorf("订阅 input 文件名 %s: %w", name, err)
+			return nil, fmt.Errorf("subscription input filename %s: %w", name, err)
 		}
 		if _, exists := files[name]; exists {
-			return nil, fmt.Errorf("订阅 input 文件名重复: %s", name)
+			return nil, fmt.Errorf("duplicate subscription input filename: %s", name)
 		}
 		data, err := MarshalStable(input)
 		if err != nil {
-			return nil, fmt.Errorf("编码订阅 input %s: %w", input.Source, err)
+			return nil, fmt.Errorf("encode subscription input %s: %w", input.Source, err)
 		}
 		files[name] = data
 	}
@@ -165,28 +165,28 @@ func SummariesForInputs(inputs []domain.SubscriptionInput) []BundleSummary {
 func WriteFileAtomic(target string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(target)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	tempName := temp.Name()
 	defer os.Remove(tempName)
 
 	if _, err := temp.Write(data); err != nil {
 		temp.Close()
-		return fmt.Errorf("写入临时文件: %w", err)
+		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := temp.Chmod(mode); err != nil {
 		temp.Close()
-		return fmt.Errorf("设置临时文件权限: %w", err)
+		return fmt.Errorf("set temp file permissions: %w", err)
 	}
 	if err := temp.Close(); err != nil {
-		return fmt.Errorf("关闭临时文件: %w", err)
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tempName, target); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", target, err)
+		return fmt.Errorf("replace file %s: %w", target, err)
 	}
 	return nil
 }
@@ -198,7 +198,7 @@ func encodeBundleZip(manifest domain.BundleManifest, files map[string][]byte) ([
 
 	manifestData, err := MarshalStable(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("编码 manifest: %w", err)
+		return nil, fmt.Errorf("encode manifest: %w", err)
 	}
 	if err := writeZipMember(writer, bundleManifestName, manifestData); err != nil {
 		return nil, err
@@ -209,7 +209,7 @@ func encodeBundleZip(manifest domain.BundleManifest, files map[string][]byte) ([
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("关闭 bundle zip: %w", err)
+		return nil, fmt.Errorf("close bundle zip: %w", err)
 	}
 	return buffer.Bytes(), nil
 }
@@ -218,10 +218,10 @@ func encodeBundleZip(manifest domain.BundleManifest, files map[string][]byte) ([
 func writeZipMember(writer *zip.Writer, name string, data []byte) error {
 	member, err := writer.Create(name)
 	if err != nil {
-		return fmt.Errorf("创建 zip 成员 %s: %w", name, err)
+		return fmt.Errorf("create zip member %s: %w", name, err)
 	}
 	if _, err := member.Write(data); err != nil {
-		return fmt.Errorf("写入 zip 成员 %s: %w", name, err)
+		return fmt.Errorf("write zip member %s: %w", name, err)
 	}
 	return nil
 }
@@ -230,7 +230,7 @@ func writeZipMember(writer *zip.Writer, name string, data []byte) error {
 func readBundle(bundlePath string) (map[string][]byte, []domain.SubscriptionInput, error) {
 	reader, err := zip.OpenReader(bundlePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("打开订阅 bundle %s: %w", bundlePath, err)
+		return nil, nil, fmt.Errorf("open subscription bundle %s: %w", bundlePath, err)
 	}
 	defer reader.Close()
 
@@ -238,7 +238,7 @@ func readBundle(bundlePath string) (map[string][]byte, []domain.SubscriptionInpu
 	files := make(map[string][]byte)
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
-			return nil, nil, fmt.Errorf("bundle 不允许目录成员: %s", file.Name)
+			return nil, nil, fmt.Errorf("bundle does not allow directory member: %s", file.Name)
 		}
 		kind, name, err := validateBundleMember(file.Name)
 		if err != nil {
@@ -250,23 +250,23 @@ func readBundle(bundlePath string) (map[string][]byte, []domain.SubscriptionInpu
 		}
 		if kind == bundleManifestName {
 			if manifestData != nil {
-				return nil, nil, fmt.Errorf("bundle manifest 重复")
+				return nil, nil, fmt.Errorf("duplicate bundle manifest")
 			}
 			manifestData = data
 			continue
 		}
 		if _, exists := files[name]; exists {
-			return nil, nil, fmt.Errorf("bundle input 重复: %s", name)
+			return nil, nil, fmt.Errorf("duplicate bundle input: %s", name)
 		}
 		files[name] = data
 	}
 	if manifestData == nil {
-		return nil, nil, fmt.Errorf("bundle 缺少 manifest.json")
+		return nil, nil, fmt.Errorf("bundle missing manifest.json")
 	}
 
 	var manifest domain.BundleManifest
 	if err := config.DecodeStrict(manifestData, "json", "BundleManifest", &manifest); err != nil {
-		return nil, nil, fmt.Errorf("解析 bundle manifest: %w", err)
+		return nil, nil, fmt.Errorf("parse bundle manifest: %w", err)
 	}
 	if err := domain.ValidateBundleManifest(manifest); err != nil {
 		return nil, nil, err
@@ -292,20 +292,20 @@ func readBundle(bundlePath string) (map[string][]byte, []domain.SubscriptionInpu
 // validateBundleMember 校验 zip 成员路径并返回成员类型和 input basename。
 func validateBundleMember(name string) (string, string, error) {
 	if name == "" || strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name {
-		return "", "", fmt.Errorf("bundle 成员路径不安全: %s", name)
+		return "", "", fmt.Errorf("bundle member path is unsafe: %s", name)
 	}
 	if name == bundleManifestName {
 		return bundleManifestName, "", nil
 	}
 	if !strings.HasPrefix(name, "inputs/") {
-		return "", "", fmt.Errorf("bundle 包含未知成员: %s", name)
+		return "", "", fmt.Errorf("bundle contains unknown member: %s", name)
 	}
 	base := strings.TrimPrefix(name, "inputs/")
 	if base == "" || strings.Contains(base, "/") {
-		return "", "", fmt.Errorf("bundle input 路径不安全: %s", name)
+		return "", "", fmt.Errorf("bundle input path is unsafe: %s", name)
 	}
 	if err := domain.ValidateSubscriptionInputFilename(base); err != nil {
-		return "", "", fmt.Errorf("bundle input 文件名 %s: %w", base, err)
+		return "", "", fmt.Errorf("bundle input filename %s: %w", base, err)
 	}
 	return "input", base, nil
 }
@@ -314,12 +314,12 @@ func validateBundleMember(name string) (string, string, error) {
 func readZipFile(file *zip.File) ([]byte, error) {
 	reader, err := file.Open()
 	if err != nil {
-		return nil, fmt.Errorf("打开 zip 成员 %s: %w", file.Name, err)
+		return nil, fmt.Errorf("open zip member %s: %w", file.Name, err)
 	}
 	defer reader.Close()
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("读取 zip 成员 %s: %w", file.Name, err)
+		return nil, fmt.Errorf("read zip member %s: %w", file.Name, err)
 	}
 	return data, nil
 }
@@ -327,12 +327,12 @@ func readZipFile(file *zip.File) ([]byte, error) {
 // validateBundleHashes 校验 manifest 中的文件集合和 sha256。
 func validateBundleHashes(manifest domain.BundleManifest, files map[string][]byte) error {
 	if len(manifest.InputsSHA256) != len(files) {
-		return fmt.Errorf("bundle manifest inputs_sha256 与 input 文件集合不一致")
+		return fmt.Errorf("bundle manifest inputs_sha256 does not match input file set")
 	}
 	for name, data := range files {
 		want, exists := manifest.InputsSHA256[name]
 		if !exists {
-			return fmt.Errorf("bundle manifest 缺少 input hash: %s", name)
+			return fmt.Errorf("bundle manifest missing input hash: %s", name)
 		}
 		sum := sha256.Sum256(data)
 		if !strings.EqualFold(want, hex.EncodeToString(sum[:])) {
@@ -341,7 +341,7 @@ func validateBundleHashes(manifest domain.BundleManifest, files map[string][]byt
 	}
 	for name := range manifest.InputsSHA256 {
 		if _, exists := files[name]; !exists {
-			return fmt.Errorf("bundle manifest 包含不存在的 input: %s", name)
+			return fmt.Errorf("bundle manifest contains missing input: %s", name)
 		}
 	}
 	return nil
@@ -371,11 +371,11 @@ func loadExistingInputsForMerge(dir string, incoming map[string][]byte) (map[str
 // replaceInputDir 用已校验的文件集合原子替换 inputs 目录。
 func replaceInputDir(baseDir string, files map[string][]byte) error {
 	if err := os.MkdirAll(baseDir, 0750); err != nil {
-		return fmt.Errorf("创建 base dir %s: %w", baseDir, err)
+		return fmt.Errorf("create base dir %s: %w", baseDir, err)
 	}
 	tempDir, err := os.MkdirTemp(baseDir, ".inputs.tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时 input 目录: %w", err)
+		return fmt.Errorf("create temporary input directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 	if err := writeFilesToDir(tempDir, files); err != nil {
@@ -387,22 +387,22 @@ func replaceInputDir(baseDir string, files map[string][]byte) error {
 	hadExisting := false
 	if _, err := os.Stat(inputsDir); err == nil {
 		if err := os.Rename(inputsDir, backupDir); err != nil {
-			return fmt.Errorf("备份旧 input 目录: %w", err)
+			return fmt.Errorf("backup old input directory: %w", err)
 		}
 		hadExisting = true
 	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("检查旧 input 目录: %w", err)
+		return fmt.Errorf("check old input directory: %w", err)
 	}
 
 	if err := os.Rename(tempDir, inputsDir); err != nil {
 		if hadExisting {
 			_ = os.Rename(backupDir, inputsDir)
 		}
-		return fmt.Errorf("替换 input 目录: %w", err)
+		return fmt.Errorf("replace input directory: %w", err)
 	}
 	if hadExisting {
 		if err := os.RemoveAll(backupDir); err != nil {
-			return fmt.Errorf("清理旧 input 目录: %w", err)
+			return fmt.Errorf("clean old input directory: %w", err)
 		}
 	}
 	return nil
@@ -415,7 +415,7 @@ func writeFilesToDir(dir string, files map[string][]byte) error {
 			return err
 		}
 		if err := os.WriteFile(filepath.Join(dir, name), files[name], 0640); err != nil {
-			return fmt.Errorf("写入 input %s: %w", name, err)
+			return fmt.Errorf("write input %s: %w", name, err)
 		}
 	}
 	return nil

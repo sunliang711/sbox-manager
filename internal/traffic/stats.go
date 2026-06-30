@@ -52,7 +52,7 @@ func (c *V2RayStatsClient) Query(ctx context.Context, target Target) ([]Counter,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(maxStatsResponseBytes))),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("连接 stats API %s: %w", server, err)
+		return nil, fmt.Errorf("connect stats API %s: %w", server, err)
 	}
 	defer conn.Close()
 
@@ -63,7 +63,7 @@ func (c *V2RayStatsClient) Query(ctx context.Context, target Target) ([]Counter,
 	}
 	response, err := statscommand.NewStatsServiceClient(conn).QueryStats(queryCtx, &statscommand.QueryStatsRequest{Reset_: false})
 	if err != nil {
-		return nil, fmt.Errorf("查询 stats API %s: %w", server, err)
+		return nil, fmt.Errorf("query stats API %s: %w", server, err)
 	}
 	counters := statsToCounters(response.GetStat())
 	return FilterCounters(counters, target, Filter{}), nil
@@ -75,7 +75,7 @@ func ParseStatsResponse(data []byte) ([]Counter, error) {
 	decoder.UseNumber()
 	var payload interface{}
 	if err := decoder.Decode(&payload); err != nil {
-		return nil, fmt.Errorf("解析 stats JSON: %w", err)
+		return nil, fmt.Errorf("parse stats JSON: %w", err)
 	}
 	collected := map[string]Counter{}
 	walkStatsPayload(payload, collected)
@@ -90,17 +90,17 @@ func ParseStatsResponse(data []byte) ([]Counter, error) {
 func statsGRPCTarget(listen string) (string, error) {
 	listen = strings.TrimSpace(listen)
 	if listen == "" {
-		return "", fmt.Errorf("stats API 地址不能为空")
+		return "", fmt.Errorf("stats API address cannot be empty")
 	}
 	if !strings.Contains(listen, "://") {
 		return listen, nil
 	}
 	parsed, err := url.Parse(listen)
 	if err != nil {
-		return "", fmt.Errorf("解析 stats API 地址: %w", err)
+		return "", fmt.Errorf("parse stats API address: %w", err)
 	}
 	if parsed.Host == "" {
-		return "", fmt.Errorf("stats API 地址缺少 host")
+		return "", fmt.Errorf("stats API address missing host")
 	}
 	return parsed.Host, nil
 }

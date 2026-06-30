@@ -14,7 +14,7 @@ import (
 func newSboxctlSubCommandT05() *cobra.Command {
 	sub := &cobra.Command{
 		Use:   "sub",
-		Short: "导出和校验 agent 订阅输入",
+		Short: "Export and validate agent subscription inputs",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -30,7 +30,7 @@ func newSboxctlSubCommandT05() *cobra.Command {
 func newSboxctlSubExportCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "export [INSTANCE]",
-		Short: "导出订阅 bundle",
+		Short: "Export a subscription bundle",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -68,8 +68,7 @@ func newSboxctlSubExportCommand() *cobra.Command {
 			if err := writeSubExportSummary(cmd, result, false); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 bundle 已导出: %s\n", output)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription bundle exported.", outputKV("File", output))
 		},
 	}
 }
@@ -78,19 +77,22 @@ func newSboxctlSubExportCommand() *cobra.Command {
 func newSboxctlSubValidateInputsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate-inputs",
-		Short: "校验订阅 inputs",
+		Short: "Validate subscription inputs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			inputDir, _ := cmd.Flags().GetString("input-dir")
 			if inputDir == "" {
-				return fmt.Errorf("--input-dir 不能为空")
+				return fmt.Errorf("--input-dir cannot be empty")
 			}
 			index, err := subscription.LoadIndexFromDir(inputDir)
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 校验通过: sources=%d users=%d nodes=%d\n", len(index.Sources), index.UserCount(), len(index.Nodes))
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription inputs validation passed.",
+				outputKV("Sources", fmt.Sprintf("%d", len(index.Sources))),
+				outputKV("Users", fmt.Sprintf("%d", index.UserCount())),
+				outputKV("Nodes", fmt.Sprintf("%d", len(index.Nodes))),
+			)
 		},
 	}
 }
@@ -98,7 +100,7 @@ func newSboxctlSubValidateInputsCommand() *cobra.Command {
 // writeSubExportSummary 输出不含敏感信息的订阅导出摘要。
 func writeSubExportSummary(cmd *cobra.Command, result *subscription.ExportResult, dryRun bool) error {
 	if dryRun {
-		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "预览模式: 不会写入文件"); err != nil {
+		if err := writeStatus(cmd, outputStatusInfo, "Dry run only; no files will be written."); err != nil {
 			return err
 		}
 	}
@@ -106,13 +108,16 @@ func writeSubExportSummary(cmd *cobra.Command, result *subscription.ExportResult
 	for _, summary := range result.Summaries {
 		totalNodes += summary.Nodes
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "订阅 bundle 摘要: inputs=%d nodes=%d template=%s\n", len(result.Summaries), totalNodes, result.Manifest.TemplateVersion); err != nil {
+	if err := writeSectionFields(cmd, "Subscription bundle",
+		outputKV("Inputs", fmt.Sprintf("%d", len(result.Summaries))),
+		outputKV("Nodes", fmt.Sprintf("%d", totalNodes)),
+		outputKV("Template", result.Manifest.TemplateVersion),
+	); err != nil {
 		return err
 	}
+	rows := make([][]string, 0, len(result.Summaries))
 	for _, summary := range result.Summaries {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "- 输入文件 %s: source=%s nodes=%d users=%v\n", summary.File, summary.Source, summary.Nodes, summary.Users); err != nil {
-			return err
-		}
+		rows = append(rows, []string{summary.File, summary.Source, fmt.Sprintf("%d", summary.Nodes), fmt.Sprintf("%v", summary.Users)})
 	}
-	return nil
+	return writeTable(cmd, []string{"FILE", "SOURCE", "NODES", "USERS"}, rows)
 }

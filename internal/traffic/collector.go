@@ -22,7 +22,7 @@ func NewCollector(repo *Repository, client StatsClient, location *time.Location)
 // CollectHourly 从 stats 当前累计值和 baseline 差值生成 hourly 记录。
 func (c *Collector) CollectHourly(ctx context.Context, targets []Target, at time.Time) ([]Record, error) {
 	if c.client == nil {
-		return nil, fmt.Errorf("stats client 不能为空")
+		return nil, fmt.Errorf("stats client cannot be empty")
 	}
 	window := HourRange(at, c.location)
 	now := at.UTC()
@@ -30,7 +30,7 @@ func (c *Collector) CollectHourly(ctx context.Context, targets []Target, at time
 	for _, target := range targets {
 		counters, err := c.client.Query(ctx, target)
 		if err != nil {
-			return allRecords, fmt.Errorf("采集 instance %s: %w", target.Instance, err)
+			return allRecords, fmt.Errorf("collect instance %s: %w", target.Instance, err)
 		}
 		filtered := FilterCounters(counters, target, Filter{})
 		records, err := c.repo.AddHourlyCounters(ctx, target, filtered, window, now, c.location)
@@ -75,7 +75,7 @@ func (c *Collector) CollectMonthly(ctx context.Context, instances []string, mont
 // CurrentDeltas 查询当前累计值与 baseline 的差值，但不写库也不更新 baseline。
 func CurrentDeltas(ctx context.Context, repo *Repository, client StatsClient, targets []Target, at time.Time, location *time.Location, filter Filter) ([]Record, error) {
 	if client == nil {
-		return nil, fmt.Errorf("stats client 不能为空")
+		return nil, fmt.Errorf("stats client cannot be empty")
 	}
 	window := HourRange(at, location)
 	now := at.UTC()
@@ -83,7 +83,7 @@ func CurrentDeltas(ctx context.Context, repo *Repository, client StatsClient, ta
 	for _, target := range targets {
 		counters, err := client.Query(ctx, target)
 		if err != nil {
-			return allRecords, fmt.Errorf("查询当前流量 instance %s: %w", target.Instance, err)
+			return allRecords, fmt.Errorf("query current traffic for instance %s: %w", target.Instance, err)
 		}
 		filtered := FilterCounters(counters, target, filter)
 		for _, counter := range filtered {

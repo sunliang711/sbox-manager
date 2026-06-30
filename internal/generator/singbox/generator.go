@@ -108,21 +108,21 @@ func resolveOutboundRef(currentInstance string, outbound domain.Outbound, instan
 	}
 	parsedInstanceName, _, ok := parseOutboundRef(outbound.Ref)
 	if !ok {
-		return domain.Outbound{}, fmt.Errorf("ref outbound %q 必须使用 <instance>.<inbound> 格式", outbound.Name)
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q must use <instance>.<inbound> format", outbound.Name)
 	}
 	targetInstanceName, targetInboundName, targetInstance, exists := resolveOutboundRefTarget(outbound.Ref, instances)
 	if !exists {
-		return domain.Outbound{}, fmt.Errorf("ref outbound %q 引用的 instance %q 不存在", outbound.Name, parsedInstanceName)
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q references missing instance %q", outbound.Name, parsedInstanceName)
 	}
 	if targetInstanceName == currentInstance {
-		return domain.Outbound{}, fmt.Errorf("ref outbound %q 不允许引用当前 instance", outbound.Name)
+		return domain.Outbound{}, fmt.Errorf("ref outbound %q cannot reference the current instance", outbound.Name)
 	}
 	for _, inbound := range targetInstance.Inbounds {
 		if inbound.Name != targetInboundName {
 			continue
 		}
 		if inbound.Type != "socks5" && inbound.Type != "http" {
-			return domain.Outbound{}, fmt.Errorf("ref outbound %q 只能引用 socks5/http inbound", outbound.Name)
+			return domain.Outbound{}, fmt.Errorf("ref outbound %q can only reference socks5/http inbound", outbound.Name)
 		}
 		return domain.Outbound{
 			Name:   outbound.Name,
@@ -132,7 +132,7 @@ func resolveOutboundRef(currentInstance string, outbound domain.Outbound, instan
 			Auth:   inbound.Auth,
 		}, nil
 	}
-	return domain.Outbound{}, fmt.Errorf("ref outbound %q 引用的 inbound %q 不存在", outbound.Name, outbound.Ref)
+	return domain.Outbound{}, fmt.Errorf("ref outbound %q references missing inbound %q", outbound.Name, outbound.Ref)
 }
 
 // resolveOutboundRefTarget 根据已有 instance 名称解析 ref，支持 instance 名称包含点号。
@@ -269,7 +269,7 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 			}
 		}
 	default:
-		return Inbound{}, fmt.Errorf("不支持的 inbound type %q", inbound.Type)
+		return Inbound{}, fmt.Errorf("unsupported inbound type %q", inbound.Type)
 	}
 	return result, nil
 }
@@ -306,7 +306,7 @@ func convertOutbound(outbound domain.Outbound) (Outbound, error) {
 	case "direct", "block", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http":
 		return result, nil
 	default:
-		return Outbound{}, fmt.Errorf("不支持的 outbound type %q", outbound.Type)
+		return Outbound{}, fmt.Errorf("unsupported outbound type %q", outbound.Type)
 	}
 }
 
@@ -326,7 +326,7 @@ func convertGroup(group domain.Group) (Outbound, error) {
 		result.Tolerance = group.Tolerance
 		return result, nil
 	default:
-		return Outbound{}, fmt.Errorf("不支持的 group type %q", group.Type)
+		return Outbound{}, fmt.Errorf("unsupported group type %q", group.Type)
 	}
 }
 

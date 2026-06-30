@@ -33,7 +33,7 @@ func LoadManifest(path string, generatedDir string) (*Manifest, error) {
 			return nil, fmt.Errorf("RuntimeManifest %s: %w", path, err)
 		}
 	} else {
-		return nil, fmt.Errorf("RuntimeManifest %s: JSON 只允许单个顶层值", path)
+		return nil, fmt.Errorf("RuntimeManifest %s: JSON allows only one top-level value", path)
 	}
 	if err := ValidateManifest(manifest, generatedDir); err != nil {
 		return nil, fmt.Errorf("RuntimeManifest %s: %w", path, err)
@@ -44,26 +44,26 @@ func LoadManifest(path string, generatedDir string) (*Manifest, error) {
 // ValidateManifest 校验 runtime manifest schema、排序和路径安全。
 func ValidateManifest(manifest Manifest, generatedDir string) error {
 	if manifest.ManifestSchema != ManifestSchema {
-		return fmt.Errorf("manifest_schema 必须为 %q", ManifestSchema)
+		return fmt.Errorf("manifest_schema must be %q", ManifestSchema)
 	}
 	if manifest.ManifestVersion != ManifestVersion {
-		return fmt.Errorf("manifest_version 必须为 %d", ManifestVersion)
+		return fmt.Errorf("manifest_version must be %d", ManifestVersion)
 	}
 	if strings.TrimSpace(manifest.ConfigSHA256) == "" {
-		return fmt.Errorf("config_sha256 不能为空")
+		return fmt.Errorf("config_sha256 cannot be empty")
 	}
 	if manifest.InstanceSHA256 == nil {
-		return fmt.Errorf("instance_sha256 不能为空")
+		return fmt.Errorf("instance_sha256 cannot be empty")
 	}
 	if strings.TrimSpace(manifest.GeneratedAt) == "" {
-		return fmt.Errorf("generated_at 不能为空")
+		return fmt.Errorf("generated_at cannot be empty")
 	}
 	for index, file := range manifest.Files {
 		if err := validateManifestFile(file, generatedDir); err != nil {
 			return fmt.Errorf("files[%d]: %w", index, err)
 		}
 		if index > 0 && manifest.Files[index-1].RelativePath > file.RelativePath {
-			return fmt.Errorf("files 必须按 relative_path 稳定排序")
+			return fmt.Errorf("files must be sorted stably by relative_path")
 		}
 	}
 	return nil
@@ -79,25 +79,25 @@ func SortManifestFiles(files []ManifestFile) {
 // validateManifestFile 校验单个 manifest file 的路径约束。
 func validateManifestFile(file ManifestFile, generatedDir string) error {
 	if strings.TrimSpace(file.Instance) == "" {
-		return fmt.Errorf("instance 不能为空")
+		return fmt.Errorf("instance cannot be empty")
 	}
 	if strings.TrimSpace(file.Path) == "" {
-		return fmt.Errorf("path 不能为空")
+		return fmt.Errorf("path cannot be empty")
 	}
 	if strings.TrimSpace(file.RelativePath) == "" {
-		return fmt.Errorf("relative_path 不能为空")
+		return fmt.Errorf("relative_path cannot be empty")
 	}
 	if strings.TrimSpace(file.SHA256) == "" {
-		return fmt.Errorf("sha256 不能为空")
+		return fmt.Errorf("sha256 cannot be empty")
 	}
 	if strings.TrimSpace(file.Service) == "" {
-		return fmt.Errorf("service 不能为空")
+		return fmt.Errorf("service cannot be empty")
 	}
 	if err := validateRelativePath(file.RelativePath); err != nil {
 		return err
 	}
 	if !isPathUnder(generatedDir, file.Path) {
-		return fmt.Errorf("path 必须位于 paths.generated 下")
+		return fmt.Errorf("path must be under paths.generated")
 	}
 	return nil
 }
@@ -105,17 +105,17 @@ func validateManifestFile(file ManifestFile, generatedDir string) error {
 // validateRelativePath 校验 manifest relative_path 只使用安全 slash 相对路径。
 func validateRelativePath(relativePath string) error {
 	if strings.Contains(relativePath, "\\") {
-		return fmt.Errorf("relative_path 不允许反斜杠")
+		return fmt.Errorf("relative_path must not contain backslashes")
 	}
 	if path.IsAbs(relativePath) {
-		return fmt.Errorf("relative_path 不允许绝对路径")
+		return fmt.Errorf("relative_path must not be absolute")
 	}
 	cleaned := path.Clean(relativePath)
 	if cleaned == "." || strings.HasPrefix(cleaned, "../") || cleaned == ".." {
-		return fmt.Errorf("relative_path 不允许路径穿越")
+		return fmt.Errorf("relative_path path traversal is not allowed")
 	}
 	if cleaned != relativePath {
-		return fmt.Errorf("relative_path 必须是规范路径")
+		return fmt.Errorf("relative_path must be a clean path")
 	}
 	return nil
 }

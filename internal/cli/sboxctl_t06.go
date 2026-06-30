@@ -27,15 +27,15 @@ var (
 func newSboxctlTrafficCommandT06() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "traffic",
-		Short: "采集、查询、导出和维护流量统计数据",
+		Short: "Collect, query, export, and maintain traffic statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
-	cmd.PersistentFlags().String("db", "", "流量统计 SQLite 文件")
-	cmd.PersistentFlags().String("timezone", "", "统计时区")
-	cmd.PersistentFlags().Int("retention-days", 0, "hourly/daily 保留天数")
-	cmd.PersistentFlags().Int("timeout", 0, "请求超时时间，单位秒")
+	cmd.PersistentFlags().String("db", "", "traffic statistics SQLite file")
+	cmd.PersistentFlags().String("timezone", "", "statistics timezone")
+	cmd.PersistentFlags().Int("retention-days", 0, "hourly/daily retention days")
+	cmd.PersistentFlags().Int("timeout", 0, "request timeout in seconds")
 	cmd.AddCommand(
 		newTrafficCollectCommandT06(),
 		newTrafficShowCommandT06(),
@@ -55,7 +55,7 @@ func newSboxctlTrafficCommandT06() *cobra.Command {
 func newTrafficCollectCommandT06() *cobra.Command {
 	collect := &cobra.Command{
 		Use:   "collect",
-		Short: "采集周期流量数据",
+		Short: "Collect periodic traffic data",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -65,9 +65,9 @@ func newTrafficCollectCommandT06() *cobra.Command {
 		newTrafficCollectPeriodCommand("daily"),
 		newTrafficCollectPeriodCommand("monthly"),
 	)
-	mustCommand(collect, "hourly").Flags().String("at", "", "采集时间，RFC3339")
-	mustCommand(collect, "daily").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(collect, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
+	mustCommand(collect, "hourly").Flags().String("at", "", "collection time, RFC3339")
+	mustCommand(collect, "daily").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(collect, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
 	return collect
 }
 
@@ -75,13 +75,13 @@ func newTrafficCollectCommandT06() *cobra.Command {
 func newTrafficCollectPeriodCommand(period string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   period,
-		Short: "采集 " + period + " 流量",
+		Short: "Collect " + period + " traffic",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTrafficCollect(cmd, period)
 		},
 	}
-	cmd.Flags().String("instance", "", "实例名称或 ALL")
+	cmd.Flags().String("instance", "", "instance name or ALL")
 	return cmd
 }
 
@@ -89,7 +89,7 @@ func newTrafficCollectPeriodCommand(period string) *cobra.Command {
 func newTrafficShowCommandT06() *cobra.Command {
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "查询流量统计数据",
+		Short: "Query traffic statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -98,10 +98,10 @@ func newTrafficShowCommandT06() *cobra.Command {
 		child := newTrafficShowPeriodCommand(period)
 		show.AddCommand(child)
 	}
-	mustCommand(show, "hourly").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(show, "daily").Flags().String("date", "", "统计日期，YYYY-MM-DD")
-	mustCommand(show, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
-	mustCommand(show, "yearly").Flags().String("year", "", "统计年份，YYYY")
+	mustCommand(show, "hourly").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(show, "daily").Flags().String("date", "", "statistics date, YYYY-MM-DD")
+	mustCommand(show, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
+	mustCommand(show, "yearly").Flags().String("year", "", "statistics year, YYYY")
 	return show
 }
 
@@ -109,7 +109,7 @@ func newTrafficShowCommandT06() *cobra.Command {
 func newTrafficShowPeriodCommand(period string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   period,
-		Short: "查询 " + period + " 流量",
+		Short: "Query " + period + " traffic",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTrafficShow(cmd, period)
@@ -123,21 +123,21 @@ func newTrafficShowPeriodCommand(period string) *cobra.Command {
 func newTrafficWatchCommandT06() *cobra.Command {
 	watch := &cobra.Command{
 		Use:   "watch",
-		Short: "持续观察流量数据",
+		Short: "Watch traffic data continuously",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	current := &cobra.Command{
 		Use:   "current",
-		Short: "观察当前周期流量",
+		Short: "Watch current-period traffic",
 		Args:  cobra.NoArgs,
 		RunE:  runTrafficWatchCurrent,
 	}
 	addTrafficQueryFlagsT06(current)
-	current.Flags().Int("interval", 0, "刷新间隔，单位秒")
-	current.Flags().Int("count", 0, "刷新次数")
-	current.Flags().Bool("no-clear", false, "刷新时不清屏")
+	current.Flags().Int("interval", 0, "refresh interval in seconds")
+	current.Flags().Int("count", 0, "refresh count")
+	current.Flags().Bool("no-clear", false, "do not clear the screen on refresh")
 	watch.AddCommand(current)
 	return watch
 }
@@ -146,7 +146,7 @@ func newTrafficWatchCommandT06() *cobra.Command {
 func newTrafficSummarizeCommandT06() *cobra.Command {
 	summarize := &cobra.Command{
 		Use:   "summarize",
-		Short: "汇总流量统计数据",
+		Short: "Summarize traffic statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -154,17 +154,17 @@ func newTrafficSummarizeCommandT06() *cobra.Command {
 	for _, period := range []string{"hourly", "daily", "monthly"} {
 		child := &cobra.Command{
 			Use:   period,
-			Short: "汇总 " + period + " 流量",
+			Short: "Summarize " + period + " traffic",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runTrafficSummarize(cmd, cmd.Name())
 			},
 		}
 		addTrafficQueryFlagsT06(child)
-		child.Flags().String("date", "", "统计日期，YYYY-MM-DD")
+		child.Flags().String("date", "", "statistics date, YYYY-MM-DD")
 		summarize.AddCommand(child)
 	}
-	mustCommand(summarize, "monthly").Flags().String("month", "", "统计月份，YYYY-MM")
+	mustCommand(summarize, "monthly").Flags().String("month", "", "statistics month, YYYY-MM")
 	return summarize
 }
 
@@ -172,7 +172,7 @@ func newTrafficSummarizeCommandT06() *cobra.Command {
 func newTrafficExportCommandT06() *cobra.Command {
 	export := &cobra.Command{
 		Use:   "export",
-		Short: "导出流量统计数据",
+		Short: "Export traffic statistics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -180,17 +180,17 @@ func newTrafficExportCommandT06() *cobra.Command {
 	for _, period := range []string{"hourly", "daily", "monthly"} {
 		child := &cobra.Command{
 			Use:   period,
-			Short: "导出 " + period + " 流量",
+			Short: "Export " + period + " traffic",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runTrafficExport(cmd, cmd.Name())
 			},
 		}
 		addTrafficQueryFlagsT06(child)
-		child.Flags().String("date", "", "统计日期，YYYY-MM-DD")
-		child.Flags().String("month", "", "统计月份，YYYY-MM")
-		child.Flags().String("format", "csv", "导出格式")
-		child.Flags().String("output", "", "输出文件")
+		child.Flags().String("date", "", "statistics date, YYYY-MM-DD")
+		child.Flags().String("month", "", "statistics month, YYYY-MM")
+		child.Flags().String("format", "csv", "export format")
+		child.Flags().String("output", "", "output file")
 		export.AddCommand(child)
 	}
 	return export
@@ -200,14 +200,14 @@ func newTrafficExportCommandT06() *cobra.Command {
 func newTrafficListCommandT06() *cobra.Command {
 	list := &cobra.Command{
 		Use:   "list",
-		Short: "列出流量统计资源",
+		Short: "List traffic statistic resources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	list.AddCommand(&cobra.Command{
 		Use:   "instances",
-		Short: "列出统计实例",
+		Short: "List statistic instances",
 		Args:  cobra.NoArgs,
 		RunE:  runTrafficListInstances,
 	})
@@ -218,20 +218,20 @@ func newTrafficListCommandT06() *cobra.Command {
 func newTrafficCleanupCommandT06() *cobra.Command {
 	cleanup := &cobra.Command{
 		Use:   "cleanup",
-		Short: "清理历史流量记录",
+		Short: "Clean historical traffic records",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	records := &cobra.Command{
 		Use:   "records",
-		Short: "清理历史记录",
+		Short: "Clean historical records",
 		Args:  cobra.NoArgs,
 		RunE:  runTrafficCleanupRecords,
 	}
-	records.Flags().Int("monthly-retention-months", 0, "monthly 保留月数")
-	records.Flags().String("period", "all", "清理周期：hourly、daily、monthly、all")
-	records.Flags().Bool("dry-run", false, "只预览不删除")
+	records.Flags().Int("monthly-retention-months", 0, "monthly retention months")
+	records.Flags().String("period", "all", "cleanup period: hourly, daily, monthly, all")
+	records.Flags().Bool("dry-run", false, "preview without deleting")
 	cleanup.AddCommand(records)
 	return cleanup
 }
@@ -240,14 +240,14 @@ func newTrafficCleanupCommandT06() *cobra.Command {
 func newTrafficCheckCommandT06() *cobra.Command {
 	check := &cobra.Command{
 		Use:   "check",
-		Short: "检查流量统计配置或健康状态",
+		Short: "Check traffic statistic configuration or health",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	check.AddCommand(
-		&cobra.Command{Use: "config", Short: "检查流量配置", Args: cobra.NoArgs, RunE: runTrafficCheckConfig},
-		&cobra.Command{Use: "health", Short: "检查统计健康状态", Args: cobra.NoArgs, RunE: runTrafficCheckHealth},
+		&cobra.Command{Use: "config", Short: "Check traffic configuration", Args: cobra.NoArgs, RunE: runTrafficCheckConfig},
+		&cobra.Command{Use: "health", Short: "Check statistic health", Args: cobra.NoArgs, RunE: runTrafficCheckHealth},
 	)
 	return check
 }
@@ -256,18 +256,18 @@ func newTrafficCheckCommandT06() *cobra.Command {
 func newTrafficEditCommandT06() *cobra.Command {
 	edit := &cobra.Command{
 		Use:   "edit",
-		Short: "编辑流量统计配置",
+		Short: "Edit traffic statistic configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 	configCommand := &cobra.Command{
 		Use:   "config",
-		Short: "编辑流量配置",
+		Short: "Edit traffic configuration",
 		Args:  cobra.NoArgs,
 		RunE:  runTrafficEditConfig,
 	}
-	configCommand.Flags().String("editor", "", "指定编辑器命令")
+	configCommand.Flags().String("editor", "", "editor command")
 	edit.AddCommand(configCommand)
 	return edit
 }
@@ -276,7 +276,7 @@ func newTrafficEditCommandT06() *cobra.Command {
 func newTrafficTimerCommandT06() *cobra.Command {
 	timer := &cobra.Command{
 		Use:   "timer",
-		Short: "管理流量统计调度器",
+		Short: "Manage the traffic statistics scheduler",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -284,7 +284,7 @@ func newTrafficTimerCommandT06() *cobra.Command {
 	for _, action := range []string{"install", "uninstall", "enable", "disable", "status"} {
 		timer.AddCommand(&cobra.Command{
 			Use:   action,
-			Short: "执行 timer " + action,
+			Short: "Run timer " + action,
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runTrafficTimerAction(cmd, cmd.Name())
@@ -293,16 +293,16 @@ func newTrafficTimerCommandT06() *cobra.Command {
 	}
 	logs := &cobra.Command{
 		Use:   "logs",
-		Short: "查看调度器日志",
+		Short: "Show scheduler logs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTrafficTimerAction(cmd, "logs")
 		},
 	}
-	logs.Flags().BoolP("follow", "f", false, "持续跟随日志")
+	logs.Flags().BoolP("follow", "f", false, "follow logs")
 	run := &cobra.Command{
 		Use:   "run",
-		Short: "立即运行一次统计任务",
+		Short: "Run a statistics task immediately",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -310,7 +310,7 @@ func newTrafficTimerCommandT06() *cobra.Command {
 	for _, period := range []string{"hourly", "daily", "monthly"} {
 		run.AddCommand(&cobra.Command{
 			Use:   period,
-			Short: "立即运行 " + period + " 任务",
+			Short: "Run the " + period + " task immediately",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runTrafficCollectWithTarget(cmd, cmd.Name(), traffic.AllInstancesName)
@@ -323,15 +323,15 @@ func newTrafficTimerCommandT06() *cobra.Command {
 
 // addTrafficQueryFlagsT06 为查询类 traffic 命令追加共享参数。
 func addTrafficQueryFlagsT06(cmd *cobra.Command) {
-	cmd.Flags().String("instance", "", "实例名称或 ALL")
-	cmd.Flags().String("scope", "", "统计维度：user、inbound、outbound")
-	cmd.Flags().String("name", "", "维度名称")
-	cmd.Flags().String("from", "", "起始日期，YYYY-MM-DD")
-	cmd.Flags().String("to", "", "结束日期，YYYY-MM-DD")
-	cmd.Flags().Int("days", 0, "最近天数")
-	cmd.Flags().Int("months", 0, "最近月数")
-	cmd.Flags().Int("years", 0, "最近年数")
-	cmd.Flags().Int("limit", 0, "最大返回行数")
+	cmd.Flags().String("instance", "", "instance name or ALL")
+	cmd.Flags().String("scope", "", "statistics scope: user, inbound, outbound")
+	cmd.Flags().String("name", "", "scope name")
+	cmd.Flags().String("from", "", "start date, YYYY-MM-DD")
+	cmd.Flags().String("to", "", "end date, YYYY-MM-DD")
+	cmd.Flags().Int("days", 0, "recent day count")
+	cmd.Flags().Int("months", 0, "recent month count")
+	cmd.Flags().Int("years", 0, "recent year count")
+	cmd.Flags().Int("limit", 0, "maximum number of rows")
 }
 
 // runTrafficCollect 执行指定周期的 collect 命令。
@@ -351,6 +351,12 @@ func runTrafficCollectWithTarget(cmd *cobra.Command, period string, target strin
 	if err != nil {
 		return err
 	}
+	if len(targets) == 0 {
+		return writeStatus(cmd, outputStatusInfo, "Traffic collection skipped.",
+			outputKV("Period", period),
+			outputKV("Reason", "No traffic-enabled instances found."),
+		)
+	}
 	collector := traffic.NewCollector(ctx.repo, newTrafficStatsClient(ctx.options.Timeout), ctx.location)
 	var records []traffic.Record
 	switch period {
@@ -368,7 +374,7 @@ func runTrafficCollectWithTarget(cmd *cobra.Command, period string, target strin
 		if value, _ := cmd.Flags().GetString("date"); value != "" {
 			day, err = time.ParseInLocation("2006-01-02", value, ctx.location)
 			if err != nil {
-				return fmt.Errorf("date 必须是 YYYY-MM-DD: %w", err)
+				return fmt.Errorf("date must be YYYY-MM-DD: %w", err)
 			}
 		} else {
 			day = day.In(ctx.location).AddDate(0, 0, -1)
@@ -379,20 +385,22 @@ func runTrafficCollectWithTarget(cmd *cobra.Command, period string, target strin
 		if value, _ := cmd.Flags().GetString("month"); value != "" {
 			month, err = time.ParseInLocation("2006-01", value, ctx.location)
 			if err != nil {
-				return fmt.Errorf("month 必须是 YYYY-MM: %w", err)
+				return fmt.Errorf("month must be YYYY-MM: %w", err)
 			}
 		} else {
 			month = month.In(ctx.location).AddDate(0, -1, 0)
 		}
 		records, err = collector.CollectMonthly(cmd.Context(), traffic.InstanceNames(targets), month)
 	default:
-		return fmt.Errorf("不支持的 collect period %q", period)
+		return fmt.Errorf("unsupported collect period %q", period)
 	}
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic collect %s 完成，记录数=%d\n", period, len(records))
-	return err
+	return writeStatus(cmd, outputStatusOK, "Traffic collection completed.",
+		outputKV("Period", period),
+		outputKV("Records", fmt.Sprintf("%d", len(records))),
+	)
 }
 
 // runTrafficShow 执行 traffic show 命令。
@@ -502,7 +510,7 @@ func runTrafficExport(cmd *cobra.Command, period string) error {
 	defer closeRepo()
 	format, _ := cmd.Flags().GetString("format")
 	if format != "" && format != "csv" {
-		return fmt.Errorf("不支持的导出格式 %q", format)
+		return fmt.Errorf("unsupported export format %q", format)
 	}
 	_, filter, err := trafficInstanceNamesAndFilter(cmd, ctx)
 	if err != nil {
@@ -526,8 +534,7 @@ func runTrafficExport(cmd *cobra.Command, period string) error {
 	if err := traffic.WriteCSVFile(output, records); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "export 完成: %s\n", output)
-	return err
+	return writeStatus(cmd, outputStatusOK, "Traffic CSV exported.", outputKV("File", output))
 }
 
 // runTrafficListInstances 输出可采集实例列表。
@@ -536,16 +543,15 @@ func runTrafficListInstances(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	rows := make([][]string, 0, len(ctx.set.Instances))
 	for _, instance := range ctx.set.Instances {
 		domain.ApplyInstanceDefaults(&instance)
 		if !instance.Enabled || !instance.Traffic.Enabled || !instance.API.Enabled {
 			continue
 		}
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", instance.Name, instance.API.Listen, strings.Join(instance.Traffic.Scopes, ",")); err != nil {
-			return err
-		}
+		rows = append(rows, []string{instance.Name, instance.API.Listen, strings.Join(instance.Traffic.Scopes, ",")})
 	}
-	return nil
+	return writeTable(cmd, []string{"INSTANCE", "API", "SCOPES"}, rows)
 }
 
 // runTrafficCleanupRecords 执行 traffic cleanup records。
@@ -563,16 +569,15 @@ func runTrafficCleanupRecords(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	rows := make([][]string, 0, len(results))
 	for _, result := range results {
 		action := "deleted"
 		if result.DryRun {
-			action = "would_delete"
+			action = "would delete"
 		}
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s=%d cutoff=%s\n", result.Period, action, result.Count, result.Cutoff.Format(time.RFC3339)); err != nil {
-			return err
-		}
+		rows = append(rows, []string{result.Period, action, fmt.Sprintf("%d", result.Count), result.Cutoff.Format(time.RFC3339)})
 	}
-	return nil
+	return writeTable(cmd, []string{"PERIOD", "ACTION", "RECORDS", "CUTOFF"}, rows)
 }
 
 // runTrafficCheckConfig 校验 traffic 配置和 DB 路径。
@@ -581,8 +586,10 @@ func runTrafficCheckConfig(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic 配置正常\ndb: %s\ntimezone: %s\n", ctx.options.DBPath, ctx.options.Timezone)
-	return err
+	return writeStatus(cmd, outputStatusOK, "Traffic configuration is valid.",
+		outputKV("DB", ctx.options.DBPath),
+		outputKV("Timezone", ctx.options.Timezone),
+	)
 }
 
 // runTrafficCheckHealth 检查 DB 和 stats 目标连通性。
@@ -598,18 +605,18 @@ func runTrafficCheckHealth(cmd *cobra.Command, args []string) error {
 	}
 	client := newTrafficStatsClient(ctx.options.Timeout)
 	var failed []string
+	rows := make([][]string, 0, len(targets))
 	for _, target := range targets {
 		counters, queryErr := client.Query(cmd.Context(), target)
 		if queryErr != nil {
 			failed = append(failed, target.Instance)
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 异常: %v\n", target.Instance, queryErr); err != nil {
-				return err
-			}
+			rows = append(rows, []string{target.Instance, "FAILED", "0", queryErr.Error()})
 			continue
 		}
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 正常，计数器=%d\n", target.Instance, len(counters)); err != nil {
-			return err
-		}
+		rows = append(rows, []string{target.Instance, "OK", fmt.Sprintf("%d", len(counters)), ""})
+	}
+	if err := writeTable(cmd, []string{"INSTANCE", "STATUS", "COUNTERS", "MESSAGE"}, rows); err != nil {
+		return err
 	}
 	if len(failed) > 0 {
 		return fmt.Errorf("traffic health check failed: %s", strings.Join(failed, ","))
@@ -626,24 +633,24 @@ func runTrafficEditConfig(cmd *cobra.Command, args []string) error {
 	editor, _ := cmd.Flags().GetString("editor")
 	path := trafficConfigPath(ctx.set.Global)
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-		return fmt.Errorf("创建 traffic 配置目录: %w", err)
+		return fmt.Errorf("create traffic config directory: %w", err)
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		data, err := yaml.Marshal(trafficConfigFromDefaults(ctx.set.Global.Defaults.Traffic))
 		if err != nil {
-			return fmt.Errorf("生成 traffic 默认配置: %w", err)
+			return fmt.Errorf("generate default traffic config: %w", err)
 		}
 		if err := os.WriteFile(path, data, 0640); err != nil {
-			return fmt.Errorf("写入 traffic 默认配置: %w", err)
+			return fmt.Errorf("write default traffic config: %w", err)
 		}
 	}
 	draft := draftPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取 traffic 配置: %w", err)
+		return fmt.Errorf("read traffic config: %w", err)
 	}
 	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("写入 traffic 草稿: %w", err)
+		return fmt.Errorf("write traffic draft: %w", err)
 	}
 	defer os.Remove(draft)
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
@@ -653,10 +660,9 @@ func runTrafficEditConfig(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if err := os.Rename(draft, path); err != nil {
-		return fmt.Errorf("替换 traffic 配置: %w", err)
+		return fmt.Errorf("replace traffic config: %w", err)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "traffic config 已更新: %s\n", path)
-	return err
+	return writeStatus(cmd, outputStatusOK, "Traffic configuration updated.", outputKV("File", path))
 }
 
 // runTrafficTimerAction 执行 traffic timer 管理动作。
@@ -677,7 +683,7 @@ func runTrafficTimerAction(cmd *cobra.Command, action string) error {
 	case "install":
 		binary, err := trafficExecutablePath()
 		if err != nil {
-			return fmt.Errorf("解析 sboxctl 路径: %w", err)
+			return fmt.Errorf("resolve sboxctl path: %w", err)
 		}
 		if err := manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary); err != nil {
 			return err
@@ -685,14 +691,12 @@ func runTrafficTimerAction(cmd *cobra.Command, action string) error {
 		if _, err := manager.RunTrafficTimers(cmd.Context(), "enable", false); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer install 完成，已启用")
-		return err
+		return writeStatus(cmd, outputStatusOK, "Traffic timers installed and enabled.")
 	case "uninstall":
 		if err := manager.UninstallTrafficTimers(cmd.Context()); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer uninstall 完成")
-		return err
+		return writeStatus(cmd, outputStatusOK, "Traffic timers uninstalled.")
 	default:
 		follow, _ := cmd.Flags().GetBool("follow")
 		results, err := manager.RunTrafficTimers(cmd.Context(), action, follow)
@@ -761,7 +765,7 @@ func effectiveTrafficOptions(cmd *cobra.Command, global domain.GlobalConfig) (tr
 		}
 		options = traffic.ApplyTrafficConfig(options, *configValue)
 	} else if err != nil && !os.IsNotExist(err) {
-		return options, fmt.Errorf("读取 traffic 配置 %s: %w", path, err)
+		return options, fmt.Errorf("read traffic config %s: %w", path, err)
 	}
 	if value, _ := cmd.Flags().GetString("db"); value != "" {
 		options.DBPath = value
@@ -824,7 +828,7 @@ func trafficInstanceNamesAndFilter(cmd *cobra.Command, ctx *trafficCommandContex
 // selectTrafficInstanceNames 为历史查询选择实例名，不要求 stats API 可用。
 func selectTrafficInstanceNames(instances []domain.Instance, target string) ([]string, error) {
 	if strings.TrimSpace(target) == "" {
-		return nil, fmt.Errorf("必须指定 --instance NAME|ALL")
+		return nil, fmt.Errorf("--instance NAME|ALL is required")
 	}
 	names := []string{}
 	for _, instance := range instances {
@@ -841,11 +845,11 @@ func selectTrafficInstanceNames(instances []domain.Instance, target string) ([]s
 	}
 	if target == traffic.AllInstancesName {
 		if len(names) == 0 {
-			return nil, fmt.Errorf("没有可查询的 traffic instance")
+			return nil, fmt.Errorf("no queryable traffic instances")
 		}
 		return names, nil
 	}
-	return nil, fmt.Errorf("instance %q 不存在", target)
+	return nil, fmt.Errorf("instance %q does not exist", target)
 }
 
 // instanceFlagValue 读取 --instance 参数。

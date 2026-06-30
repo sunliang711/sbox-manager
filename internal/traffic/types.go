@@ -128,7 +128,7 @@ func ApplyTrafficConfig(options Options, config domain.TrafficConfig) Options {
 // ValidatePeriod 校验 period 是否在 traffic 支持范围内。
 func ValidatePeriod(period string) error {
 	if _, ok := validPeriods[period]; !ok {
-		return fmt.Errorf("不支持的 period %q", period)
+		return fmt.Errorf("unsupported period %q", period)
 	}
 	return nil
 }
@@ -139,7 +139,7 @@ func ValidateScope(scope string) error {
 		return nil
 	}
 	if _, ok := validScopes[scope]; !ok {
-		return fmt.Errorf("不支持的 scope %q", scope)
+		return fmt.Errorf("unsupported scope %q", scope)
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func ValidateScope(scope string) error {
 func SelectTargets(instances []domain.Instance, target string) ([]Target, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
-		return nil, fmt.Errorf("必须指定 --instance NAME|ALL")
+		return nil, fmt.Errorf("--instance NAME|ALL is required")
 	}
 	selected := make([]Target, 0, len(instances))
 	for _, instance := range instances {
@@ -161,10 +161,10 @@ func SelectTargets(instances []domain.Instance, target string) ([]Target, error)
 		}
 		if target != AllInstancesName {
 			if !instance.Traffic.Enabled {
-				return nil, fmt.Errorf("instance %q 未启用 traffic", instance.Name)
+				return nil, fmt.Errorf("instance %q does not enable traffic", instance.Name)
 			}
 			if !instance.API.Enabled {
-				return nil, fmt.Errorf("instance %q 未启用 stats API", instance.Name)
+				return nil, fmt.Errorf("instance %q does not enable stats API", instance.Name)
 			}
 		}
 		selected = append(selected, Target{
@@ -176,9 +176,9 @@ func SelectTargets(instances []domain.Instance, target string) ([]Target, error)
 	}
 	if len(selected) == 0 {
 		if target == AllInstancesName {
-			return nil, fmt.Errorf("没有可采集的 traffic instance")
+			return selected, nil
 		}
-		return nil, fmt.Errorf("instance %q 不存在", target)
+		return nil, fmt.Errorf("instance %q does not exist", target)
 	}
 	return selected, nil
 }

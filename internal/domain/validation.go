@@ -21,7 +21,7 @@ func ValidateGlobalConfig(config GlobalConfig) error {
 	var errs ValidationErrors
 
 	if config.Version != defaultVersion {
-		errs.Add("version", "只能为 1")
+		errs.Add("version", "must be 1")
 	}
 	if err := validateExternalHost(config.ExternalHost); err != nil {
 		errs.Add("external_host", "%v", err)
@@ -29,7 +29,7 @@ func ValidateGlobalConfig(config GlobalConfig) error {
 	validatePaths(config.Paths, &errs)
 	validatePortRanges(config.PortRanges, &errs)
 	if !allowedValue(config.Defaults.LogLevel, "trace", "debug", "info", "warn", "error") {
-		errs.Add("defaults.log_level", "不支持的日志级别 %q", config.Defaults.LogLevel)
+		errs.Add("defaults.log_level", "unsupported log level %q", config.Defaults.LogLevel)
 	}
 	validateAPIConfig("defaults.api", config.Defaults.API, &errs)
 	validateAPIConfig("defaults.clash_api", config.Defaults.ClashAPI, &errs)
@@ -41,17 +41,17 @@ func ValidateGlobalConfig(config GlobalConfig) error {
 func ValidateInstance(global GlobalConfig, instance *Instance) error {
 	var errs ValidationErrors
 	if instance == nil {
-		errs.Add("instance", "不能为空")
+		errs.Add("instance", "cannot be empty")
 		return errs.ErrOrNil()
 	}
 
 	ApplyInstanceDefaults(instance)
 	validateSafeName("name", instance.Name, &errs)
 	if instance.Name == "ALL" {
-		errs.Add("name", "ALL 是保留名称")
+		errs.Add("name", "ALL is reserved")
 	}
 	if !allowedValue(instance.Role, "edge", "relay", "urltest") {
-		errs.Add("role", "不支持的 role %q", instance.Role)
+		errs.Add("role", "unsupported role %q", instance.Role)
 	}
 	validateAPIConfig("api", instance.API, &errs)
 	validateInbounds(global, instance.Inbounds, &errs)
@@ -79,7 +79,7 @@ func ValidateConfigSet(global GlobalConfig, instances []Instance) error {
 func ValidateSubConfig(config SubConfig) error {
 	var errs ValidationErrors
 	if config.Version != defaultVersion {
-		errs.Add("version", "只能为 1")
+		errs.Add("version", "must be 1")
 	}
 	if _, _, err := splitListenAddress(config.Listen); err != nil {
 		errs.Add("listen", "%v", err)
@@ -88,19 +88,19 @@ func ValidateSubConfig(config SubConfig) error {
 	case "none":
 	case "token":
 		if strings.TrimSpace(config.Access.Token) == "" {
-			errs.Add("access.token", "token 模式必须配置 token")
+			errs.Add("access.token", "token mode requires token")
 		}
 	default:
-		errs.Add("access.type", "不支持的 access type %q", config.Access.Type)
+		errs.Add("access.type", "unsupported access type %q", config.Access.Type)
 	}
 	if strings.TrimSpace(config.TemplatesDir) == "" {
-		errs.Add("templates_dir", "不能为空")
+		errs.Add("templates_dir", "cannot be empty")
 	}
 	if config.WatchInterval <= 0 {
-		errs.Add("watch_interval", "必须大于 0")
+		errs.Add("watch_interval", "must be greater than 0")
 	}
 	if config.WatchDebounce <= 0 {
-		errs.Add("watch_debounce", "必须大于 0")
+		errs.Add("watch_debounce", "must be greater than 0")
 	}
 	if config.ManagedConfig.PublicBaseURL != "" {
 		if err := validatePublicBaseURL(config.ManagedConfig.PublicBaseURL); err != nil {
@@ -108,7 +108,7 @@ func ValidateSubConfig(config SubConfig) error {
 		}
 	}
 	if config.ManagedConfig.Interval <= 0 {
-		errs.Add("managed_config.interval", "必须大于 0")
+		errs.Add("managed_config.interval", "must be greater than 0")
 	}
 	return errs.ErrOrNil()
 }
@@ -142,34 +142,34 @@ func ValidateSubscriptionInputFilename(name string) error {
 func ValidateBundleManifest(manifest BundleManifest) error {
 	var errs ValidationErrors
 	if manifest.BundleSchema != "sbox.sub-bundle" {
-		errs.Add("bundle_schema", "必须是 sbox.sub-bundle")
+		errs.Add("bundle_schema", "must be sbox.sub-bundle")
 	}
 	if manifest.BundleVersion != defaultVersion {
-		errs.Add("bundle_version", "只能为 1")
+		errs.Add("bundle_version", "must be 1")
 	}
 	if strings.TrimSpace(manifest.Source) == "" {
-		errs.Add("source", "不能为空")
+		errs.Add("source", "cannot be empty")
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
-		errs.Add("generated_at", "必须是 RFC3339 时间")
+		errs.Add("generated_at", "must be an RFC3339 timestamp")
 	}
 	if len(manifest.InputsSHA256) == 0 {
-		errs.Add("inputs_sha256", "不能为空")
+		errs.Add("inputs_sha256", "cannot be empty")
 	}
 	for name, hash := range manifest.InputsSHA256 {
 		validateSubscriptionInputFilename("inputs_sha256."+name, name, &errs)
 		if !sha256Pattern.MatchString(hash) {
-			errs.Add("inputs_sha256."+name, "必须是 SHA-256 hex")
+			errs.Add("inputs_sha256."+name, "must be SHA-256 hex")
 		}
 	}
 	if strings.TrimSpace(manifest.TemplateVersion) == "" {
-		errs.Add("template_version", "不能为空")
+		errs.Add("template_version", "cannot be empty")
 	}
 	if manifest.Access.Type != "none" {
-		errs.Add("access.type", "bundle access 当前只能为 none")
+		errs.Add("access.type", "bundle access currently only supports none")
 	}
 	if strings.TrimSpace(manifest.Access.Token) != "" {
-		errs.Add("access.token", "bundle 不允许携带 token")
+		errs.Add("access.token", "bundle must not include token")
 	}
 	return errs.ErrOrNil()
 }
@@ -178,24 +178,24 @@ func ValidateBundleManifest(manifest BundleManifest) error {
 func ValidateBackupManifest(manifest BackupManifest) error {
 	var errs ValidationErrors
 	if manifest.BackupSchema != "sbox.agent-backup" {
-		errs.Add("backup_schema", "必须是 sbox.agent-backup")
+		errs.Add("backup_schema", "must be sbox.agent-backup")
 	}
 	if manifest.BackupVersion != defaultVersion {
-		errs.Add("backup_version", "只能为 1")
+		errs.Add("backup_version", "must be 1")
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
-		errs.Add("generated_at", "必须是 RFC3339 时间")
+		errs.Add("generated_at", "must be an RFC3339 timestamp")
 	}
 	if len(manifest.FilesSHA256) == 0 {
-		errs.Add("files_sha256", "不能为空")
+		errs.Add("files_sha256", "cannot be empty")
 	}
 	if _, ok := manifest.FilesSHA256["config.yaml"]; !ok {
-		errs.Add("files_sha256.config.yaml", "必须包含 config.yaml")
+		errs.Add("files_sha256.config.yaml", "must include config.yaml")
 	}
 	for name, hash := range manifest.FilesSHA256 {
 		validateBackupFileName("files_sha256."+name, name, &errs)
 		if !sha256Pattern.MatchString(hash) {
-			errs.Add("files_sha256."+name, "必须是 SHA-256 hex")
+			errs.Add("files_sha256."+name, "must be SHA-256 hex")
 		}
 	}
 	return errs.ErrOrNil()
@@ -205,7 +205,7 @@ func ValidateBackupManifest(manifest BackupManifest) error {
 func ValidateTrafficConfig(config TrafficConfig) error {
 	var errs ValidationErrors
 	if config.Version != defaultVersion {
-		errs.Add("version", "只能为 1")
+		errs.Add("version", "must be 1")
 	}
 	validateTrafficDefaults("traffic", TrafficDefaultsConfig{
 		Enabled:                config.Enabled,
@@ -245,10 +245,10 @@ func validateExternalHost(host string) error {
 		return nil
 	}
 	if strings.Contains(host, "://") || strings.ContainsAny(host, "/?#") {
-		return fmt.Errorf("不得包含 URL scheme、path、query 或 fragment")
+		return fmt.Errorf("must not include URL scheme, path, query, or fragment")
 	}
 	if strings.ContainsAny(host, " \t\r\n") {
-		return fmt.Errorf("不得包含空白字符")
+		return fmt.Errorf("must not include whitespace")
 	}
 	return nil
 }
@@ -268,7 +268,7 @@ func validatePaths(paths PathsConfig, errs *ValidationErrors) {
 	}
 	for name, value := range values {
 		if strings.TrimSpace(value) == "" {
-			errs.Add(name, "不能为空")
+			errs.Add(name, "cannot be empty")
 		}
 	}
 
@@ -285,13 +285,13 @@ func validatePaths(paths PathsConfig, errs *ValidationErrors) {
 	for name, value := range critical {
 		cleaned := filepath.Clean(value)
 		if other, exists := seen[cleaned]; exists {
-			errs.Add("paths."+name, "不能与 paths.%s 使用同一路径", other)
+			errs.Add("paths."+name, "must not use the same path as paths.%s", other)
 			continue
 		}
 		seen[cleaned] = name
 	}
 	if !pathWithin(paths.Runtime, paths.Generated) {
-		errs.Add("paths.generated", "必须位于 paths.runtime 下")
+		errs.Add("paths.generated", "must be under paths.runtime")
 	}
 }
 
@@ -306,13 +306,13 @@ func validatePortRanges(ranges PortRangesConfig, errs *ValidationErrors) {
 // validatePortRange 校验单个端口范围。
 func validatePortRange(path string, portRange PortRange, errs *ValidationErrors) {
 	if portRange.Start < 1 || portRange.Start > 65535 {
-		errs.Add(path+".start", "必须在 1-65535 范围内")
+		errs.Add(path+".start", "must be in range 1-65535")
 	}
 	if portRange.End < 1 || portRange.End > 65535 {
-		errs.Add(path+".end", "必须在 1-65535 范围内")
+		errs.Add(path+".end", "must be in range 1-65535")
 	}
 	if portRange.Start > portRange.End {
-		errs.Add(path, "start 必须小于或等于 end")
+		errs.Add(path, "start must be less than or equal to end")
 	}
 }
 
@@ -327,66 +327,66 @@ func validateAPIConfig(path string, api APIConfig, errs *ValidationErrors) {
 		return
 	}
 	if !isLoopbackHost(host) && strings.TrimSpace(api.Token) == "" {
-		errs.Add(path+".token", "非 loopback 监听必须配置 token")
+		errs.Add(path+".token", "non-loopback listeners require token")
 	}
 }
 
 // validateTrafficDefaults 校验 traffic 保留期、时区和定时器默认值。
 func validateTrafficDefaults(path string, traffic TrafficDefaultsConfig, errs *ValidationErrors) {
 	if _, err := time.LoadLocation(traffic.Timezone); err != nil {
-		errs.Add(path+".timezone", "无效 IANA 时区 %q", traffic.Timezone)
+		errs.Add(path+".timezone", "invalid IANA timezone %q", traffic.Timezone)
 	}
 	if traffic.RetentionDays <= 0 {
-		errs.Add(path+".retention_days", "必须大于 0")
+		errs.Add(path+".retention_days", "must be greater than 0")
 	}
 	if traffic.DailyMinRetentionDays <= 0 {
-		errs.Add(path+".daily_min_retention_days", "必须大于 0")
+		errs.Add(path+".daily_min_retention_days", "must be greater than 0")
 	}
 	if traffic.MonthlyRetentionMonths <= 0 {
-		errs.Add(path+".monthly_retention_months", "必须大于 0")
+		errs.Add(path+".monthly_retention_months", "must be greater than 0")
 	}
 	if traffic.TimeoutSeconds <= 0 {
-		errs.Add(path+".timeout_seconds", "必须大于 0")
+		errs.Add(path+".timeout_seconds", "must be greater than 0")
 	}
 	if strings.TrimSpace(traffic.Timer.Hourly) == "" {
-		errs.Add(path+".timer.hourly", "不能为空")
+		errs.Add(path+".timer.hourly", "cannot be empty")
 	}
 	if strings.TrimSpace(traffic.Timer.Daily) == "" {
-		errs.Add(path+".timer.daily", "不能为空")
+		errs.Add(path+".timer.daily", "cannot be empty")
 	}
 	if strings.TrimSpace(traffic.Timer.Monthly) == "" {
-		errs.Add(path+".timer.monthly", "不能为空")
+		errs.Add(path+".timer.monthly", "cannot be empty")
 	}
 }
 
 // validateSafeName 校验名称可安全用于文件名和服务名。
 func validateSafeName(path string, value string, errs *ValidationErrors) {
 	if !safeNamePattern.MatchString(value) || value == "." || value == ".." || strings.Contains(value, "..") {
-		errs.Add(path, "必须是安全 basename")
+		errs.Add(path, "must be a safe basename")
 	}
 }
 
 // validateSubscriptionInput 校验单个订阅 input 的字段完整性。
 func validateSubscriptionInput(path string, input SubscriptionInput, errs *ValidationErrors) {
 	if input.InputSchema != "sbox.subscription-input" {
-		errs.Add(path+".input_schema", "必须是 sbox.subscription-input")
+		errs.Add(path+".input_schema", "must be sbox.subscription-input")
 	}
 	if input.InputVersion != defaultVersion {
-		errs.Add(path+".input_version", "只能为 1")
+		errs.Add(path+".input_version", "must be 1")
 	}
 	if strings.TrimSpace(input.Source) == "" {
-		errs.Add(path+".source", "不能为空")
+		errs.Add(path+".source", "cannot be empty")
 	} else {
 		validateSafeName(path+".source", input.Source, errs)
 	}
 	if _, err := time.Parse(time.RFC3339, input.GeneratedAt); err != nil {
-		errs.Add(path+".generated_at", "必须是 RFC3339 时间")
+		errs.Add(path+".generated_at", "must be an RFC3339 timestamp")
 	}
 	if err := validateExternalHost(input.ExternalHost); err != nil {
 		errs.Add(path+".external_host", "%v", err)
 	}
 	if input.Nodes == nil {
-		errs.Add(path+".nodes", "不能为空")
+		errs.Add(path+".nodes", "cannot be empty")
 		return
 	}
 	for index, node := range input.Nodes {
@@ -397,19 +397,19 @@ func validateSubscriptionInput(path string, input SubscriptionInput, errs *Valid
 // validateSubscriptionNode 校验单个订阅节点的协议字段和通用字段。
 func validateSubscriptionNode(path string, inputExternalHost string, node SubscriptionNode, errs *ValidationErrors) {
 	if strings.TrimSpace(node.ID) == "" {
-		errs.Add(path+".id", "不能为空")
+		errs.Add(path+".id", "cannot be empty")
 	}
 	if strings.TrimSpace(node.User) == "" {
-		errs.Add(path+".user", "不能为空")
+		errs.Add(path+".user", "cannot be empty")
 	} else {
 		validateSafeName(path+".user", node.User, errs)
 	}
 	if !allowedValue(node.Protocol, "vmess", "vless", "anytls", "shadowsocks", "socks5", "http", "sing-box") {
-		errs.Add(path+".protocol", "不支持的 protocol %q", node.Protocol)
+		errs.Add(path+".protocol", "unsupported protocol %q", node.Protocol)
 		return
 	}
 	if strings.TrimSpace(node.Server) == "" && strings.TrimSpace(inputExternalHost) == "" {
-		errs.Add(path+".server", "为空时文件级 external_host 不能为空")
+		errs.Add(path+".server", "file-level external_host cannot be empty when server is empty")
 	}
 	if strings.TrimSpace(node.Server) != "" {
 		if err := validateExternalHost(node.Server); err != nil {
@@ -418,64 +418,64 @@ func validateSubscriptionNode(path string, inputExternalHost string, node Subscr
 	}
 	validatePort(path+".port", node.Port, errs)
 	if strings.TrimSpace(node.Tag) == "" {
-		errs.Add(path+".tag", "不能为空")
+		errs.Add(path+".tag", "cannot be empty")
 	} else {
 		validateSafeName(path+".tag", node.Tag, errs)
 	}
 	if strings.TrimSpace(node.Remark) == "" {
-		errs.Add(path+".remark", "不能为空")
+		errs.Add(path+".remark", "cannot be empty")
 	}
 	if node.Region != "" && !regexp.MustCompile(`^[A-Z]{2}$`).MatchString(node.Region) {
-		errs.Add(path+".region", "必须是两位大写字母")
+		errs.Add(path+".region", "must be a two-letter uppercase region code")
 	}
 
 	switch node.Protocol {
 	case "vmess":
 		if strings.TrimSpace(node.UUID) == "" {
-			errs.Add(path+".uuid", "vmess 节点必须配置 uuid")
+			errs.Add(path+".uuid", "vmess node requires uuid")
 		} else if !uuidPattern.MatchString(node.UUID) {
-			errs.Add(path+".uuid", "必须是 UUID")
+			errs.Add(path+".uuid", "must be a UUID")
 		}
 		validateVMessNetwork(path+".network", node.Network, errs)
 		validateTransportConfig(path+".transport", node.Transport, errs)
 		if strings.TrimSpace(node.Flow) != "" {
-			errs.Add(path+".flow", "vmess 节点不支持 flow")
+			errs.Add(path+".flow", "vmess node does not support flow")
 		}
 	case "vless":
 		if strings.TrimSpace(node.UUID) == "" {
-			errs.Add(path+".uuid", "vless 节点必须配置 uuid")
+			errs.Add(path+".uuid", "vless node requires uuid")
 		} else if !uuidPattern.MatchString(node.UUID) {
-			errs.Add(path+".uuid", "必须是 UUID")
+			errs.Add(path+".uuid", "must be a UUID")
 		}
 		if strings.TrimSpace(node.Network) != "" {
-			errs.Add(path+".network", "vless 节点不支持 network")
+			errs.Add(path+".network", "vless node does not support network")
 		}
 		validateTransportConfig(path+".transport", node.Transport, errs)
 		if strings.TrimSpace(node.Flow) != "" && !allowedValue(node.Flow, "xtls-rprx-vision") {
-			errs.Add(path+".flow", "不支持的 vless flow %q", node.Flow)
+			errs.Add(path+".flow", "unsupported vless flow %q", node.Flow)
 		}
 		if node.AlterID != 0 {
-			errs.Add(path+".alter_id", "vless 节点不支持 alter_id")
+			errs.Add(path+".alter_id", "vless node does not support alter_id")
 		}
 	case "anytls":
 		if strings.TrimSpace(node.Password) == "" {
-			errs.Add(path+".password", "anytls 节点必须配置 password")
+			errs.Add(path+".password", "anytls node requires password")
 		}
 		if !node.TLS.Enabled {
-			errs.Add(path+".tls.enabled", "anytls 节点必须启用 TLS")
+			errs.Add(path+".tls.enabled", "anytls node requires TLS to be enabled")
 		}
 	case "shadowsocks":
 		if strings.TrimSpace(node.Method) == "" {
-			errs.Add(path+".method", "shadowsocks 节点必须配置 method")
+			errs.Add(path+".method", "shadowsocks node requires method")
 		}
 		if strings.TrimSpace(node.Password) == "" {
-			errs.Add(path+".password", "shadowsocks 节点必须配置 password")
+			errs.Add(path+".password", "shadowsocks node requires password")
 		}
 	case "socks5", "http":
 		validateSubscriptionAuth(path+".auth", node.Auth, errs)
 	case "sing-box":
 		if len(node.Native) == 0 {
-			errs.Add(path+".native", "sing-box 节点必须配置 native")
+			errs.Add(path+".native", "sing-box node requires native")
 		}
 	}
 }
@@ -483,17 +483,17 @@ func validateSubscriptionNode(path string, inputExternalHost string, node Subscr
 // validateSubscriptionAuth 校验 socks5/http 订阅节点认证字段。
 func validateSubscriptionAuth(path string, auth AuthConfig, errs *ValidationErrors) {
 	if !allowedValue(auth.Type, "noauth", "password") {
-		errs.Add(path+".type", "不支持的 auth type %q", auth.Type)
+		errs.Add(path+".type", "unsupported auth type %q", auth.Type)
 		return
 	}
 	if auth.Type != "password" {
 		return
 	}
 	if strings.TrimSpace(auth.Username) == "" {
-		errs.Add(path+".username", "password 鉴权必须配置 username")
+		errs.Add(path+".username", "password auth requires username")
 	}
 	if strings.TrimSpace(auth.Password) == "" {
-		errs.Add(path+".password", "password 鉴权必须配置 password")
+		errs.Add(path+".password", "password auth requires password")
 	}
 }
 
@@ -503,7 +503,7 @@ func validateTransportConfig(path string, transport TransportConfig, errs *Valid
 		return
 	}
 	if !allowedValue(transport.Type, "http", "ws", "quic", "grpc", "httpupgrade") {
-		errs.Add(path+".type", "不支持的 transport type %q", transport.Type)
+		errs.Add(path+".type", "unsupported transport type %q", transport.Type)
 		return
 	}
 }
@@ -514,7 +514,7 @@ func validateVMessNetwork(path string, network string, errs *ValidationErrors) {
 		return
 	}
 	if !allowedValue(network, "tcp", "udp") {
-		errs.Add(path, "vmess network 仅支持 tcp 或 udp")
+		errs.Add(path, "vmess network only supports tcp or udp")
 	}
 }
 
@@ -532,12 +532,12 @@ func validateSubscriptionMergeRules(inputs []SubscriptionInput, errs *Validation
 		for nodeIndex, node := range input.Nodes {
 			path := fmt.Sprintf("inputs[%d].nodes[%d]", inputIndex, nodeIndex)
 			if previous, exists := ids[node.ID]; exists && strings.TrimSpace(node.ID) != "" {
-				errs.Add(path+".id", "节点 id 重复，已在 %s 使用", previous)
+				errs.Add(path+".id", "duplicate node id, already used at %s", previous)
 			} else if strings.TrimSpace(node.ID) != "" {
 				ids[node.ID] = path
 			}
 			if previous, exists := tags[node.Tag]; exists && strings.TrimSpace(node.Tag) != "" {
-				errs.Add(path+".tag", "节点 tag 重复，已在 %s 使用", previous)
+				errs.Add(path+".tag", "duplicate node tag, already used at %s", previous)
 			} else if strings.TrimSpace(node.Tag) != "" {
 				tags[node.Tag] = path
 			}
@@ -548,7 +548,7 @@ func validateSubscriptionMergeRules(inputs []SubscriptionInput, errs *Validation
 				remarksByUser[node.User] = make(map[string]string)
 			}
 			if previous, exists := remarksByUser[node.User][node.Remark]; exists {
-				errs.Add(path+".remark", "同一 user 下订阅展示名重复，已在 %s 使用", previous)
+				errs.Add(path+".remark", "duplicate subscription remark under the same user, already used at %s", previous)
 			} else {
 				remarksByUser[node.User][node.Remark] = path
 			}
@@ -559,16 +559,16 @@ func validateSubscriptionMergeRules(inputs []SubscriptionInput, errs *Validation
 // validateSubscriptionInputFilename 校验单个订阅 input 文件名。
 func validateSubscriptionInputFilename(path string, name string, errs *ValidationErrors) {
 	if strings.TrimSpace(name) == "" {
-		errs.Add(path, "不能为空")
+		errs.Add(path, "cannot be empty")
 		return
 	}
 	if filepath.Base(name) != name || filepath.IsAbs(name) || strings.Contains(name, "\\") || strings.Contains(name, "..") {
-		errs.Add(path, "必须是安全 basename")
+		errs.Add(path, "must be a safe basename")
 		return
 	}
 	extension := strings.ToLower(filepath.Ext(name))
 	if !allowedValue(extension, ".yaml", ".yml", ".json") {
-		errs.Add(path, "不支持的订阅 input 扩展名")
+		errs.Add(path, "unsupported subscription input extension")
 		return
 	}
 	base := strings.TrimSuffix(name, extension)
@@ -578,28 +578,28 @@ func validateSubscriptionInputFilename(path string, name string, errs *Validatio
 // validateBackupFileName 校验单个 agent backup 成员路径。
 func validateBackupFileName(field string, name string, errs *ValidationErrors) {
 	if strings.TrimSpace(name) == "" {
-		errs.Add(field, "不能为空")
+		errs.Add(field, "cannot be empty")
 		return
 	}
 	if strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name {
-		errs.Add(field, "路径不安全")
+		errs.Add(field, "path is unsafe")
 		return
 	}
 	if name == "config.yaml" {
 		return
 	}
 	if !strings.HasPrefix(name, "instances/") {
-		errs.Add(field, "只能是 config.yaml 或 instances/*")
+		errs.Add(field, "must be config.yaml or instances/*")
 		return
 	}
 	base := strings.TrimPrefix(name, "instances/")
 	if base == "" || strings.Contains(base, "/") {
-		errs.Add(field, "instances 成员必须是安全 basename")
+		errs.Add(field, "instances member must be a safe basename")
 		return
 	}
 	extension := strings.ToLower(path.Ext(base))
 	if !allowedValue(extension, ".yaml", ".yml", ".json") {
-		errs.Add(field, "instance 配置扩展名必须是 .yaml、.yml 或 .json")
+		errs.Add(field, "instance config extension must be .yaml, .yml, or .json")
 		return
 	}
 	validateSafeName(field, strings.TrimSuffix(base, extension), errs)
@@ -608,7 +608,7 @@ func validateBackupFileName(field string, name string, errs *ValidationErrors) {
 // validateInbounds 校验所有 inbound。
 func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationErrors) {
 	if len(inbounds) == 0 {
-		errs.Add("inbounds", "至少需要一个 inbound")
+		errs.Add("inbounds", "at least one inbound is required")
 		return
 	}
 
@@ -618,24 +618,24 @@ func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationE
 		path := fmt.Sprintf("inbounds[%d]", index)
 		validateSafeName(path+".name", inbound.Name, errs)
 		if _, exists := names[inbound.Name]; exists {
-			errs.Add(path+".name", "inbound 名称重复")
+			errs.Add(path+".name", "duplicate inbound name")
 		}
 		names[inbound.Name] = struct{}{}
 		if !allowedValue(inbound.Type, "vmess", "vless", "anytls", "shadowsocks", "socks5", "http") {
-			errs.Add(path+".type", "不支持的 inbound type %q", inbound.Type)
+			errs.Add(path+".type", "unsupported inbound type %q", inbound.Type)
 			continue
 		}
 		if inbound.Tag != "" {
 			validateSafeName(path+".tag", inbound.Tag, errs)
 			if _, exists := tags[inbound.Tag]; exists {
-				errs.Add(path+".tag", "inbound tag 重复")
+				errs.Add(path+".tag", "duplicate inbound tag")
 			}
 			tags[inbound.Tag] = struct{}{}
 		}
 		validateHost(path+".listen", inbound.Listen, errs)
 		validatePort(path+".port", inbound.Port, errs)
 		if inbound.Type == "anytls" && !inbound.TLS.Enabled {
-			errs.Add(path+".tls.enabled", "anytls inbound 必须启用 TLS")
+			errs.Add(path+".tls.enabled", "anytls inbound requires TLS to be enabled")
 		}
 		if inboundSupportsTransport(inbound.Type) {
 			validateTransportConfig(path+".transport", inbound.Transport, errs)
@@ -652,22 +652,22 @@ func validateInboundAuth(global GlobalConfig, path string, inbound Inbound, errs
 		return
 	}
 	if !allowedValue(inbound.Auth.Type, "noauth", "password") {
-		errs.Add(path+".auth.type", "不支持的 auth type %q", inbound.Auth.Type)
+		errs.Add(path+".auth.type", "unsupported auth type %q", inbound.Auth.Type)
 		return
 	}
 	if inbound.Auth.Type == "password" {
 		if strings.TrimSpace(inbound.Auth.Username) == "" {
-			errs.Add(path+".auth.username", "password 鉴权必须配置 username")
+			errs.Add(path+".auth.username", "password auth requires username")
 		}
 		if strings.TrimSpace(inbound.Auth.Password) == "" {
-			errs.Add(path+".auth.password", "password 鉴权必须配置 password")
+			errs.Add(path+".auth.password", "password auth requires password")
 		}
 		return
 	}
 
 	// 公网 socks/http 默认必须显式启用密码鉴权，只有全局安全例外允许 noauth。
 	if global.Security.RequireAuthForPublicSocksHTTP && !global.Security.AllowNoauthPublic && !isLoopbackHost(inbound.Listen) {
-		errs.Add(path+".auth", "公开 socks/http inbound 默认必须启用 password 鉴权")
+		errs.Add(path+".auth", "public socks/http inbound requires password auth by default")
 	}
 }
 
@@ -676,62 +676,62 @@ func validateInboundUsers(path string, inbound Inbound, errs *ValidationErrors) 
 	switch inbound.Type {
 	case "vmess":
 		if len(inbound.Users) == 0 {
-			errs.Add(path+".users", "vmess inbound 必须配置用户")
+			errs.Add(path+".users", "vmess inbound requires users")
 		}
 		for index, user := range inbound.Users {
 			userPath := fmt.Sprintf("%s.users[%d]", path, index)
 			validateSafeName(userPath+".name", user.Name, errs)
 			if strings.TrimSpace(user.UUID) == "" {
-				errs.Add(userPath+".uuid", "vmess 用户必须配置 uuid")
+				errs.Add(userPath+".uuid", "vmess user requires uuid")
 			} else if !uuidPattern.MatchString(user.UUID) {
-				errs.Add(userPath+".uuid", "必须是 UUID")
+				errs.Add(userPath+".uuid", "must be a UUID")
 			}
 			if strings.TrimSpace(user.Flow) != "" {
-				errs.Add(userPath+".flow", "vmess 用户不支持 flow")
+				errs.Add(userPath+".flow", "vmess user does not support flow")
 			}
 		}
 	case "vless":
 		if len(inbound.Users) == 0 {
-			errs.Add(path+".users", "vless inbound 必须配置用户")
+			errs.Add(path+".users", "vless inbound requires users")
 		}
 		for index, user := range inbound.Users {
 			userPath := fmt.Sprintf("%s.users[%d]", path, index)
 			validateSafeName(userPath+".name", user.Name, errs)
 			if strings.TrimSpace(user.UUID) == "" {
-				errs.Add(userPath+".uuid", "vless 用户必须配置 uuid")
+				errs.Add(userPath+".uuid", "vless user requires uuid")
 			} else if !uuidPattern.MatchString(user.UUID) {
-				errs.Add(userPath+".uuid", "必须是 UUID")
+				errs.Add(userPath+".uuid", "must be a UUID")
 			}
 			if strings.TrimSpace(user.Flow) != "" && !allowedValue(user.Flow, "xtls-rprx-vision") {
-				errs.Add(userPath+".flow", "不支持的 vless flow %q", user.Flow)
+				errs.Add(userPath+".flow", "unsupported vless flow %q", user.Flow)
 			}
 			if user.AlterID != 0 {
-				errs.Add(userPath+".alter_id", "vless 用户不支持 alter_id")
+				errs.Add(userPath+".alter_id", "vless user does not support alter_id")
 			}
 		}
 	case "anytls":
 		if len(inbound.Users) == 0 {
-			errs.Add(path+".users", "anytls inbound 必须配置用户")
+			errs.Add(path+".users", "anytls inbound requires users")
 		}
 		for index, user := range inbound.Users {
 			userPath := fmt.Sprintf("%s.users[%d]", path, index)
 			validateSafeName(userPath+".name", user.Name, errs)
 			if strings.TrimSpace(user.Password) == "" {
-				errs.Add(userPath+".password", "anytls 用户必须配置 password")
+				errs.Add(userPath+".password", "anytls user requires password")
 			}
 		}
 	case "shadowsocks":
 		if len(inbound.Users) == 0 {
-			errs.Add(path+".users", "shadowsocks inbound 必须配置用户")
+			errs.Add(path+".users", "shadowsocks inbound requires users")
 		}
 		for index, user := range inbound.Users {
 			userPath := fmt.Sprintf("%s.users[%d]", path, index)
 			validateSafeName(userPath+".name", user.Name, errs)
 			if strings.TrimSpace(user.Password) == "" {
-				errs.Add(userPath+".password", "shadowsocks 用户必须配置 password")
+				errs.Add(userPath+".password", "shadowsocks user requires password")
 			}
 			if strings.TrimSpace(user.Method) == "" && strings.TrimSpace(inbound.Method) == "" {
-				errs.Add(userPath+".method", "shadowsocks 用户必须配置 method 或继承 inbound method")
+				errs.Add(userPath+".method", "shadowsocks user requires method or inherited inbound method")
 			}
 		}
 	}
@@ -743,13 +743,13 @@ func validateInboundSubscription(path string, inbound Inbound, errs *ValidationE
 		return
 	}
 	if strings.TrimSpace(inbound.Subscription.User) == "" {
-		errs.Add(path+".subscription.user", "订阅启用时必须配置 user")
+		errs.Add(path+".subscription.user", "subscription requires user when enabled")
 	}
 	if strings.TrimSpace(inbound.Subscription.Remark) == "" {
-		errs.Add(path+".subscription.remark", "订阅启用时必须配置 remark")
+		errs.Add(path+".subscription.remark", "subscription requires remark when enabled")
 	}
 	if inbound.Subscription.Region != "" && !regexp.MustCompile(`^[A-Z]{2}$`).MatchString(inbound.Subscription.Region) {
-		errs.Add(path+".subscription.region", "必须是两位大写字母")
+		errs.Add(path+".subscription.region", "must be a two-letter uppercase region code")
 	}
 	if inbound.Subscription.User == "" || len(inbound.Users) == 0 {
 		return
@@ -759,7 +759,7 @@ func validateInboundSubscription(path string, inbound Inbound, errs *ValidationE
 			return
 		}
 	}
-	errs.Add(path+".subscription.user", "引用的用户 %q 不存在", inbound.Subscription.User)
+	errs.Add(path+".subscription.user", "referenced user %q does not exist", inbound.Subscription.User)
 }
 
 // validateOutbounds 校验所有 outbound 并返回名称集合。
@@ -769,11 +769,11 @@ func validateOutbounds(outbounds []Outbound, errs *ValidationErrors) map[string]
 		path := fmt.Sprintf("outbounds[%d]", index)
 		validateSafeName(path+".name", outbound.Name, errs)
 		if _, exists := names[outbound.Name]; exists {
-			errs.Add(path+".name", "outbound 名称重复")
+			errs.Add(path+".name", "duplicate outbound name")
 		}
 		names[outbound.Name] = struct{}{}
 		if !allowedValue(outbound.Type, "direct", "block", "ref", "shadowsocks", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http") {
-			errs.Add(path+".type", "不支持的 outbound type %q", outbound.Type)
+			errs.Add(path+".type", "unsupported outbound type %q", outbound.Type)
 			continue
 		}
 		validateOutboundRemote(path, outbound, errs)
@@ -791,46 +791,46 @@ func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErro
 		return
 	}
 	if strings.TrimSpace(outbound.Server) == "" {
-		errs.Add(path+".server", "%s outbound 必须配置 server", outbound.Type)
+		errs.Add(path+".server", "%s outbound requires server", outbound.Type)
 	}
 	validatePort(path+".port", outbound.Port, errs)
 	switch outbound.Type {
 	case "vmess":
 		if strings.TrimSpace(outbound.UUID) == "" {
-			errs.Add(path+".uuid", "vmess outbound 必须配置 uuid")
+			errs.Add(path+".uuid", "vmess outbound requires uuid")
 		}
 		validateVMessNetwork(path+".network", outbound.Network, errs)
 		if strings.TrimSpace(outbound.Flow) != "" {
-			errs.Add(path+".flow", "vmess outbound 不支持 flow")
+			errs.Add(path+".flow", "vmess outbound does not support flow")
 		}
 		validateTransportConfig(path+".transport", outbound.Transport, errs)
 	case "vless":
 		if strings.TrimSpace(outbound.UUID) == "" {
-			errs.Add(path+".uuid", "vless outbound 必须配置 uuid")
+			errs.Add(path+".uuid", "vless outbound requires uuid")
 		}
 		if strings.TrimSpace(outbound.Network) != "" {
-			errs.Add(path+".network", "vless outbound 不支持 network")
+			errs.Add(path+".network", "vless outbound does not support network")
 		}
 		if strings.TrimSpace(outbound.Flow) != "" && !allowedValue(outbound.Flow, "xtls-rprx-vision") {
-			errs.Add(path+".flow", "不支持的 vless flow %q", outbound.Flow)
+			errs.Add(path+".flow", "unsupported vless flow %q", outbound.Flow)
 		}
 		if outbound.AlterID != 0 {
-			errs.Add(path+".alter_id", "vless outbound 不支持 alter_id")
+			errs.Add(path+".alter_id", "vless outbound does not support alter_id")
 		}
 		validateTransportConfig(path+".transport", outbound.Transport, errs)
 	case "shadowsocks":
 		if strings.TrimSpace(outbound.Method) == "" {
-			errs.Add(path+".method", "shadowsocks outbound 必须配置 method")
+			errs.Add(path+".method", "shadowsocks outbound requires method")
 		}
 		if strings.TrimSpace(outbound.Password) == "" {
-			errs.Add(path+".password", "shadowsocks outbound 必须配置 password")
+			errs.Add(path+".password", "shadowsocks outbound requires password")
 		}
 	case "trojan", "hysteria2", "anytls":
 		if strings.TrimSpace(outbound.Password) == "" {
-			errs.Add(path+".password", "%s outbound 必须配置 password", outbound.Type)
+			errs.Add(path+".password", "%s outbound requires password", outbound.Type)
 		}
 		if outbound.Type == "anytls" && !outbound.TLS.Enabled {
-			errs.Add(path+".tls.enabled", "anytls outbound 必须启用 TLS")
+			errs.Add(path+".tls.enabled", "anytls outbound requires TLS to be enabled")
 		}
 	case "socks5", "http":
 		validateOutboundAuth(path, outbound.Auth, errs)
@@ -843,15 +843,15 @@ func validateOutboundAuth(path string, auth AuthConfig, errs *ValidationErrors) 
 		return
 	}
 	if !allowedValue(auth.Type, "noauth", "password") {
-		errs.Add(path+".auth.type", "不支持的 auth type %q", auth.Type)
+		errs.Add(path+".auth.type", "unsupported auth type %q", auth.Type)
 		return
 	}
 	if auth.Type == "password" {
 		if strings.TrimSpace(auth.Username) == "" {
-			errs.Add(path+".auth.username", "password 鉴权必须配置 username")
+			errs.Add(path+".auth.username", "password auth requires username")
 		}
 		if strings.TrimSpace(auth.Password) == "" {
-			errs.Add(path+".auth.password", "password 鉴权必须配置 password")
+			errs.Add(path+".auth.password", "password auth requires password")
 		}
 	}
 }
@@ -860,7 +860,7 @@ func validateOutboundAuth(path string, auth AuthConfig, errs *ValidationErrors) 
 func validateOutboundRefFormat(path string, ref string, errs *ValidationErrors) {
 	trimmed := strings.TrimSpace(ref)
 	if _, _, ok := parseOutboundRef(trimmed); !ok {
-		errs.Add(path, "ref outbound 必须使用 <instance>.<inbound> 格式")
+		errs.Add(path, "ref outbound must use <instance>.<inbound> format")
 		return
 	}
 	validateSafeName(path, trimmed, errs)
@@ -882,21 +882,21 @@ func validateOutboundRefs(instances []Instance, errs *ValidationErrors) {
 			if !exists {
 				missingInstanceName, _, ok := parseOutboundRef(outbound.Ref)
 				if ok {
-					errs.Add(path, "引用的 instance %q 不存在", missingInstanceName)
+					errs.Add(path, "referenced instance %q does not exist", missingInstanceName)
 				}
 				continue
 			}
 			if targetInstanceName == instance.Name {
-				errs.Add(path, "ref outbound 不允许引用当前 instance")
+				errs.Add(path, "ref outbound cannot reference the current instance")
 				continue
 			}
 			targetInbound, exists := findInboundByName(targetInstance.Inbounds, targetInboundName)
 			if !exists {
-				errs.Add(path, "引用的 inbound %q 不存在", outbound.Ref)
+				errs.Add(path, "referenced inbound %q does not exist", outbound.Ref)
 				continue
 			}
 			if targetInbound.Type != "socks5" && targetInbound.Type != "http" {
-				errs.Add(path, "ref outbound 只能引用 socks5/http inbound，当前为 %q", targetInbound.Type)
+				errs.Add(path, "ref outbound can only reference socks5/http inbound, got %q", targetInbound.Type)
 			}
 		}
 	}
@@ -954,30 +954,30 @@ func validateGroups(groups []Group, outboundNames map[string]struct{}, errs *Val
 		path := fmt.Sprintf("groups[%d]", index)
 		validateSafeName(path+".name", group.Name, errs)
 		if _, exists := outboundNames[group.Name]; exists {
-			errs.Add(path+".name", "不能与 outbound 同名")
+			errs.Add(path+".name", "must not have the same name as an outbound")
 		}
 		if _, exists := names[group.Name]; exists {
-			errs.Add(path+".name", "group 名称重复")
+			errs.Add(path+".name", "duplicate group name")
 		}
 		names[group.Name] = struct{}{}
 		if !allowedValue(group.Type, "selector", "urltest") {
-			errs.Add(path+".type", "不支持的 group type %q", group.Type)
+			errs.Add(path+".type", "unsupported group type %q", group.Type)
 			continue
 		}
 		if len(group.Outbounds) == 0 {
-			errs.Add(path+".outbounds", "至少引用一个 outbound")
+			errs.Add(path+".outbounds", "at least one outbound must be referenced")
 		}
 		for outboundIndex, outboundName := range group.Outbounds {
 			if _, exists := outboundNames[outboundName]; !exists {
-				errs.Add(fmt.Sprintf("%s.outbounds[%d]", path, outboundIndex), "引用的 outbound %q 不存在", outboundName)
+				errs.Add(fmt.Sprintf("%s.outbounds[%d]", path, outboundIndex), "referenced outbound %q does not exist", outboundName)
 			}
 		}
 		if group.Type == "urltest" {
 			if strings.TrimSpace(group.URL) == "" {
-				errs.Add(path+".url", "urltest group 必须配置 url")
+				errs.Add(path+".url", "urltest group requires url")
 			}
 			if group.Interval <= 0 {
-				errs.Add(path+".interval", "urltest group interval 必须大于 0")
+				errs.Add(path+".interval", "urltest group interval must be greater than 0")
 			}
 		}
 	}
@@ -987,23 +987,23 @@ func validateGroups(groups []Group, outboundNames map[string]struct{}, errs *Val
 // validateRoute 校验路由默认目标和规则引用。
 func validateRoute(route RouteConfig, outboundNames map[string]struct{}, groupNames map[string]struct{}, errs *ValidationErrors) {
 	if strings.TrimSpace(route.Default) == "" {
-		errs.Add("route.default", "不能为空")
+		errs.Add("route.default", "cannot be empty")
 	} else if !hasRouteTarget(route.Default, outboundNames, groupNames) {
-		errs.Add("route.default", "引用的 outbound/group %q 不存在", route.Default)
+		errs.Add("route.default", "referenced outbound/group %q does not exist", route.Default)
 	}
 	for index, rule := range route.Rules {
 		path := fmt.Sprintf("route.rules[%d]", index)
 		if !allowedValue(rule.Type, "domain", "domain_suffix", "domain_keyword", "ip_cidr", "geoip", "geosite") {
-			errs.Add(path+".type", "不支持的 route rule type %q", rule.Type)
+			errs.Add(path+".type", "unsupported route rule type %q", rule.Type)
 			continue
 		}
 		if len(rule.Values) == 0 {
-			errs.Add(path+".values", "不能为空")
+			errs.Add(path+".values", "cannot be empty")
 		}
 		if strings.TrimSpace(rule.Outbound) == "" {
-			errs.Add(path+".outbound", "不能为空")
+			errs.Add(path+".outbound", "cannot be empty")
 		} else if !hasRouteTarget(rule.Outbound, outboundNames, groupNames) {
-			errs.Add(path+".outbound", "引用的 outbound/group %q 不存在", rule.Outbound)
+			errs.Add(path+".outbound", "referenced outbound/group %q does not exist", rule.Outbound)
 		}
 	}
 }
@@ -1012,7 +1012,7 @@ func validateRoute(route RouteConfig, outboundNames map[string]struct{}, groupNa
 func validateInstanceTraffic(traffic InstanceTrafficConfig, errs *ValidationErrors) {
 	for index, scope := range traffic.Scopes {
 		if !allowedValue(scope, "user", "inbound", "outbound") {
-			errs.Add(fmt.Sprintf("traffic.scopes[%d]", index), "不支持的 traffic scope %q", scope)
+			errs.Add(fmt.Sprintf("traffic.scopes[%d]", index), "unsupported traffic scope %q", scope)
 		}
 	}
 }
@@ -1043,7 +1043,7 @@ func validatePortConflicts(instances []Instance, errs *ValidationErrors) {
 // addPortUse 记录端口占用并在重复时追加冲突错误。
 func addPortUse(used map[int]string, port int, owner string, errs *ValidationErrors) {
 	if previous, exists := used[port]; exists {
-		errs.Add(owner, "端口 %d 与 %s 冲突", port, previous)
+		errs.Add(owner, "port %d conflicts with %s", port, previous)
 		return
 	}
 	used[port] = owner
@@ -1063,22 +1063,22 @@ func hasRouteTarget(name string, outboundNames map[string]struct{}, groupNames m
 // validateHost 校验 host 字段不包含端口且非空。
 func validateHost(path string, host string, errs *ValidationErrors) {
 	if strings.TrimSpace(host) == "" {
-		errs.Add(path, "不能为空")
+		errs.Add(path, "cannot be empty")
 		return
 	}
 	if strings.Contains(host, "/") {
-		errs.Add(path, "不能包含路径")
+		errs.Add(path, "must not contain a path")
 		return
 	}
 	if strings.Count(host, ":") == 1 && net.ParseIP(host) == nil {
-		errs.Add(path, "必须是 host，不应包含端口")
+		errs.Add(path, "must be a host without a port")
 	}
 }
 
 // validatePort 校验端口位于 1-65535。
 func validatePort(path string, port int, errs *ValidationErrors) {
 	if port < 1 || port > 65535 {
-		errs.Add(path, "必须在 1-65535 范围内")
+		errs.Add(path, "must be in range 1-65535")
 	}
 }
 
@@ -1086,17 +1086,17 @@ func validatePort(path string, port int, errs *ValidationErrors) {
 func splitListenAddress(listen string) (string, int, error) {
 	host, portText, err := net.SplitHostPort(listen)
 	if err != nil {
-		return "", 0, fmt.Errorf("必须是 HOST:PORT 格式: %w", err)
+		return "", 0, fmt.Errorf("must use HOST:PORT format: %w", err)
 	}
 	if strings.TrimSpace(host) == "" {
-		return "", 0, fmt.Errorf("host 不能为空")
+		return "", 0, fmt.Errorf("host cannot be empty")
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil {
-		return "", 0, fmt.Errorf("port 必须是 1-65535 的整数: %w", err)
+		return "", 0, fmt.Errorf("port must be an integer from 1 to 65535: %w", err)
 	}
 	if port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("port 必须在 1-65535 范围内")
+		return "", 0, fmt.Errorf("port must be in range 1-65535")
 	}
 	return host, port, nil
 }
@@ -1131,16 +1131,16 @@ func pathWithin(parent string, child string) bool {
 func validatePublicBaseURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("URL 无效: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("仅允许 http 或 https")
+		return fmt.Errorf("only http or https is allowed")
 	}
 	if parsed.Host == "" {
-		return fmt.Errorf("host 不能为空")
+		return fmt.Errorf("host cannot be empty")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("不允许 query 或 fragment")
+		return fmt.Errorf("query or fragment is not allowed")
 	}
 	return nil
 }

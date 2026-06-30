@@ -1,0 +1,21 @@
+# VMess inbound（raw），可放入 instance.inbounds。
+- name: {{ .VmessInboundName }} # VMess 入口。
+  type: vmess
+  listen: 0.0.0.0 # 监听主机，不包含端口。
+  port: {{ .VmessInboundPort }}
+  tag: vmess-{{ .VmessInboundName }} # 不填默认 <type>-<name>。
+  udp: true
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}" # VMess 必填 UUID。
+      alter_id: 0 # 可选，默认 0。
+{{ if .ShowExampleFields }}
+      remark: {{ .VmessRemark }} # 可选，订阅展示名；subscription.remark 优先。
+      tag: {{ .VmessUserTag }} # 可选，订阅节点 tag。
+{{ end }}
+  subscription:
+    enabled: true # 是否导出订阅节点。
+    user: alice # 必须引用 users.name。
+    server: "{{ .SubscriptionServer }}" # 为空时使用 global.external_host。
+    remark: {{ .VmessRemark }}
+    region: US

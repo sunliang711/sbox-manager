@@ -291,7 +291,7 @@ func (s *Server) logReloadError(err error, inputDir string) {
 func snapshotInputDir(dir string) (map[string]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("读取订阅 input 目录 %s: %w", dir, err)
+		return nil, fmt.Errorf("read subscription input directory %s: %w", dir, err)
 	}
 	snapshot := make(map[string]string)
 	for _, entry := range entries {
@@ -303,18 +303,18 @@ func snapshotInputDir(dir string) (map[string]string, error) {
 			continue
 		}
 		if err := domain.ValidateSubscriptionInputFilename(name); err != nil {
-			return nil, fmt.Errorf("订阅 input 文件名 %s: %w", name, err)
+			return nil, fmt.Errorf("subscription input filename %s: %w", name, err)
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil, fmt.Errorf("读取订阅 input 文件信息 %s: %w", name, err)
+			return nil, fmt.Errorf("read subscription input file info %s: %w", name, err)
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
-			return nil, fmt.Errorf("读取订阅 input %s: %w", name, err)
+			return nil, fmt.Errorf("read subscription input %s: %w", name, err)
 		}
 		sum := sha256.Sum256(data)
 		snapshot[name] = hex.EncodeToString(sum[:])

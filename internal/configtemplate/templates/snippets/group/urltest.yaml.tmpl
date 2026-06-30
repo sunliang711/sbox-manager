@@ -1,0 +1,7 @@
+# URLTest group，按探测延迟自动选择 outbound。
+- name: {{ .GroupName }}
+  type: urltest
+  outbounds: [{{ .GroupOutbounds }}]
+  url: http://www.gstatic.com/generate_204 # 探测 URL，默认同此值。
+  interval: 300 # 探测间隔，单位秒。
+  tolerance: 50 # 延迟容差，单位毫秒。

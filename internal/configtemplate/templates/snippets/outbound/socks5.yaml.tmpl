@@ -1,0 +1,11 @@
+# SOCKS5 outbound。
+- name: socks5-upstream
+  type: socks5
+  server: socks.example.com
+  port: 1080
+  auth:
+    type: password # 可为空、noauth 或 password。
+    username: alice # type=password 时必填。
+    password: change-me # type=password 时必填。
+  tls:
+    enabled: false

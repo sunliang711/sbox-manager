@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sunliang711/sbox-manager/internal/config"
+	"github.com/sunliang711/sbox-manager/internal/configtemplate"
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
 
@@ -45,10 +46,16 @@ type CloneOptions struct {
 	AllocatePorts bool
 }
 
+// instanceCandidate 保存待写入的新实例以及可选的同源模板正文。
+type instanceCandidate struct {
+	Instance domain.Instance
+	Data     []byte
+}
+
 // Init 创建标准目录和默认 config.yaml。
 func Init(baseDir string, options InitOptions) error {
 	if strings.TrimSpace(baseDir) == "" {
-		return fmt.Errorf("base dir 不能为空")
+		return fmt.Errorf("base dir cannot be empty")
 	}
 	configPath := filepath.Join(baseDir, "config.yaml")
 	if _, err := os.Stat(configPath); err == nil && !options.Force {
@@ -59,9 +66,9 @@ func Init(baseDir string, options InitOptions) error {
 			}
 			return EnsureDirectories(*global)
 		}
-		return fmt.Errorf("配置文件 %s 已存在，覆盖请使用 --force", configPath)
+		return fmt.Errorf("config file %s already exists; use --force to overwrite", configPath)
 	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("检查配置文件 %s: %w", configPath, err)
+		return fmt.Errorf("check config file %s: %w", configPath, err)
 	}
 
 	global := domain.DefaultGlobalConfig()
@@ -75,10 +82,10 @@ func Init(baseDir string, options InitOptions) error {
 	}
 	data, err := renderGlobalConfigYAML(global)
 	if err != nil {
-		return fmt.Errorf("编码默认配置: %w", err)
+		return fmt.Errorf("encode default config: %w", err)
 	}
 	if err := writeFileAtomic(configPath, data, 0640); err != nil {
-		return fmt.Errorf("写入配置文件 %s: %w", configPath, err)
+		return fmt.Errorf("write config file %s: %w", configPath, err)
 	}
 	return nil
 }
@@ -97,7 +104,7 @@ func EnsureDirectories(global domain.GlobalConfig) error {
 		global.Paths.Logs,
 	} {
 		if err := os.MkdirAll(dir, 0750); err != nil {
-			return fmt.Errorf("创建目录 %s: %w", dir, err)
+			return fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 	return nil
@@ -110,164 +117,237 @@ func Add(baseDir string, options AddOptions) (domain.Instance, error) {
 		return domain.Instance{}, err
 	}
 	if _, exists := set.FindInstance(options.Name); exists {
-		return domain.Instance{}, fmt.Errorf("instance %q 已存在", options.Name)
+		return domain.Instance{}, fmt.Errorf("instance %q already exists", options.Name)
 	}
-	instance, err := buildInstance(set.Global, set.Instances, options)
+	candidate, err := buildInstanceCandidate(set.Global, set.Instances, options)
 	if err != nil {
 		return domain.Instance{}, err
 	}
-	if err := WriteInstance(set.Global, set.Instances, instance); err != nil {
+	if err := writeInstanceCandidate(set.Global, set.Instances, candidate); err != nil {
 		return domain.Instance{}, err
 	}
-	return instance, nil
+	return candidate.Instance, nil
 }
 
-func buildInstance(global domain.GlobalConfig, existing []domain.Instance, options AddOptions) (domain.Instance, error) {
+// buildInstanceCandidate 构造新增实例，并为内置模板保留同源渲染正文。
+func buildInstanceCandidate(global domain.GlobalConfig, existing []domain.Instance, options AddOptions) (instanceCandidate, error) {
 	var instance domain.Instance
+	var templateName string
 	if options.FromFile != "" {
 		if len(options.Members) > 0 {
-			return domain.Instance{}, fmt.Errorf("--members 只能与内置 urltest 模板一起使用")
+			return instanceCandidate{}, fmt.Errorf("--members can only be used with the built-in urltest template")
 		}
 		loaded, err := loadInstanceDraft(options.FromFile, global)
 		if err != nil {
-			return domain.Instance{}, err
+			return instanceCandidate{}, err
 		}
 		instance = loaded
 		instance.Name = options.Name
 	} else {
+		templateName = firstNonEmpty(options.Template, "edge")
 		created, err := templateInstance(global, existing, options.Name, options.Template, options.Members)
 		if err != nil {
-			return domain.Instance{}, err
+			return instanceCandidate{}, err
 		}
 		instance = created
 	}
 	if options.AllocatePorts && !options.KeepTemplatePorts {
 		if err := allocatePorts(global, existing, &instance); err != nil {
-			return domain.Instance{}, err
+			return instanceCandidate{}, err
 		}
 	}
 	domain.ApplyInstanceDefaults(&instance)
 	if err := domain.ValidateInstance(global, &instance); err != nil {
-		return domain.Instance{}, err
+		return instanceCandidate{}, err
 	}
-	return instance, nil
+	candidate := instanceCandidate{Instance: instance}
+	if templateName != "" {
+		data, err := renderInstanceFromTemplate(instance, templateName)
+		if err != nil {
+			return instanceCandidate{}, err
+		}
+		candidate.Data = data
+	}
+	return candidate, nil
 }
 
 func templateInstance(global domain.GlobalConfig, existing []domain.Instance, name string, template string, members []string) (domain.Instance, error) {
-	instance := domain.DefaultInstance(global)
-	instance.Name = name
-	instance.API.Enabled = false
-	instance.Role = template
-	if template == "" {
-		instance.Role = "edge"
+	templateName := firstNonEmpty(template, "edge")
+	context, err := templateContextForAdd(name, templateName, existing, members)
+	if err != nil {
+		return domain.Instance{}, err
 	}
-	switch instance.Role {
-	case "edge":
-		if len(members) > 0 {
-			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
-		}
-		instance.Outbounds = []domain.Outbound{vmessOutbound("vmess-upstream")}
-		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
-		instance.Inbounds[0].Subscription.Remark = instance.Name
-		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
-		instance.Route = domain.RouteConfig{Default: "vmess-upstream"}
-	case "relay":
-		if len(members) > 0 {
-			return domain.Instance{}, fmt.Errorf("--members 只能用于 urltest 模板")
-		}
-		instance.Outbounds = []domain.Outbound{vmessOutbound("vmess-upstream")}
-		instance.Inbounds = []domain.Inbound{shadowsocksInbound("ss-main", 24000)}
-		instance.Inbounds[0].Subscription.Enabled = true
-		instance.Inbounds[0].Subscription.User = "alice"
-		instance.Inbounds[0].Subscription.Remark = instance.Name
-		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
-		instance.Route = domain.RouteConfig{Default: "vmess-upstream"}
-	case "urltest":
-		if len(members) == 0 {
-			return domain.Instance{}, fmt.Errorf("urltest 模板必须通过 --members 指定已有 instance")
-		}
-		instance.Outbounds = nil
-		instance.Inbounds = []domain.Inbound{vmessInbound("vmess-main", 24000)}
-		instance.Inbounds[0].Subscription.Remark = instance.Name
-		instance.Inbounds = append(instance.Inbounds, localProxyInbounds()...)
-		instance.Groups = []domain.Group{domain.DefaultGroup("auto", "urltest")}
-		if err := addRefMembersToInstance(&instance, existing, "auto", members); err != nil {
-			return domain.Instance{}, err
-		}
-		instance.Route = domain.RouteConfig{Default: "auto"}
-	default:
-		return domain.Instance{}, fmt.Errorf("不支持的 template %q", template)
+	data, err := configtemplate.RenderInstance(templateName, context)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	instance := domain.DefaultInstance(global)
+	if err := config.DecodeStrict(data, "yaml", "Instance template", &instance); err != nil {
+		return domain.Instance{}, err
 	}
 	domain.ApplyInstanceDefaults(&instance)
 	return instance, nil
 }
 
-func vmessInbound(name string, port int) domain.Inbound {
-	inbound := domain.DefaultInbound(name, "vmess")
-	inbound.Port = port
-	inbound.Users = []domain.InboundUser{
-		{
-			Name: "alice",
-			UUID: mustUUID(),
-		},
+// templateContextForAdd 构造内置 add 模板渲染上下文，并提前校验 urltest 成员。
+func templateContextForAdd(name string, templateName string, existing []domain.Instance, members []string) (configtemplate.Context, error) {
+	context := configtemplate.DefaultContext()
+	context.InstanceName = name
+	context.Role = templateName
+	context.ShowExampleFields = false
+	context.IncludeProxyAuth = false
+	context.SubscriptionServer = ""
+	context.VmessInboundName = "vmess-main"
+	context.VmessInboundPort = 24000
+	context.VmessUUID = mustUUID()
+	context.VmessRemark = name
+	context.VmessUserTag = ""
+	context.VmessOutboundName = "vmess-upstream"
+	context.VmessOutboundUUID = "22222222-2222-4222-8222-222222222222"
+	context.ShadowsocksInboundName = "ss-main"
+	context.ShadowsocksInboundPort = 24000
+	context.ShadowsocksPassword = mustRandomHex(32)
+	context.ShadowsocksRemark = name
+	context.LocalSocksName = "local-socks"
+	context.LocalSocksPort = 17000
+	context.LocalHTTPName = "local-http"
+	context.LocalHTTPPort = 18000
+	context.GroupName = "auto"
+	context.RefMembers = nil
+	context.GroupOutbounds = ""
+	switch templateName {
+	case "edge":
+		if len(members) > 0 {
+			return configtemplate.Context{}, fmt.Errorf("--members can only be used with urltest template")
+		}
+	case "relay":
+		if len(members) > 0 {
+			return configtemplate.Context{}, fmt.Errorf("--members can only be used with urltest template")
+		}
+	case "urltest":
+		if len(members) == 0 {
+			return configtemplate.Context{}, fmt.Errorf("urltest template requires existing instances via --members")
+		}
+		refMembers, err := templateRefMembers(existing, members)
+		if err != nil {
+			return configtemplate.Context{}, err
+		}
+		context.RefMembers = refMembers
+		context.GroupOutbounds = joinRefMemberOutbounds(refMembers)
+	default:
+		return configtemplate.Context{}, fmt.Errorf("unsupported template %q", templateName)
 	}
-	inbound.Subscription.Enabled = true
-	inbound.Subscription.User = "alice"
-	inbound.Subscription.Remark = name
-	return inbound
+	return context, nil
 }
 
-func shadowsocksInbound(name string, port int) domain.Inbound {
-	inbound := domain.DefaultInbound(name, "shadowsocks")
-	inbound.Port = port
-	inbound.Method = "2022-blake3-aes-256-gcm"
-	inbound.Users = []domain.InboundUser{
-		{
-			Name:     "alice",
-			Password: mustRandomHex(32),
-			Method:   inbound.Method,
-		},
+// templateRefMembers 根据已有实例生成 urltest 模板的 ref 成员上下文。
+func templateRefMembers(existing []domain.Instance, members []string) ([]configtemplate.RefMember, error) {
+	outbounds := make([]domain.Outbound, 0, len(members))
+	refMembers := make([]configtemplate.RefMember, 0, len(members))
+	for _, member := range members {
+		memberInstance, ok := findInstanceByName(existing, member)
+		if !ok {
+			return nil, fmt.Errorf("member instance %q does not exist", member)
+		}
+		inbound, ok := selectRefMemberInbound(memberInstance)
+		if !ok {
+			return nil, fmt.Errorf("member instance %q must include a socks5 or http inbound", member)
+		}
+		ref := refMemberRef(memberInstance.Name, inbound.Name)
+		outboundName := allocateRefOutboundName(outbounds, refOutboundName(memberInstance.Name, inbound.Name), ref)
+		outbounds = append(outbounds, domain.Outbound{Name: outboundName, Type: "ref", Ref: ref})
+		refMembers = append(refMembers, configtemplate.RefMember{OutboundName: outboundName, RefOutboundName: outboundName, Ref: ref})
 	}
-	return inbound
+	return refMembers, nil
 }
 
-// vmessOutbound 创建默认 VMess 上游出站，供新实例生成后按真实服务参数替换。
-func vmessOutbound(name string) domain.Outbound {
-	return domain.Outbound{
-		Name:     name,
-		Type:     "vmess",
-		Server:   "vmess.example.com",
-		Port:     443,
-		UUID:     "22222222-2222-4222-8222-222222222222",
-		Security: "auto",
-		TLS: domain.TLSConfig{
-			Enabled:    true,
-			ServerName: "vmess.example.com",
-		},
-		Transport: domain.TransportConfig{
-			Type: "ws",
-			Path: "/vmess-websocket",
-			Headers: map[string]string{
-				"Host": "vmess.example.com",
-			},
-		},
+// joinRefMemberOutbounds 返回 flow style list 内部使用的成员名称串。
+func joinRefMemberOutbounds(members []configtemplate.RefMember) string {
+	names := make([]string, 0, len(members))
+	for _, member := range members {
+		names = append(names, member.OutboundName)
 	}
+	return strings.Join(names, ", ")
 }
 
-// localProxyInbounds 返回模板默认附带的本地 HTTP/SOCKS 代理入口。
-func localProxyInbounds() []domain.Inbound {
-	return []domain.Inbound{
-		localProxyInbound("local-socks", "socks5", 17000),
-		localProxyInbound("local-http", "http", 18000),
-	}
+// renderInstanceFromTemplate 使用最终 instance 值重新渲染同源模板正文。
+func renderInstanceFromTemplate(instance domain.Instance, templateName string) ([]byte, error) {
+	context := configTemplateContextFromInstance(instance)
+	return configtemplate.RenderInstance(templateName, context)
 }
 
-// localProxyInbound 创建仅监听 loopback 的本地代理入口。
-func localProxyInbound(name string, inboundType string, port int) domain.Inbound {
-	inbound := domain.DefaultInbound(name, inboundType)
-	inbound.Listen = "127.0.0.1"
-	inbound.Port = port
-	return inbound
+// configTemplateContextFromInstance 从最终实例中提取同源模板写回需要的字段。
+func configTemplateContextFromInstance(instance domain.Instance) configtemplate.Context {
+	context := configtemplate.DefaultContext()
+	context.InstanceName = instance.Name
+	context.Role = instance.Role
+	context.ShowExampleFields = false
+	context.IncludeProxyAuth = false
+	context.SubscriptionServer = ""
+	context.GroupName = "auto"
+	context.GroupOutbounds = ""
+	context.RefMembers = nil
+	for _, inbound := range instance.Inbounds {
+		switch inbound.Name {
+		case "vmess-main":
+			context.VmessInboundName = inbound.Name
+			context.VmessInboundPort = inbound.Port
+			if len(inbound.Users) > 0 {
+				context.VmessUUID = inbound.Users[0].UUID
+				context.VmessUserTag = inbound.Users[0].Tag
+			}
+			context.VmessRemark = inbound.Subscription.Remark
+			context.SubscriptionServer = inbound.Subscription.Server
+		case "ss-main":
+			context.ShadowsocksInboundName = inbound.Name
+			context.ShadowsocksInboundPort = inbound.Port
+			if len(inbound.Users) > 0 {
+				context.ShadowsocksPassword = inbound.Users[0].Password
+			}
+			context.ShadowsocksRemark = inbound.Subscription.Remark
+			context.SubscriptionServer = inbound.Subscription.Server
+		case "local-socks":
+			context.LocalSocksName = inbound.Name
+			context.LocalSocksPort = inbound.Port
+		case "local-http":
+			context.LocalHTTPName = inbound.Name
+			context.LocalHTTPPort = inbound.Port
+		}
+	}
+	for _, outbound := range instance.Outbounds {
+		switch outbound.Name {
+		case "vmess-upstream":
+			context.VmessOutboundName = outbound.Name
+			context.VmessOutboundUUID = outbound.UUID
+		default:
+			if outbound.Type == "ref" {
+				context.RefMembers = append(context.RefMembers, configtemplate.RefMember{OutboundName: outbound.Name, RefOutboundName: outbound.Name, Ref: outbound.Ref})
+			}
+		}
+	}
+	for _, group := range instance.Groups {
+		if group.Type == "urltest" {
+			context.GroupName = group.Name
+			context.GroupOutbounds = strings.Join(group.Outbounds, ", ")
+		}
+	}
+	if context.VmessRemark == "" {
+		context.VmessRemark = instance.Name
+	}
+	if context.ShadowsocksRemark == "" {
+		context.ShadowsocksRemark = instance.Name
+	}
+	return context
+}
+
+// firstNonEmpty 返回第一个非空字符串。
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // addRefMembersToInstance 将已有 instance 作为 ref outbound 成员加入指定 group。
@@ -283,18 +363,18 @@ func addRefMembersToInstance(instance *domain.Instance, existing []domain.Instan
 // addRefMemberToInstance 为单个 member instance 创建 ref outbound 并加入 group。
 func addRefMemberToInstance(instance *domain.Instance, existing []domain.Instance, groupName string, member string) error {
 	if instance == nil {
-		return fmt.Errorf("instance 不能为空")
+		return fmt.Errorf("instance cannot be empty")
 	}
 	memberInstance, ok := findInstanceByName(existing, member)
 	if !ok {
-		return fmt.Errorf("member instance %q 不存在", member)
+		return fmt.Errorf("member instance %q does not exist", member)
 	}
 	if memberInstance.Name == instance.Name {
-		return fmt.Errorf("member instance 不能引用自身")
+		return fmt.Errorf("member instance cannot reference itself")
 	}
 	inbound, ok := selectRefMemberInbound(memberInstance)
 	if !ok {
-		return fmt.Errorf("member instance %q 必须包含 socks5 或 http inbound", member)
+		return fmt.Errorf("member instance %q must include a socks5 or http inbound", member)
 	}
 	ref := refMemberRef(memberInstance.Name, inbound.Name)
 	for _, outbound := range instance.Outbounds {
@@ -314,7 +394,7 @@ func addRefMemberToInstance(instance *domain.Instance, existing []domain.Instanc
 // removeRefMemberFromInstance 从 group 和 outbounds 中移除指定 member 的 ref 成员。
 func removeRefMemberFromInstance(instance *domain.Instance, existing []domain.Instance, groupName string, member string) error {
 	if instance == nil {
-		return fmt.Errorf("instance 不能为空")
+		return fmt.Errorf("instance cannot be empty")
 	}
 	groupIndex, err := findMutableGroup(instance, groupName)
 	if err != nil {
@@ -397,11 +477,11 @@ func findMutableGroup(instance *domain.Instance, groupName string) (int, error) 
 			continue
 		}
 		if group.Type != "selector" && group.Type != "urltest" {
-			return -1, fmt.Errorf("group %q 不是 selector 或 urltest", groupName)
+			return -1, fmt.Errorf("group %q is not selector or urltest", groupName)
 		}
 		return index, nil
 	}
-	return -1, fmt.Errorf("group %q 不存在", groupName)
+	return -1, fmt.Errorf("group %q does not exist", groupName)
 }
 
 // findInstanceByName 按名称查找 instance。
@@ -573,10 +653,10 @@ func Clone(baseDir string, options CloneOptions) (domain.Instance, error) {
 	}
 	source, ok := set.FindInstance(options.Source)
 	if !ok {
-		return domain.Instance{}, fmt.Errorf("instance %q 不存在", options.Source)
+		return domain.Instance{}, fmt.Errorf("instance %q does not exist", options.Source)
 	}
 	if _, exists := set.FindInstance(options.Target); exists {
-		return domain.Instance{}, fmt.Errorf("instance %q 已存在", options.Target)
+		return domain.Instance{}, fmt.Errorf("instance %q already exists", options.Target)
 	}
 	cloned := cloneInstanceValue(source)
 	cloned.Name = options.Target
@@ -630,6 +710,27 @@ func cloneInstanceValue(source domain.Instance) domain.Instance {
 
 // WriteInstance 校验并写入 instance YAML。
 func WriteInstance(global domain.GlobalConfig, existing []domain.Instance, instance domain.Instance) error {
+	data, err := renderInstanceConfigYAML(instance)
+	if err != nil {
+		return fmt.Errorf("encode instance %s: %w", instance.Name, err)
+	}
+	return writeInstanceData(global, existing, instance, data)
+}
+
+// writeInstanceCandidate 校验并写入 add 构造出的实例候选。
+func writeInstanceCandidate(global domain.GlobalConfig, existing []domain.Instance, candidate instanceCandidate) error {
+	if len(candidate.Data) == 0 {
+		return WriteInstance(global, existing, candidate.Instance)
+	}
+	data, err := renderInstanceConfigYAMLWithBody(candidate.Instance, candidate.Data)
+	if err != nil {
+		return fmt.Errorf("encode instance %s: %w", candidate.Instance.Name, err)
+	}
+	return writeInstanceData(global, existing, candidate.Instance, data)
+}
+
+// writeInstanceData 复用实例和配置集校验后写入指定 YAML 数据。
+func writeInstanceData(global domain.GlobalConfig, existing []domain.Instance, instance domain.Instance, data []byte) error {
 	if err := domain.ValidateInstance(global, &instance); err != nil {
 		return err
 	}
@@ -644,15 +745,11 @@ func WriteInstance(global domain.GlobalConfig, existing []domain.Instance, insta
 		return err
 	}
 	if err := os.MkdirAll(global.Paths.Instances, 0750); err != nil {
-		return fmt.Errorf("创建 instances 目录 %s: %w", global.Paths.Instances, err)
-	}
-	data, err := renderInstanceConfigYAML(instance)
-	if err != nil {
-		return fmt.Errorf("编码 instance %s: %w", instance.Name, err)
+		return fmt.Errorf("create instances directory %s: %w", global.Paths.Instances, err)
 	}
 	path := filepath.Join(global.Paths.Instances, instance.Name+".yaml")
 	if err := writeFileAtomic(path, data, 0640); err != nil {
-		return fmt.Errorf("写入 instance 配置 %s: %w", path, err)
+		return fmt.Errorf("write instance config %s: %w", path, err)
 	}
 	return nil
 }
@@ -664,19 +761,19 @@ func Remove(baseDir string, name string, purge bool) error {
 		return err
 	}
 	if _, ok := set.FindInstance(name); !ok {
-		return fmt.Errorf("instance %q 不存在", name)
+		return fmt.Errorf("instance %q does not exist", name)
 	}
 	path, err := FindInstancePath(set.Global, name)
 	if err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("删除 instance 配置 %s: %w", path, err)
+		return fmt.Errorf("delete instance config %s: %w", path, err)
 	}
 	if purge {
 		generatedPath := filepath.Join(set.Global.Paths.Generated, "sing-box", name+".json")
 		if err := os.Remove(generatedPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("删除 generated 文件 %s: %w", generatedPath, err)
+			return fmt.Errorf("delete generated file %s: %w", generatedPath, err)
 		}
 	}
 	return nil
@@ -689,10 +786,10 @@ func FindInstancePath(global domain.GlobalConfig, name string) (string, error) {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("检查 instance 配置 %s: %w", path, err)
+			return "", fmt.Errorf("check instance config %s: %w", path, err)
 		}
 	}
-	return "", fmt.Errorf("instance 配置 %q 不存在", name)
+	return "", fmt.Errorf("instance config %q does not exist", name)
 }
 
 // ListLines 返回稳定排序的 instance 摘要行。
@@ -740,9 +837,19 @@ func renderInstanceConfigYAML(instance domain.Instance) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return renderInstanceConfigYAMLWithBody(instance, data)
+}
+
+// renderInstanceConfigYAMLWithBody 使用指定正文组装带说明和协议参考的 instance YAML。
+func renderInstanceConfigYAMLWithBody(instance domain.Instance, body []byte) ([]byte, error) {
 	header := renderInstanceConfigHeader(instance)
-	footer := "\n" + instanceProtocolTemplateComment()
-	result := append([]byte(header), data...)
+	footer := instanceProtocolTemplateComment()
+	body = []byte(strings.TrimLeft(string(body), "\n"))
+	result := append([]byte(header), body...)
+	if !strings.HasSuffix(string(result), "\n") {
+		result = append(result, '\n')
+	}
+	result = append(result, '\n')
 	result = append(result, []byte(footer)...)
 	return result, nil
 }
@@ -906,279 +1013,11 @@ func removeMappingKey(node *yaml.Node, key string) {
 
 // instanceProtocolTemplateComment 返回所有受支持协议的注释模板，方便用户在新实例配置中复制启用。
 func instanceProtocolTemplateComment() string {
-	const template = `协议模板参考（默认全部注释，不参与加载；启用时复制到正文 inbounds/outbounds 并去掉前缀 #）。
-inbounds:
-  - name: vmess-main # VMess 入口。
-    type: vmess
-    listen: 0.0.0.0 # 监听主机，不包含端口。
-    port: 24100
-    tag: vmess-vmess-main # 不填默认 <type>-<name>。
-    udp: true
-    users:
-      - name: alice
-        uuid: 11111111-1111-4111-8111-111111111111 # VMess 必填 UUID。
-        alter_id: 0 # 可选，默认 0。
-        remark: US VMess # 可选，订阅展示名；subscription.remark 优先。
-        tag: edge-us-vmess # 可选，订阅节点 tag。
-    subscription:
-      enabled: true # 是否导出订阅节点。
-      user: alice # 必须引用 users.name。
-      server: proxy.example.com # 为空时使用 global.external_host。
-      remark: US VMess
-      region: US
-  - name: vless-main # VLESS 入口，支持 V2Ray transport。
-    type: vless
-    listen: 0.0.0.0
-    port: 24110
-    tag: vless-vless-main
-    udp: true
-    tls:
-      enabled: true # 可按需启用 TLS。
-      server_name: proxy.example.com # TLS SNI；为空时由 sing-box 默认处理。
-      insecure: false # 是否跳过证书校验，生产环境建议 false。
-      alpn: [h2, http/1.1] # 可选 TLS ALPN。
-    transport:
-      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
-      host: proxy.example.com
-      hosts: [proxy.example.com]
-      path: /vless
-      method: GET
-      headers:
-        Host: proxy.example.com
-      idle_timeout: 30s
-      ping_timeout: 15s
-      max_early_data: 2048
-      early_data_header_name: Sec-WebSocket-Protocol
-      service_name: proxy
-      permit_without_stream: false
-    users:
-      - name: alice
-        uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填 UUID。
-        flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
-        remark: US VLESS
-        tag: edge-us-vless
-    subscription:
-      enabled: true
-      user: alice
-      server: proxy.example.com
-      remark: US VLESS
-      region: US
-  - name: anytls-main # AnyTLS 入口。
-    type: anytls
-    listen: 0.0.0.0
-    port: 24120
-    tag: anytls-anytls-main
-    udp: true
-    tls:
-      enabled: true # AnyTLS 必须启用 TLS。
-      server_name: proxy.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-    users:
-      - name: alice
-        password: change-me # AnyTLS 用户必填密码。
-    subscription:
-      enabled: true
-      user: alice
-      server: proxy.example.com
-      remark: US AnyTLS
-      region: US
-  - name: ss-main # Shadowsocks 入口。
-    type: shadowsocks
-    listen: 0.0.0.0
-    port: 24200
-    tag: shadowsocks-ss-main
-    udp: true
-    method: 2022-blake3-aes-256-gcm # 可被 users[].method 覆盖。
-    users:
-      - name: alice
-        password: change-me-32-byte-key
-        method: 2022-blake3-aes-256-gcm
-    subscription:
-      enabled: true
-      user: alice
-      server: proxy.example.com
-      remark: US Shadowsocks
-      region: US
-  - name: local-socks # SOCKS5 本地入口；公网监听建议 password。
-    type: socks5
-    listen: 127.0.0.1
-    port: 17000
-    tag: socks5-local-socks
-    udp: true
-    auth:
-      type: password # 支持 noauth、password。
-      username: alice
-      password: change-me
-  - name: local-http # HTTP 本地入口；公网监听建议 password。
-    type: http
-    listen: 127.0.0.1
-    port: 18000
-    tag: http-local-http
-    udp: false
-    auth:
-      type: password # 支持 noauth、password。
-      username: alice
-      password: change-me
-transport_examples: # VMess/VLESS 可选 transport；复制其中一个 transport 块到对应 inbound/outbound。
-  http:
-    transport:
-      type: http
-      hosts: [proxy.example.com]
-      path: /v2ray
-      method: GET
-      headers:
-        Host: proxy.example.com
-  ws:
-    transport:
-      type: ws
-      host: proxy.example.com
-      path: /ws
-      headers:
-        Host: proxy.example.com
-      max_early_data: 2048
-      early_data_header_name: Sec-WebSocket-Protocol
-  quic:
-    transport:
-      type: quic
-  grpc:
-    transport:
-      type: grpc
-      service_name: TunService
-      idle_timeout: 30s
-      ping_timeout: 15s
-      permit_without_stream: false
-  httpupgrade:
-    transport:
-      type: httpupgrade
-      host: proxy.example.com
-      path: /upgrade
-      method: GET
-      headers:
-        Host: proxy.example.com
-outbounds:
-  - name: direct # 直连出站，不需要 server/port。
-    type: direct
-  - name: block # 阻断出站，不需要 server/port。
-    type: block
-  - name: edge-us-local-socks # 引用已有 instance 的 socks5/http inbound。
-    type: ref
-    ref: edge-us.local-socks # 格式为 <instance>.<inbound>，生成时解析。
-  - name: ss-upstream # Shadowsocks 上游。
-    type: shadowsocks
-    server: ss.example.com
-    port: 443
-    method: 2022-blake3-aes-256-gcm
-    password: change-me
-  - name: vmess-upstream # VMess 上游。
-    type: vmess
-    server: vmess.example.com
-    port: 443
-    uuid: 22222222-2222-4222-8222-222222222222
-    security: auto # VMess 加密方式，常用 auto。
-    alter_id: 0 # 可选，默认 0。
-    tls:
-      enabled: true
-      server_name: vmess.example.com # TLS SNI。
-      insecure: false # 是否跳过证书校验，生产环境建议 false。
-      alpn: [h2, http/1.1] # 可选 TLS ALPN。
-    network: tcp # VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
-    transport:
-      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
-      host: vmess.example.com
-      hosts: [vmess.example.com]
-      path: /vmess
-      method: GET
-      headers:
-        Host: vmess.example.com
-      idle_timeout: 30s
-      ping_timeout: 15s
-      max_early_data: 2048
-      early_data_header_name: Sec-WebSocket-Protocol
-      service_name: proxy
-      permit_without_stream: false
-  - name: vless-upstream # VLESS 上游。
-    type: vless
-    server: vless.example.com
-    port: 443
-    uuid: 33333333-3333-4333-8333-333333333333
-    flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
-    tls:
-      enabled: true
-      server_name: vless.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-    transport:
-      type: httpupgrade
-      host: vless.example.com
-      path: /upgrade
-      method: GET
-  - name: anytls-upstream # AnyTLS 上游。
-    type: anytls
-    server: anytls.example.com
-    port: 443
-    password: change-me
-    tls:
-      enabled: true # AnyTLS 必须启用 TLS。
-      server_name: anytls.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-  - name: trojan-upstream # Trojan 上游。
-    type: trojan
-    server: trojan.example.com
-    port: 443
-    password: change-me
-    tls:
-      enabled: true
-      server_name: trojan.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-  - name: hy2-upstream # Hysteria2 上游。
-    type: hysteria2
-    server: hy2.example.com
-    port: 443
-    password: change-me
-    tls:
-      enabled: true
-      server_name: hy2.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-  - name: socks5-upstream # SOCKS5 上游。
-    type: socks5
-    server: socks.example.com
-    port: 1080
-    auth:
-      type: password # 可为空、noauth 或 password。
-      username: alice
-      password: change-me
-  - name: http-upstream # HTTP 上游。
-    type: http
-    server: http-proxy.example.com
-    port: 8080
-    auth:
-      type: password # 可为空、noauth 或 password。
-      username: alice
-      password: change-me
-groups:
-  - name: auto # urltest group 示例，可引用上方 type=ref 的成员。
-    type: urltest
-    outbounds: [edge-us-local-socks]
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50`
-
-	lines := strings.Split(strings.TrimSuffix(template, "\n"), "\n")
-	var builder strings.Builder
-	for _, line := range lines {
-		if line == "" {
-			builder.WriteString("#\n")
-			continue
-		}
-		builder.WriteString("# ")
-		builder.WriteString(line)
-		builder.WriteByte('\n')
+	text, err := configtemplate.RenderProtocolReferenceComment(configtemplate.DefaultContext())
+	if err != nil {
+		return configtemplate.CommentBlock("协议模板参考暂不可用: " + err.Error())
 	}
-	return builder.String()
+	return text
 }
 
 // MemberList 返回 group 成员列表。
@@ -1288,30 +1127,30 @@ func findGroup(set *config.AgentConfigSet, instanceName string, groupName string
 	for _, group := range instanceValue.Groups {
 		if group.Name == groupName {
 			if group.Type != "selector" && group.Type != "urltest" {
-				return domain.Group{}, domain.Instance{}, fmt.Errorf("group %q 不是 selector 或 urltest", groupName)
+				return domain.Group{}, domain.Instance{}, fmt.Errorf("group %q is not selector or urltest", groupName)
 			}
 			return group, instanceValue, nil
 		}
 	}
-	return domain.Group{}, domain.Instance{}, fmt.Errorf("group %q 不存在", groupName)
+	return domain.Group{}, domain.Instance{}, fmt.Errorf("group %q does not exist", groupName)
 }
 
 func findInstance(set *config.AgentConfigSet, name string) (domain.Instance, int, error) {
 	if set == nil {
-		return domain.Instance{}, -1, fmt.Errorf("配置集合不能为空")
+		return domain.Instance{}, -1, fmt.Errorf("config set cannot be empty")
 	}
 	for index, instance := range set.Instances {
 		if instance.Name == name {
 			return instance, index, nil
 		}
 	}
-	return domain.Instance{}, -1, fmt.Errorf("instance %q 不存在", name)
+	return domain.Instance{}, -1, fmt.Errorf("instance %q does not exist", name)
 }
 
 func loadInstanceDraft(path string, global domain.GlobalConfig) (domain.Instance, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return domain.Instance{}, fmt.Errorf("读取 instance 模板 %s: %w", path, err)
+		return domain.Instance{}, fmt.Errorf("read instance template %s: %w", path, err)
 	}
 	instance := domain.DefaultInstance(global)
 	format, err := formatForPath(path)
@@ -1332,7 +1171,7 @@ func formatForPath(path string) (string, error) {
 	case ".json":
 		return "json", nil
 	default:
-		return "", fmt.Errorf("不支持的配置文件扩展名")
+		return "", fmt.Errorf("unsupported config file extension")
 	}
 }
 
@@ -1344,7 +1183,7 @@ func EditFileWithCommand(path string, editor string) error {
 	}
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
-		return fmt.Errorf("editor 不能为空")
+		return fmt.Errorf("editor cannot be empty")
 	}
 	args := append(parts[1:], path)
 	command := exec.Command(parts[0], args...)
@@ -1352,7 +1191,7 @@ func EditFileWithCommand(path string, editor string) error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("执行 editor %s: %w", parts[0], err)
+		return fmt.Errorf("run editor %s: %w", parts[0], err)
 	}
 	return nil
 }
@@ -1372,17 +1211,17 @@ func resolveEditorCommand(editor string) (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("未找到可用 editor，请使用 --editor、设置 EDITOR 或安装 vim/vi/nvim/nano")
+	return "", fmt.Errorf("no available editor found; use --editor, set EDITOR, or install vim/vi/nvim/nano")
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 	tempFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件 %s: %w", dir, err)
+		return fmt.Errorf("create temp file %s: %w", dir, err)
 	}
 	tempPath := tempFile.Name()
 	closed := false
@@ -1393,18 +1232,18 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 		_ = os.Remove(tempPath)
 	}()
 	if err := tempFile.Chmod(mode); err != nil {
-		return fmt.Errorf("设置临时文件权限 %s: %w", tempPath, err)
+		return fmt.Errorf("set temp file permissions %s: %w", tempPath, err)
 	}
 	if _, err := tempFile.Write(data); err != nil {
-		return fmt.Errorf("写入临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("write temp file %s: %w", tempPath, err)
 	}
 	if err := tempFile.Close(); err != nil {
 		closed = true
-		return fmt.Errorf("关闭临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("close temp file %s: %w", tempPath, err)
 	}
 	closed = true
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", path, err)
+		return fmt.Errorf("replace file %s: %w", path, err)
 	}
 	return nil
 }

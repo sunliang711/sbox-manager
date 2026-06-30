@@ -43,36 +43,36 @@ const localizedHelpTemplate = `{{with (or .Long .Short)}}{{. | trimTrailingWhite
 
 {{end}}{{.UsageString}}`
 
-const localizedUsageTemplate = `用法:{{if .Runnable}}
+const localizedUsageTemplate = `Usage:{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
 
-别名:
+Aliases:
   {{.NameAndAliases}}{{end}}{{if .HasExample}}
 
-示例:
+Examples:
 {{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
 
-可用命令:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+Commands:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
 
 {{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
 
-其他命令:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+Other Commands:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
-选项:
+Options:
 {{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
-全局选项:
+Global Options:
 {{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
-更多帮助主题:
+Additional Help Topics:
 {{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
-使用 "{{.CommandPath}} [command] --help" 查看子命令说明。{{end}}
+Run "{{.CommandPath}} [command] --help" for command-specific help.{{end}}
 `
 
 // RunSboxctl 执行 sboxctl 命令入口，适用于 cmd/sboxctl/main.go。
@@ -88,7 +88,7 @@ func RunSboxsub() {
 // runAndExit 执行根命令，并在失败时输出用户可读的错误摘要。
 func runAndExit(cmd *cobra.Command) {
 	if err := cmd.Execute(); err != nil {
-		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "错误：%v\n", err); writeErr != nil {
+		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err); writeErr != nil {
 			os.Exit(1)
 		}
 		os.Exit(1)
@@ -130,10 +130,10 @@ func newRootCommand(name string, defaultBaseDir string, short string, long strin
 		},
 	}
 
-	root.PersistentFlags().StringVar(&opts.baseDir, "base-dir", defaultBaseDir, "环境目录")
-	root.PersistentFlags().StringVar(&opts.serviceManager, "service-manager", defaultServiceManager, "服务管理器：auto、systemd、launchd")
+	root.PersistentFlags().StringVar(&opts.baseDir, "base-dir", defaultBaseDir, "environment directory")
+	root.PersistentFlags().StringVar(&opts.serviceManager, "service-manager", defaultServiceManager, "service manager: auto, systemd, launchd")
 	if includeListen {
-		root.PersistentFlags().StringVar(&opts.listen, "listen", "", "覆盖订阅 HTTP 监听地址，格式 HOST:PORT")
+		root.PersistentFlags().StringVar(&opts.listen, "listen", "", "override subscription HTTP listen address, format HOST:PORT")
 	}
 
 	return root
@@ -143,7 +143,7 @@ func newRootCommand(name string, defaultBaseDir string, short string, long strin
 func getRootOptions(cmd *cobra.Command) (*rootOptions, error) {
 	options, ok := cmd.Context().Value(rootOptionsContextKey{}).(*rootOptions)
 	if !ok || options == nil {
-		return nil, fmt.Errorf("读取 CLI 全局参数失败")
+		return nil, fmt.Errorf("failed to read CLI global options")
 	}
 	return options, nil
 }
@@ -160,7 +160,7 @@ func localizeCommandBasics(command *cobra.Command) {
 	command.SetUsageTemplate(localizedUsageTemplate)
 	command.InitDefaultHelpFlag()
 	if helpFlag := command.Flags().Lookup("help"); helpFlag != nil {
-		helpFlag.Usage = "显示帮助信息"
+		helpFlag.Usage = "show help information"
 	}
 }
 
@@ -185,8 +185,8 @@ func localizeCommandHelp(command *cobra.Command) {
 func newLocalizedHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "help [command]",
-		Short:   "查看命令帮助",
-		Long:    "查看任意命令的帮助说明。",
+		Short:   "Show command help",
+		Long:    "Show help for any command.",
 		GroupID: commandGroupHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parent := cmd.Parent()
@@ -197,7 +197,7 @@ func newLocalizedHelpCommand() *cobra.Command {
 			if len(args) > 0 {
 				found, _, err := parent.Find(args)
 				if err != nil || found == nil {
-					return fmt.Errorf("未知帮助主题 %q", strings.Join(args, " "))
+					return fmt.Errorf("unknown help topic %q", strings.Join(args, " "))
 				}
 				target = found
 			}
@@ -225,7 +225,7 @@ func validateServiceManager(manager string) error {
 	case defaultServiceManager, serviceManagerSystemd, serviceManagerLaunchd:
 		return nil
 	default:
-		return fmt.Errorf("不支持的 service-manager %q，仅支持 auto、systemd、launchd", manager)
+		return fmt.Errorf("unsupported service-manager %q; supported values: auto, systemd, launchd", manager)
 	}
 }
 
@@ -237,18 +237,18 @@ func validateListenAddress(listen string) error {
 
 	host, portText, err := net.SplitHostPort(listen)
 	if err != nil {
-		return fmt.Errorf("listen 必须是 HOST:PORT 格式: %w", err)
+		return fmt.Errorf("listen must use HOST:PORT format: %w", err)
 	}
 	if host == "" {
-		return fmt.Errorf("listen host 不能为空")
+		return fmt.Errorf("listen host cannot be empty")
 	}
 
 	port, err := strconv.Atoi(portText)
 	if err != nil {
-		return fmt.Errorf("listen port 必须是 1-65535 的整数: %w", err)
+		return fmt.Errorf("listen port must be an integer from 1 to 65535: %w", err)
 	}
 	if port < 1 || port > 65535 {
-		return fmt.Errorf("listen port 必须在 1-65535 范围内")
+		return fmt.Errorf("listen port must be in range 1-65535")
 	}
 	return nil
 }
@@ -257,17 +257,18 @@ func validateListenAddress(listen string) error {
 func newVersionCommand(use string, allowComponent bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
-		Short: "输出当前二进制版本信息",
+		Short: "Print the current binary version",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return runComponentVersion(cmd, args[0])
 			}
 
 			info := version.Get()
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\nCommit: %s\nBuildTime: %s\n", info.Version, info.Commit, info.BuildTime); err != nil {
-				return fmt.Errorf("write version output: %w", err)
-			}
-			return nil
+			return writeSectionFields(cmd, "Version",
+				outputKV("Version", info.Version),
+				outputKV("Commit", info.Commit),
+				outputKV("Build time", info.BuildTime),
+			)
 		},
 	}
 	if allowComponent {
@@ -300,5 +301,5 @@ func newStubGroup(use string, short string, children ...*cobra.Command) *cobra.C
 
 // notImplementedError 返回携带具体命令路径的未实现错误。
 func notImplementedError(cmd *cobra.Command) error {
-	return fmt.Errorf("%w: %s", ErrNotImplemented, cmd.CommandPath())
+	return fmt.Errorf("%w: %s is not available yet", ErrNotImplemented, cmd.CommandPath())
 }

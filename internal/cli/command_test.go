@@ -32,9 +32,12 @@ func TestSboxctlVersionOutput(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"Version: v1.2.3",
-		"Commit: abc1234",
-		"BuildTime: 2026-06-28T00:00:00Z",
+		"Version",
+		"v1.2.3",
+		"Commit",
+		"abc1234",
+		"Build time",
+		"2026-06-28T00:00:00Z",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("version output missing %q: %s", want, output)
@@ -80,7 +83,7 @@ func TestSboxctlComponentVersionOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute sboxctl version rules: %v\n%s", err, output)
 	}
-	for _, want := range []string{"RulesDir: " + rulesDir, "geoip.db abc123"} {
+	for _, want := range []string{"Directory:", rulesDir, "geoip.db abc123"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("rules version output missing %q: %s", want, output)
 		}
@@ -100,9 +103,12 @@ func TestSboxsubVersionOutput(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"Version: v2.0.0",
-		"Commit: def5678",
-		"BuildTime: 2026-06-28T01:00:00Z",
+		"Version",
+		"v2.0.0",
+		"Commit",
+		"def5678",
+		"Build time",
+		"2026-06-28T01:00:00Z",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("version output missing %q: %s", want, output)
@@ -132,7 +138,12 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "inbound all protocols",
 			args: []string{"example", "inbound"},
-			want: []string{"type: vmess", "type: vless", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
+			want: []string{"VMess inbound（raw）", "VMess WebSocket inbound", "VMess gRPC inbound", "VLESS inbound（WebSocket）", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
+		},
+		{
+			name: "inbound vmess websocket",
+			args: []string{"example", "inbound", "vmess-websocket"},
+			want: []string{"# VMess WebSocket inbound", "type: vmess", "type: ws", "/vmess-websocket"},
 		},
 		{
 			name:    "inbound vless",
@@ -154,7 +165,12 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name: "outbound all protocols",
 			args: []string{"example", "outbound"},
-			want: []string{"type: direct", "type: block", "type: ref", "type: shadowsocks", "type: vmess", "type: vless", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+			want: []string{"type: direct", "type: block", "type: ref", "type: shadowsocks", "VMess raw outbound", "VMess outbound（WebSocket）", "VMess gRPC outbound", "VLESS outbound（WebSocket）", "type: anytls", "type: trojan", "type: hysteria2", "type: socks5", "type: http"},
+		},
+		{
+			name: "outbound vmess grpc",
+			args: []string{"example", "outbound", "vmess-grpc"},
+			want: []string{"# VMess gRPC outbound", "type: vmess", "type: grpc", "service_name:"},
 		},
 		{
 			name: "outbound ref",
@@ -258,8 +274,10 @@ func TestSboxctlSetupLocalPreparesBaseAndEnablesTrafficTimers(t *testing.T) {
 		t.Fatalf("execute setup local: %v\n%s", err, output)
 	}
 	for _, want := range []string{
-		"setup local 完成: " + baseDir,
-		"traffic timer enable 完成",
+		"Traffic timers enabled.",
+		"Local setup completed.",
+		"Base dir:",
+		baseDir,
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("setup local output missing %q:\n%s", want, output)
@@ -279,7 +297,7 @@ func TestSboxctlSetupLocalPreparesBaseAndEnablesTrafficTimers(t *testing.T) {
 	}
 }
 
-// TestSboxsubInitPrintsNextSteps 验证订阅服务 init 后会提示下一步操作。
+// TestSboxsubInitPrintsNextSteps 验证subscription service init 后会提示下一步操作。
 func TestSboxsubInitPrintsNextSteps(t *testing.T) {
 	baseDir := t.TempDir()
 	output, err := executeCommand(newSboxsubCommand(), "--base-dir", baseDir, "init")
@@ -287,8 +305,10 @@ func TestSboxsubInitPrintsNextSteps(t *testing.T) {
 		t.Fatalf("execute sboxsub init: %v\n%s", err, output)
 	}
 	for _, want := range []string{
-		"初始化完成: " + baseDir,
-		"为了导入 agent 导出的订阅 bundle",
+		"Subscription service initialized.",
+		"Base dir:",
+		baseDir,
+		"Import a subscription bundle exported by the agent",
 		"sboxsub --base-dir " + baseDir + " import /path/to/sbox-sub-bundle.zip",
 		"sudo sboxsub --base-dir " + baseDir + " service install",
 		"sudo sboxsub --base-dir " + baseDir + " start",
@@ -310,7 +330,7 @@ func TestSboxctlDoctorReturnsNonZeroOnIssue(t *testing.T) {
 	if !strings.Contains(output, "ISSUE") {
 		t.Fatalf("expected ISSUE output, got %s", output)
 	}
-	if !strings.Contains(err.Error(), "doctor found ISSUE") {
+	if !strings.Contains(err.Error(), "doctor found issues") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -353,8 +373,10 @@ func TestSboxctlCheckIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute check: %v", err)
 	}
-	if !strings.Contains(output, "create edge-us generated/sing-box/edge-us.json") {
-		t.Fatalf("unexpected check output: %s", output)
+	for _, want := range []string{"Plan", "create", "edge-us", "generated/sing-box/edge-us.json"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("unexpected check output missing %q: %s", want, output)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, "runtime", "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("check should not write manifest, stat err: %v", err)
@@ -364,13 +386,57 @@ func TestSboxctlCheckIsReadOnly(t *testing.T) {
 	}
 }
 
+// TestSboxctlListUsesStatusTable 验证 list 输出固定状态表。
+func TestSboxctlListUsesStatusTable(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	generatedPath := filepath.Join(baseDir, "runtime", "generated", "sing-box", "edge-us.json")
+	if err := os.MkdirAll(filepath.Dir(generatedPath), 0750); err != nil {
+		t.Fatalf("mkdir generated dir: %v", err)
+	}
+	if err := os.WriteFile(generatedPath, []byte("{}"), 0640); err != nil {
+		t.Fatalf("write generated config: %v", err)
+	}
+	runner := &cliRecordingRunner{outputs: map[string][]byte{
+		"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+	}}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "list")
+	if err != nil {
+		t.Fatalf("execute list: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"Name",
+		"Role",
+		"Enabled",
+		"Running",
+		"Generated",
+		"Ports",
+		"------",
+		"edge-us",
+		"edge",
+		"yes",
+		"vmess-main=24100",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("list output missing %q:\n%s", want, output)
+		}
+	}
+	if !strings.Contains(runner.joined(), "systemctl is-active sbox@edge-us.service") {
+		t.Fatalf("list should check service status, got %q", runner.joined())
+	}
+}
+
 // TestSboxctlRenderGroupShowsHelp 验证 render 分组直接执行时展示帮助，避免误报未实现。
 func TestSboxctlRenderGroupShowsHelp(t *testing.T) {
 	output, err := executeCommand(newSboxctlCommand(), "render")
 	if err != nil {
 		t.Fatalf("execute render group: %v\n%s", err, output)
 	}
-	for _, want := range []string{"渲染模型、sing-box 配置或订阅 input", "sing-box", "sub"} {
+	for _, want := range []string{"Render model, sing-box configuration, or subscription input", "sing-box", "sub"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("render help missing %q:\n%s", want, output)
 		}
@@ -434,10 +500,10 @@ func TestSboxctlSubExportDryRunAndSummaryDoNotWritePublish(t *testing.T) {
 		if err != nil {
 			t.Fatalf("execute %v: %v\n%s", args, err, output)
 		}
-		if !strings.Contains(output, "订阅 bundle 摘要") {
+		if !strings.Contains(output, "Subscription bundle") {
 			t.Fatalf("expected summary output, got %s", output)
 		}
-		if args[len(args)-1] == "--dry-run" && !strings.Contains(output, "预览模式: 不会写入文件") {
+		if args[len(args)-1] == "--dry-run" && !strings.Contains(output, "Dry run only; no files will be written.") {
 			t.Fatalf("expected dry-run output, got %s", output)
 		}
 		if _, err := os.Stat(filepath.Join(baseDir, "publish")); !os.IsNotExist(err) {
@@ -584,6 +650,9 @@ func TestSboxctlStartGeneratesChecksAndStartsService(t *testing.T) {
 	if !strings.Contains(runner.joined(), "systemctl start sbox@edge-us.service") {
 		t.Fatalf("expected systemctl start, got %q", runner.joined())
 	}
+	if strings.Contains(runner.joined(), "systemctl enable --now sbox-traffic-hourly.timer") {
+		t.Fatalf("start should not enable traffic timers, got %q", runner.joined())
+	}
 	if _, err := os.Stat(filepath.Join(baseDir, "runtime", "manifest.json")); err != nil {
 		t.Fatalf("start should write manifest: %v", err)
 	}
@@ -612,7 +681,7 @@ func TestSboxctlStopDoesNotWriteRuntime(t *testing.T) {
 	}
 }
 
-// TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances 验证 service install 写服务文件并启用 timer，但不启动实例服务。
+// TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances 验证 service install 写服务和 timer 文件并启用 timer，但不启动实例服务。
 func TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances(t *testing.T) {
 	baseDir := writeAgentFixture(t)
 	unitDir := filepath.Join(t.TempDir(), "units")
@@ -626,7 +695,7 @@ func TestSboxctlServiceInstallEnablesTrafficTimersDoesNotStartInstances(t *testi
 	if err != nil {
 		t.Fatalf("execute service install: %v", err)
 	}
-	if !strings.Contains(output, "service install 完成: systemd") {
+	if !strings.Contains(output, "Traffic timers enabled.") || !strings.Contains(output, "Instance service files installed.") || !strings.Contains(output, "Service manager:") || !strings.Contains(output, "systemd") {
 		t.Fatalf("service install should print resolved manager, got %q", output)
 	}
 	if _, err := os.Stat(filepath.Join(unitDir, "sbox@.service")); err != nil {
@@ -739,6 +808,8 @@ func TestSboxctlInstallPrintsProgress(t *testing.T) {
 		return cliFakeInstaller{run: func(options installer.Options) error {
 			options.Progress("install: prepare sing-box")
 			options.Progress("download: start sing-box.tar.gz")
+			options.Progress("download: progress sing-box.tar.gz 1.0 MiB / 2.0 MiB (50%)")
+			options.Progress("download: progress sing-box.tar.gz 2.0 MiB / 2.0 MiB (100%)")
 			options.Progress("verify: passed sing-box.tar.gz")
 			options.Progress("install: complete sing-box")
 			return nil
@@ -752,9 +823,14 @@ func TestSboxctlInstallPrintsProgress(t *testing.T) {
 	for _, want := range []string{
 		"install: prepare sing-box",
 		"download: start sing-box.tar.gz",
+		"\r\033[2Kdownload: progress sing-box.tar.gz 1.0 MiB / 2.0 MiB (50%)",
+		"\r\033[2Kdownload: progress sing-box.tar.gz 2.0 MiB / 2.0 MiB (100%)",
+		"100%)\nverify: passed sing-box.tar.gz",
 		"verify: passed sing-box.tar.gz",
 		"install: complete sing-box",
-		"install all 完成",
+		"Resource operation completed.",
+		"Operation:",
+		"Resource:",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("install output missing %q:\n%s", want, output)
@@ -850,6 +926,20 @@ func TestTrafficExportDateFlagOutputsCSV(t *testing.T) {
 	}
 }
 
+// TestTrafficCollectAllSkipsWhenNoTargets 验证 ALL 没有可采集实例时 timer 任务成功跳过。
+func TestTrafficCollectAllSkipsWhenNoTargets(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "traffic", "collect", "hourly", "--instance", "ALL")
+	if err != nil {
+		t.Fatalf("traffic collect should skip empty ALL targets: %v\n%s", err, output)
+	}
+	for _, want := range []string{"Traffic collection skipped.", "No traffic-enabled instances found."} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("traffic collect skip output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestTrafficShowDoesNotCreateDBWhenNoRecords 验证只读查询不会隐式创建 traffic DB。
 func TestTrafficShowDoesNotCreateDBWhenNoRecords(t *testing.T) {
 	baseDir := writeAgentFixture(t)
@@ -857,7 +947,7 @@ func TestTrafficShowDoesNotCreateDBWhenNoRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("traffic show hourly should succeed without DB: %v\n%s", err, output)
 	}
-	if !strings.Contains(output, "未找到记录") {
+	if !strings.Contains(output, "No traffic records found.") {
 		t.Fatalf("expected empty result output, got %s", output)
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, "traffic", "traffic.db")); !os.IsNotExist(err) {
@@ -873,11 +963,11 @@ func TestReadOnlyCommandsDoNotWriteManagedOutputs(t *testing.T) {
 		wantError string
 		wantText  string
 	}{
-		{name: "validate", args: []string{"validate"}, wantText: "配置校验通过"},
+		{name: "validate", args: []string{"validate"}, wantText: "Configuration validation passed."},
 		{name: "render model", args: []string{"render", "model"}, wantText: `"instances"`},
 		{name: "render sing-box", args: []string{"render", "sing-box", "edge-us"}, wantText: `"inbounds"`},
 		{name: "render sub", args: []string{"render", "sub"}, wantText: `"input_schema": "sbox.subscription-input"`},
-		{name: "doctor issue", args: []string{"doctor"}, wantError: "doctor found ISSUE", wantText: "ISSUE"},
+		{name: "doctor issue", args: []string{"doctor"}, wantError: "doctor found issues", wantText: "ISSUE"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -977,8 +1067,9 @@ func TestSboxctlConfigInstanceRestartsRunningService(t *testing.T) {
 		t.Fatalf("config edit failed: %v\n%s", err, output)
 	}
 	for _, want := range []string{
-		"配置已更新:",
-		"实例运行中，已自动重启: edge-us",
+		"Configuration updated.",
+		"Running instance restarted automatically.",
+		"edge-us",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("config output missing %q:\n%s", want, output)
@@ -1015,7 +1106,7 @@ func TestSboxctlConfigInstanceNoChangeSkipsRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config edit failed: %v\n%s", err, output)
 	}
-	if !strings.Contains(output, "配置未变化:") {
+	if !strings.Contains(output, "Configuration unchanged.") {
 		t.Fatalf("config output should report no change:\n%s", output)
 	}
 	if got := runner.joined(); got != "" {
@@ -1029,22 +1120,22 @@ func TestRootHelpShowsResponsibilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute sboxctl help: %v", err)
 	}
-	if !strings.Contains(sboxctlHelp, "agent") || !strings.Contains(sboxctlHelp, "实例生命周期") {
+	if !strings.Contains(sboxctlHelp, "agent") || !strings.Contains(sboxctlHelp, "instance lifecycle") {
 		t.Fatalf("sboxctl help does not describe agent responsibility: %s", sboxctlHelp)
 	}
-	if !strings.Contains(sboxctlHelp, "用法:") || !strings.Contains(sboxctlHelp, "选项:") || !strings.Contains(sboxctlHelp, "查看命令帮助") {
-		t.Fatalf("sboxctl help is not localized enough: %s", sboxctlHelp)
+	if !strings.Contains(sboxctlHelp, "Usage:") || !strings.Contains(sboxctlHelp, "Options:") || !strings.Contains(sboxctlHelp, "Show command help") {
+		t.Fatalf("sboxctl help is not English enough: %s", sboxctlHelp)
 	}
 
 	sboxsubHelp, err := executeCommand(newSboxsubCommand(), "--help")
 	if err != nil {
 		t.Fatalf("execute sboxsub help: %v", err)
 	}
-	if !strings.Contains(sboxsubHelp, "订阅服务") || !strings.Contains(sboxsubHelp, "不读取 agent 配置") {
+	if !strings.Contains(sboxsubHelp, "subscription service") || !strings.Contains(sboxsubHelp, "does not read agent configuration") {
 		t.Fatalf("sboxsub help does not describe sub responsibility: %s", sboxsubHelp)
 	}
-	if !strings.Contains(sboxsubHelp, "用法:") || !strings.Contains(sboxsubHelp, "选项:") || !strings.Contains(sboxsubHelp, "查看命令帮助") {
-		t.Fatalf("sboxsub help is not localized enough: %s", sboxsubHelp)
+	if !strings.Contains(sboxsubHelp, "Usage:") || !strings.Contains(sboxsubHelp, "Options:") || !strings.Contains(sboxsubHelp, "Show command help") {
+		t.Fatalf("sboxsub help is not English enough: %s", sboxsubHelp)
 	}
 }
 
@@ -1146,7 +1237,7 @@ func restoreResourceInstaller(t *testing.T) {
 	})
 }
 
-// restoreSboxsubServiceManager 在测试结束后恢复订阅服务管理器注入点。
+// restoreSboxsubServiceManager 在测试结束后恢复subscription service管理器注入点。
 func restoreSboxsubServiceManager(t *testing.T) {
 	t.Helper()
 

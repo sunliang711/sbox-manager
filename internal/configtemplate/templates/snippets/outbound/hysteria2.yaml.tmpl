@@ -1,0 +1,11 @@
+# Hysteria2 outbound。
+- name: hy2-upstream
+  type: hysteria2
+  server: hy2.example.com
+  port: 443
+  password: change-me # Hysteria2 必填。
+  tls:
+    enabled: true
+    server_name: hy2.example.com
+    insecure: false
+    alpn: [h2, http/1.1]

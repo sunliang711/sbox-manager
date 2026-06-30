@@ -166,7 +166,7 @@ func decodeStrictReader(reader io.Reader, format string, target interface{}) err
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("YAML 只允许单文档")
+			return fmt.Errorf("YAML allows only one document")
 		}
 		return nil
 	case "json":
@@ -182,11 +182,11 @@ func decodeStrictReader(reader io.Reader, format string, target interface{}) err
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("JSON 只允许单个顶层值")
+			return fmt.Errorf("JSON allows only one top-level value")
 		}
 		return nil
 	default:
-		return fmt.Errorf("不支持的配置格式 %q", format)
+		return fmt.Errorf("unsupported config format %q", format)
 	}
 }
 
@@ -201,7 +201,7 @@ func formatForPath(path string) (string, error) {
 	case ".json":
 		return "json", nil
 	default:
-		return "", fmt.Errorf("不支持的配置文件扩展名")
+		return "", fmt.Errorf("unsupported config file extension")
 	}
 }
 
@@ -213,7 +213,7 @@ func validateInstanceFilename(path string, name string) error {
 	}
 	base := strings.TrimSuffix(filepath.Base(path), extension)
 	if base != name {
-		return fmt.Errorf("文件名 %q 必须与 instance name %q 一致", base, name)
+		return fmt.Errorf("filename %q must match instance name %q", base, name)
 	}
 	return nil
 }
@@ -315,11 +315,11 @@ type durationValue struct {
 // UnmarshalYAML 解析 YAML duration 字符串。
 func (v *durationValue) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind != yaml.ScalarNode {
-		return fmt.Errorf("duration 必须是字符串")
+		return fmt.Errorf("duration must be a string")
 	}
 	duration, err := time.ParseDuration(node.Value)
 	if err != nil {
-		return fmt.Errorf("duration 格式无效: %w", err)
+		return fmt.Errorf("invalid duration format: %w", err)
 	}
 	v.value = duration
 	return nil
@@ -333,7 +333,7 @@ func (v *durationValue) UnmarshalJSON(data []byte) error {
 	}
 	duration, err := time.ParseDuration(text)
 	if err != nil {
-		return fmt.Errorf("duration 格式无效: %w", err)
+		return fmt.Errorf("invalid duration format: %w", err)
 	}
 	v.value = duration
 	return nil

@@ -1,0 +1,24 @@
+{{ if .ShowExampleFields }}
+# Relay instance 示例，公网入口使用 Shadowsocks 2022。
+{{ end }}
+name: {{ .InstanceName }}
+enabled: true
+role: relay
+{{ if .ShowExampleFields }}
+labels: [relay, us]
+{{ end }}
+api:
+  enabled: false
+  listen: 127.0.0.1:10086
+  token: ""
+inbounds:
+{{ snippet "inbound.shadowsocks" 2 }}
+{{ snippet "inbound.socks5" 2 }}
+{{ snippet "inbound.http" 2 }}
+outbounds:
+{{ snippet "outbound.vmess-websocket" 2 }}
+route:
+  default: {{ .VmessOutboundName }}
+traffic:
+  enabled: true
+  scopes: [user, inbound, outbound]

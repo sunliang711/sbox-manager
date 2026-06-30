@@ -75,7 +75,7 @@ func TestArchiveTraversalRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected traversal error")
 	}
-	if !strings.Contains(err.Error(), "不安全") {
+	if !strings.Contains(err.Error(), "unsafe") {
 		t.Fatalf("expected unsafe path error, got %v", err)
 	}
 }
@@ -315,7 +315,7 @@ func TestFailedUpdatePreservesOldSingBox(t *testing.T) {
 	}
 }
 
-// TestUnmanagedSymlinkNotOverwritten 验证非受管 symlink 不会被覆盖。
+// TestUnmanagedSymlinkNotOverwritten 验证unmanaged symlink 不会被覆盖。
 func TestUnmanagedSymlinkNotOverwritten(t *testing.T) {
 	global := installerFixtureGlobal(t)
 	if err := os.MkdirAll(global.Paths.Bin, 0750); err != nil {
@@ -337,7 +337,7 @@ func TestUnmanagedSymlinkNotOverwritten(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unmanaged symlink error")
 	}
-	if !strings.Contains(err.Error(), "非受管 symlink") {
+	if !strings.Contains(err.Error(), "unmanaged symlink") {
 		t.Fatalf("expected unmanaged symlink error, got %v", err)
 	}
 }

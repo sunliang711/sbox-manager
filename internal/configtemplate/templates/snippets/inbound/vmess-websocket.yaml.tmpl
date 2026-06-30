@@ -1,0 +1,25 @@
+# VMess WebSocket inbound，可放入 instance.inbounds。
+- name: vmess-ws
+  type: vmess
+  listen: 0.0.0.0
+  port: 24101
+  tag: vmess-vmess-ws
+  udp: true
+  transport:
+    type: ws
+    host: proxy.example.com
+    path: /vmess-websocket
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}"
+      alter_id: 0
+      remark: US VMess WS
+      tag: edge-us-vmess-ws
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VMess WS
+    region: US

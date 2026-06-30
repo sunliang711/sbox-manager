@@ -72,7 +72,7 @@ func AgentDoctor(ctx context.Context, baseDir string, serviceManager string) []C
 	checks := make([]Check, 0)
 	set, err := config.LoadAgentConfigSet(baseDir)
 	if err != nil {
-		checks = append(checks, issue("config", "agent 配置加载失败: "+err.Error()))
+		checks = append(checks, issue("config", "agent config load failed: "+err.Error()))
 		return checks
 	}
 
@@ -92,29 +92,29 @@ func SubDoctor(ctx context.Context, baseDir string, serviceManager string, liste
 	checks := make([]Check, 0)
 	subConfig, err := config.LoadSubConfig(filepath.Join(baseDir, "config.yaml"), baseDir)
 	if err != nil {
-		checks = append(checks, issue("sub-config", "订阅服务配置加载失败: "+err.Error()))
+		checks = append(checks, issue("sub-config", "subscription service config load failed: "+err.Error()))
 		return checks
 	}
 	if listenOverride != "" {
 		subConfig.Listen = listenOverride
 	}
 	if err := domain.ValidateSubConfig(*subConfig); err != nil {
-		checks = append(checks, issue("sub-config", "订阅服务配置校验失败: "+err.Error()))
+		checks = append(checks, issue("sub-config", "subscription service config validation failed: "+err.Error()))
 	} else {
-		checks = append(checks, ok("sub-config", "订阅服务配置可加载"))
+		checks = append(checks, ok("sub-config", "subscription service config is loadable"))
 	}
 
 	inputDir := subscription.InputsDir(baseDir)
 	index, err := subscription.LoadIndexFromDir(inputDir)
 	if err != nil {
-		checks = append(checks, issue("sub-inputs", "订阅 inputs 加载失败: "+err.Error()))
+		checks = append(checks, issue("sub-inputs", "subscription inputs load failed: "+err.Error()))
 	} else {
 		checks = append(checks, ok("sub-inputs", fmt.Sprintf("sources=%d users=%d nodes=%d", len(index.Sources), index.UserCount(), len(index.Nodes))))
 	}
 	if subConfig.Access.Type == "none" && !isLoopbackListen(subConfig.Listen) {
-		checks = append(checks, issue("sub-security", "公网监听未启用 token"))
+		checks = append(checks, issue("sub-security", "public listener does not enable token"))
 	} else {
-		checks = append(checks, ok("sub-security", "访问控制配置未发现明显问题"))
+		checks = append(checks, ok("sub-security", "access control config has no obvious issues"))
 	}
 	checks = append(checks, checkTCP(ctx, "sub-listen", subConfig.Listen))
 	checks = append(checks, checkSubscriptionServiceFile(serviceManager))
@@ -178,7 +178,7 @@ func LookupIPInfo(ctx context.Context, instance domain.Instance, options IPInfoO
 		}
 		ip, endpoint, err := queryEndpointFallback(ctx, client, endpoints)
 		if err != nil {
-			return results, fmt.Errorf("%s 查询失败: %w", family, err)
+			return results, fmt.Errorf("%s query failed: %w", family, err)
 		}
 		results = append(results, IPInfoResult{
 			Family:   family,
@@ -210,7 +210,7 @@ func SelectInstanceProxy(instance domain.Instance) (InstanceProxy, error) {
 			return selected, nil
 		}
 	}
-	return InstanceProxy{}, fmt.Errorf("instance %q 未配置 socks5/http 本地 listener", instance.Name)
+	return InstanceProxy{}, fmt.Errorf("instance %q has no socks5/http local listener", instance.Name)
 }
 
 // URL 返回代理入口可用于 HTTP transport 的 URL。
@@ -262,13 +262,13 @@ func managedDirs(global domain.GlobalConfig) []managedDir {
 func checkDirectory(module string, target string) Check {
 	info, err := os.Stat(target)
 	if err != nil {
-		return issue(module, fmt.Sprintf("%s 不可访问: %v", target, err))
+		return issue(module, fmt.Sprintf("%s not accessible: %v", target, err))
 	}
 	if !info.IsDir() {
-		return issue(module, fmt.Sprintf("%s 不是目录", target))
+		return issue(module, fmt.Sprintf("%s is not a directory", target))
 	}
 	if info.Mode().Perm()&0100 == 0 {
-		return issue(module, fmt.Sprintf("%s 缺少 owner execute 权限", target))
+		return issue(module, fmt.Sprintf("%s missing owner execute permission", target))
 	}
 	return ok(module, target)
 }
@@ -277,13 +277,13 @@ func checkDirectory(module string, target string) Check {
 func checkBinary(binary string) Check {
 	info, err := os.Stat(binary)
 	if err != nil {
-		return issue("sing-box.binary", fmt.Sprintf("%s 不可访问: %v", binary, err))
+		return issue("sing-box.binary", fmt.Sprintf("%s not accessible: %v", binary, err))
 	}
 	if info.IsDir() {
-		return issue("sing-box.binary", fmt.Sprintf("%s 是目录", binary))
+		return issue("sing-box.binary", fmt.Sprintf("%s is a directory", binary))
 	}
 	if info.Mode().Perm()&0111 == 0 {
-		return issue("sing-box.binary", fmt.Sprintf("%s 不可执行", binary))
+		return issue("sing-box.binary", fmt.Sprintf("%s not executable", binary))
 	}
 	return ok("sing-box.binary", binary)
 }
@@ -294,31 +294,31 @@ func checkSingBox(ctx context.Context, binary string, set *config.AgentConfigSet
 		if exists, err := pathExists(binary); err != nil {
 			return []Check{
 				issue("sing-box.binary", err.Error()),
-				ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+				ok("sing-box.check", "no enabled instances, skipping sing-box check"),
 			}
 		} else if !exists {
 			return []Check{
-				ok("sing-box.binary", "没有启用的 instance，未要求安装 sing-box"),
-				ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+				ok("sing-box.binary", "no enabled instances, sing-box installation is not required"),
+				ok("sing-box.check", "no enabled instances, skipping sing-box check"),
 			}
 		}
 		return []Check{
 			checkBinary(binary),
-			ok("sing-box.check", "没有启用的 instance，跳过 sing-box check"),
+			ok("sing-box.check", "no enabled instances, skipping sing-box check"),
 		}
 	}
 	binaryCheck := checkBinary(binary)
 	if binaryCheck.Status == StatusIssue {
 		return []Check{
 			binaryCheck,
-			issue("sing-box.check", "sing-box binary 无效，无法执行 check"),
+			issue("sing-box.check", "sing-box binary is invalid, cannot run check"),
 		}
 	}
 	plan, err := runtimeplan.BuildPlan(set.Global, set.Instances, "")
 	if err != nil {
 		return []Check{
 			binaryCheck,
-			issue("sing-box.check", "构建 runtime plan 失败: "+err.Error()),
+			issue("sing-box.check", "build runtime plan failed: "+err.Error()),
 		}
 	}
 	if err := runtimeplan.CheckPlan(ctx, plan, runtimeplan.CommandConfigChecker{Binary: binary}); err != nil {
@@ -329,7 +329,7 @@ func checkSingBox(ctx context.Context, binary string, set *config.AgentConfigSet
 	}
 	return []Check{
 		binaryCheck,
-		ok("sing-box.check", "sing-box check 通过"),
+		ok("sing-box.check", "sing-box check passed"),
 	}
 }
 
@@ -359,7 +359,7 @@ func checkInstanceServiceFiles(instances []domain.Instance, managerKind string) 
 		results = append(results, checkFile("service."+instance.Name, target))
 	}
 	if len(results) == 0 {
-		results = append(results, ok("service", "没有启用的 instance"))
+		results = append(results, ok("service", "no enabled instances"))
 	}
 	return results
 }
@@ -385,7 +385,7 @@ func checkInstanceListeners(ctx context.Context, instances []domain.Instance) []
 		}
 	}
 	if len(results) == 0 {
-		results = append(results, ok("listen", "没有启用的监听目标"))
+		results = append(results, ok("listen", "no enabled listen targets"))
 	}
 	return results
 }
@@ -399,7 +399,7 @@ func checkTrafficFiles(global domain.GlobalConfig, managerKind string) []Check {
 	} else if exists {
 		results = append(results, ok("traffic.db", dbPath))
 	} else {
-		results = append(results, ok("traffic.db", "尚未采集 traffic 数据"))
+		results = append(results, ok("traffic.db", "no traffic data collected yet"))
 	}
 	kind, err := service.ResolveKind(managerKind)
 	if err != nil {
@@ -414,7 +414,7 @@ func checkTrafficFiles(global domain.GlobalConfig, managerKind string) []Check {
 			continue
 		}
 		if !exists {
-			results = append(results, ok("traffic.timer."+period, "traffic timer 未安装；需要自动采集时执行 setup local"))
+			results = append(results, ok("traffic.timer."+period, "traffic timer is not installed; run setup local when automatic collection is needed"))
 			continue
 		}
 		for _, target := range targets {
@@ -454,10 +454,10 @@ func checkSubscriptionServiceFile(managerKind string) Check {
 func checkFile(module string, target string) Check {
 	info, err := os.Stat(target)
 	if err != nil {
-		return issue(module, fmt.Sprintf("%s 不可访问: %v", target, err))
+		return issue(module, fmt.Sprintf("%s not accessible: %v", target, err))
 	}
 	if info.IsDir() {
-		return issue(module, fmt.Sprintf("%s 是目录", target))
+		return issue(module, fmt.Sprintf("%s is a directory", target))
 	}
 	return ok(module, target)
 }
@@ -469,10 +469,10 @@ func checkTCP(ctx context.Context, module string, address string) Check {
 	defer cancel()
 	conn, err := dialer.DialContext(dialCtx, "tcp", address)
 	if err != nil {
-		return issue(module, fmt.Sprintf("%s 不可连接: %v", address, err))
+		return issue(module, fmt.Sprintf("%s not connectable: %v", address, err))
 	}
 	if err := conn.Close(); err != nil {
-		return issue(module, fmt.Sprintf("%s 连接关闭失败: %v", address, err))
+		return issue(module, fmt.Sprintf("%s failed to close connection: %v", address, err))
 	}
 	return ok(module, address)
 }
@@ -520,7 +520,7 @@ func pathExists(target string) (bool, error) {
 // listenerAddress 将 inbound listen/port 转为本机可拨号地址。
 func listenerAddress(host string, port int) (string, error) {
 	if port < 1 || port > 65535 {
-		return "", fmt.Errorf("listener port 必须在 1-65535 范围内")
+		return "", fmt.Errorf("listener port must be in range 1-65535")
 	}
 	host = strings.TrimSpace(host)
 	switch host {
@@ -553,7 +553,7 @@ func httpClientForProxy(proxyValue InstanceProxy, timeout time.Duration) (*http.
 	case "socks5":
 		dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
 		if err != nil {
-			return nil, fmt.Errorf("创建 socks5 dialer: %w", err)
+			return nil, fmt.Errorf("create socks5 dialer: %w", err)
 		}
 		transport.DialContext = func(ctx context.Context, network string, address string) (net.Conn, error) {
 			if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
@@ -562,7 +562,7 @@ func httpClientForProxy(proxyValue InstanceProxy, timeout time.Duration) (*http.
 			return dialWithContext(ctx, dialer, network, address)
 		}
 	default:
-		return nil, fmt.Errorf("不支持的代理类型 %q", proxyValue.Scheme)
+		return nil, fmt.Errorf("unsupported proxy type %q", proxyValue.Scheme)
 	}
 	return &http.Client{Transport: transport, Timeout: timeout}, nil
 }
@@ -596,14 +596,14 @@ func resolveFamilies(family string) ([]string, error) {
 	case FamilyIPv6:
 		return []string{FamilyIPv6}, nil
 	default:
-		return nil, fmt.Errorf("family 必须是 all、ipv4 或 ipv6")
+		return nil, fmt.Errorf("family must be all, ipv4, or ipv6")
 	}
 }
 
 // queryEndpointFallback 按顺序请求 endpoint，直到得到可解析 IP。
 func queryEndpointFallback(ctx context.Context, client *http.Client, endpoints []string) (string, string, error) {
 	if len(endpoints) == 0 {
-		return "", "", fmt.Errorf("endpoint 列表不能为空")
+		return "", "", fmt.Errorf("endpoint list cannot be empty")
 	}
 	var errs []string
 	for _, endpoint := range endpoints {
@@ -620,7 +620,7 @@ func queryEndpointFallback(ctx context.Context, client *http.Client, endpoints [
 func queryEndpoint(ctx context.Context, client *http.Client, endpoint string) (string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", fmt.Errorf("创建请求: %w", err)
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -658,7 +658,7 @@ func parseIPResponse(data []byte) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("响应中未找到 IP")
+	return "", fmt.Errorf("IP not found in response")
 }
 
 // ok 构造 OK 诊断项。

@@ -10,7 +10,7 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/domain"
 )
 
-// TestStrictLoadRejectsUnknownFields 验证核心 schema 默认拒绝未知字段。
+// TestStrictLoadRejectsUnknownFields 验证核心 schema 默认拒绝unknown field。
 func TestStrictLoadRejectsUnknownFields(t *testing.T) {
 	baseDir := t.TempDir()
 	global := domain.DefaultGlobalConfig()
@@ -314,7 +314,7 @@ func TestLoadInstancesIgnoresDraftFiles(t *testing.T) {
 	}
 }
 
-// TestGlobalConfigRejectsNestedUnknownPortRangeField 验证端口范围对象内未知字段会失败。
+// TestGlobalConfigRejectsNestedUnknownPortRangeField 验证端口范围对象内unknown field会失败。
 func TestGlobalConfigRejectsNestedUnknownPortRangeField(t *testing.T) {
 	baseDir := t.TempDir()
 	path := writeTempFile(t, baseDir, "config.yaml", `
@@ -330,7 +330,7 @@ port_ranges:
 	if err == nil {
 		t.Fatal("expected nested unknown field error")
 	}
-	if !strings.Contains(err.Error(), "未知字段") {
+	if !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("expected unknown field error, got %v", err)
 	}
 }

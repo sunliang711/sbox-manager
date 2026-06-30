@@ -5,13 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/sunliang711/sbox-manager/internal/config"
+	"github.com/sunliang711/sbox-manager/internal/configtemplate"
 	"github.com/sunliang711/sbox-manager/internal/domain"
 	installer "github.com/sunliang711/sbox-manager/internal/install"
 	instancemgr "github.com/sunliang711/sbox-manager/internal/instance"
@@ -31,7 +34,7 @@ var newResourceInstaller = func() resourceInstallerRunner {
 func newSboxctlSetupCommand() *cobra.Command {
 	setup := &cobra.Command{
 		Use:   "setup",
-		Short: "准备本机配置、服务和运行资源",
+		Short: "Prepare local config, services, and runtime resources",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSboxctlSetupAll(cmd)
@@ -40,19 +43,19 @@ func newSboxctlSetupCommand() *cobra.Command {
 	setup.AddCommand(
 		&cobra.Command{
 			Use:   "local",
-			Short: "准备本机配置目录并安装服务文件",
+			Short: "Prepare local config directories and install service files",
 			Args:  cobra.NoArgs,
 			RunE:  runSboxctlSetupLocal,
 		},
 		&cobra.Command{
 			Use:   "binary",
-			Short: "下载并安装 sing-box、geosite 和 geoip",
+			Short: "Download and install sing-box, geosite, and geoip",
 			Args:  cobra.NoArgs,
 			RunE:  runSboxctlSetupBinary,
 		},
 		&cobra.Command{
 			Use:   "all",
-			Short: "执行 local 和 binary 两个 setup 阶段",
+			Short: "Run both local and binary setup stages",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runSboxctlSetupAll(cmd)
@@ -84,8 +87,7 @@ func runSboxctlSetupLocal(cmd *cobra.Command, args []string) error {
 	if err := installSboxctlServiceFiles(cmd, manager, set, ""); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup local 完成: %s\n", options.baseDir)
-	return err
+	return writeStatus(cmd, outputStatusOK, "Local setup completed.", outputKV("Base dir", options.baseDir))
 }
 
 // runSboxctlSetupBinary 下载并安装 agent 运行所需资源。
@@ -98,15 +100,17 @@ func runSboxctlSetupBinary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
+	progress := newInstallProgressWriter(cmd)
+	err = newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
 		Operation: installer.OperationInstall,
 		Resource:  installer.ResourceAll,
-		Progress:  installProgress(cmd),
-	}); err != nil {
+		Progress:  progress.Write,
+	})
+	progress.Finish()
+	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), "setup binary 完成")
-	return err
+	return writeStatus(cmd, outputStatusOK, "Binary resources are ready.")
 }
 
 // runSboxctlSetupAll 依次执行 local 和 binary 阶段。
@@ -121,8 +125,10 @@ func runSboxctlSetupAll(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "setup all 完成\n%s", sboxctlSetupNextSteps(options.baseDir))
-	return err
+	if err := writeStatus(cmd, outputStatusOK, "Agent environment setup completed."); err != nil {
+		return err
+	}
+	return writeNextSteps(cmd, sboxctlSetupNextSteps(options.baseDir)...)
 }
 
 // loadSetupBinaryConfigSet 加载 binary 阶段所需路径配置；缺少配置时使用默认 base-dir 路径。
@@ -138,15 +144,19 @@ func loadSetupBinaryConfigSet(baseDir string) (*config.AgentConfigSet, error) {
 }
 
 // sboxctlSetupNextSteps 返回 agent setup 后的下一步提示。
-func sboxctlSetupNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了创建实例配置，执行：sboxctl --base-dir %s add edge-us --template edge\n- 为了启动已启用实例，执行：sudo sboxctl --base-dir %s start\n- 不确定还缺什么，执行：sboxctl --base-dir %s doctor\n", baseDir, baseDir, baseDir)
+func sboxctlSetupNextSteps(baseDir string) []string {
+	return []string{
+		fmt.Sprintf("Create an instance config: sboxctl --base-dir %s add edge-us --template edge", baseDir),
+		fmt.Sprintf("Start enabled instances: sudo sboxctl --base-dir %s start", baseDir),
+		fmt.Sprintf("Check the environment: sboxctl --base-dir %s doctor", baseDir),
+	}
 }
 
 // newSboxctlConfigCommand 创建 agent 配置命令。
 func newSboxctlConfigCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config [INSTANCE]",
-		Short: "编辑或检查 agent 配置",
+		Short: "Edit or check agent config",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			checkOnly, _ := cmd.Flags().GetBool("check-only")
@@ -155,8 +165,7 @@ func newSboxctlConfigCommand() *cobra.Command {
 				if err := checkConfigCommand(cmd, args); err != nil {
 					return err
 				}
-				_, err := fmt.Fprintln(cmd.OutOrStdout(), "配置校验通过")
-				return err
+				return writeStatus(cmd, outputStatusOK, "Configuration validation passed.")
 			}
 			return editConfigCommand(cmd, args, editor)
 		},
@@ -167,7 +176,7 @@ func newSboxctlConfigCommand() *cobra.Command {
 func newSboxctlExampleCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "example [global|instance|inbound|outbound|group|route|traffic] [TYPE]",
-		Short: "输出配置示例片段",
+		Short: "Print configuration example snippets",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := "global"
@@ -195,7 +204,7 @@ func newSboxctlExampleCommand() *cobra.Command {
 func newSboxctlAddCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add NAME",
-		Short: "新增 sing-box 实例配置",
+		Short: "Add a sing-box instance config",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -226,8 +235,7 @@ func newSboxctlAddCommand() *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "instance 已创建: %s\n", created.Name)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Instance created.", outputKV("Name", created.Name))
 		},
 	}
 }
@@ -245,24 +253,111 @@ func splitCommaList(value string) []string {
 	return items
 }
 
+// writeInstanceList 将 instance 摘要输出为固定列的状态表。
+func writeInstanceList(cmd *cobra.Command, options *rootOptions, set *config.AgentConfigSet) error {
+	instances := append([]domain.Instance(nil), set.Instances...)
+	sort.SliceStable(instances, func(i int, j int) bool {
+		return instances[i].Name < instances[j].Name
+	})
+	manager, err := newSboxctlServiceManager(options)
+	if err != nil {
+		return err
+	}
+	rows := [][]string{
+		{"Name", "Role", "Enabled", "Running", "Generated", "Ports"},
+		{"------", "----", "-------", "-------", "---------", "------------------------------------------------"},
+	}
+	for _, instance := range instances {
+		domain.ApplyInstanceDefaults(&instance)
+		rows = append(rows, []string{
+			instance.Name,
+			instance.Role,
+			yesNo(instance.Enabled),
+			instanceListRunningStatus(cmd, manager, instance.Name),
+			instanceListGeneratedStatus(set.Global, instance.Name),
+			instanceListPorts(instance),
+		})
+	}
+	return writeRows(cmd, rows)
+}
+
+// instanceListRunningStatus 查询 instance 对应服务的运行态，查询失败时保持列表可读。
+func instanceListRunningStatus(cmd *cobra.Command, manager *service.Manager, name string) string {
+	serviceName := service.ServiceNameForKind(manager.Kind(), name)
+	running, err := manager.IsRunning(cmd.Context(), serviceName)
+	if err != nil {
+		return "unknown"
+	}
+	return yesNo(running)
+}
+
+// instanceListGeneratedStatus 判断 instance 的 sing-box 运行配置是否已生成。
+func instanceListGeneratedStatus(global domain.GlobalConfig, name string) string {
+	path := filepath.Join(global.Paths.Generated, "sing-box", name+".json")
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "no"
+		}
+		return "unknown"
+	}
+	return yesNo(!info.IsDir())
+}
+
+// instanceListPorts 汇总 instance 暴露的 API 与 inbound 端口。
+func instanceListPorts(instance domain.Instance) string {
+	ports := make([]string, 0, len(instance.Inbounds)+1)
+	if instance.API.Enabled {
+		_, port, err := net.SplitHostPort(instance.API.Listen)
+		if err == nil {
+			ports = append(ports, "api="+port)
+		} else {
+			ports = append(ports, "api=?")
+		}
+	}
+	for _, inbound := range instance.Inbounds {
+		if inbound.Port <= 0 {
+			continue
+		}
+		name := inbound.Name
+		if name == "" {
+			name = inbound.Type
+		}
+		if name == "" {
+			name = "inbound"
+		}
+		ports = append(ports, fmt.Sprintf("%s=%d", name, inbound.Port))
+	}
+	if len(ports) == 0 {
+		return "-"
+	}
+	return strings.Join(ports, ", ")
+}
+
+// yesNo 将布尔状态转成列表中更易读的英文状态。
+func yesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
 // newSboxctlListCommand 创建 list 命令。
 func newSboxctlListCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "列出 agent 管理的实例",
+		Short: "List instances managed by the agent",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
 			if err != nil {
 				return err
 			}
-			verbose, _ := cmd.Flags().GetBool("verbose")
-			for _, line := range instancemgr.ListLines(set.Instances, verbose) {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
-					return err
-				}
+			options, err := getRootOptions(cmd)
+			if err != nil {
+				return err
 			}
-			return nil
+			return writeInstanceList(cmd, options, set)
 		},
 	}
 }
@@ -271,7 +366,7 @@ func newSboxctlListCommand() *cobra.Command {
 func newSboxctlCloneCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clone SOURCE TARGET",
-		Short: "克隆实例配置",
+		Short: "Clone an instance config",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -291,8 +386,7 @@ func newSboxctlCloneCommand() *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "instance 已克隆: %s\n", cloned.Name)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Instance cloned.", outputKV("Source", args[0]), outputKV("Target", cloned.Name))
 		},
 	}
 }
@@ -301,7 +395,7 @@ func newSboxctlCloneCommand() *cobra.Command {
 func newSboxctlMemberCommand() *cobra.Command {
 	member := &cobra.Command{
 		Use:   "member",
-		Short: "维护 selector 或 urltest group 成员",
+		Short: "Manage selector or urltest group members",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -309,7 +403,7 @@ func newSboxctlMemberCommand() *cobra.Command {
 	member.AddCommand(
 		&cobra.Command{
 			Use:   "list INSTANCE GROUP",
-			Short: "列出 group 成员",
+			Short: "List group members",
 			Args:  cobra.ExactArgs(2),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				set, err := loadAgentSetFromCommand(cmd)
@@ -320,16 +414,15 @@ func newSboxctlMemberCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				rows := make([][]string, 0, len(members))
 				for _, member := range members {
-					if _, err := fmt.Fprintln(cmd.OutOrStdout(), member); err != nil {
-						return err
-					}
+					rows = append(rows, []string{member})
 				}
-				return nil
+				return writeTable(cmd, []string{"MEMBER"}, rows)
 			},
 		},
-		memberMutationCommand("add", "添加 group 成员", instancemgr.MemberAdd),
-		memberMutationCommand("remove", "移除 group 成员", instancemgr.MemberRemove),
+		memberMutationCommand("add", "Add a group member", instancemgr.MemberAdd),
+		memberMutationCommand("remove", "Remove a group member", instancemgr.MemberRemove),
 	)
 	return member
 }
@@ -347,8 +440,12 @@ func memberMutationCommand(name string, short string, mutate func(string, string
 			if err := mutate(options.baseDir, args[0], args[1], args[2]); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "member %s 完成\n", name)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Group member updated.",
+				outputKV("Action", name),
+				outputKV("Instance", args[0]),
+				outputKV("Group", args[1]),
+				outputKV("Member", args[2]),
+			)
 		},
 	}
 }
@@ -357,7 +454,7 @@ func memberMutationCommand(name string, short string, mutate func(string, string
 func newSboxctlRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove NAME",
-		Short: "移除实例配置",
+		Short: "Remove an instance config",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -368,8 +465,7 @@ func newSboxctlRemoveCommand() *cobra.Command {
 			if err := instancemgr.Remove(options.baseDir, args[0], purge); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "instance 已移除: %s\n", args[0])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Instance removed.", outputKV("Name", args[0]))
 		},
 	}
 }
@@ -390,7 +486,7 @@ func newSboxctlServiceActionCommand(action string) *cobra.Command {
 func newSboxctlServiceCommand() *cobra.Command {
 	serviceCommand := &cobra.Command{
 		Use:   "service",
-		Short: "管理实例 systemd 模板 unit 或 launchd plist",
+		Short: "Manage instance systemd template unit or launchd plist",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -398,24 +494,24 @@ func newSboxctlServiceCommand() *cobra.Command {
 	serviceCommand.AddCommand(
 		newSboxctlServiceInstallCommand(),
 		newSboxctlServiceUninstallCommand(),
-		serviceSubActionCommand("start", "启动实例服务"),
-		serviceSubActionCommand("stop", "停止实例服务"),
-		serviceSubActionCommand("restart", "重启实例服务"),
-		serviceSubActionCommand("status", "查看实例服务状态"),
-		serviceSubActionCommand("logs", "查看实例服务日志"),
-		serviceSubActionCommand("log", "查看实例服务日志"),
-		serviceSubActionCommand("enable", "启用实例服务"),
-		serviceSubActionCommand("disable", "禁用实例服务"),
+		serviceSubActionCommand("start", "Start instance services"),
+		serviceSubActionCommand("stop", "Stop instance services"),
+		serviceSubActionCommand("restart", "Restart instance services"),
+		serviceSubActionCommand("status", "Show instance service status"),
+		serviceSubActionCommand("logs", "Show instance service logs"),
+		serviceSubActionCommand("log", "Show instance service logs"),
+		serviceSubActionCommand("enable", "Enable instance services"),
+		serviceSubActionCommand("disable", "Disable instance services"),
 	)
-	mustCommand(serviceCommand, "logs").Flags().BoolP("follow", "f", false, "持续跟随日志")
-	mustCommand(serviceCommand, "log").Flags().BoolP("follow", "f", false, "持续跟随日志")
+	mustCommand(serviceCommand, "logs").Flags().BoolP("follow", "f", false, "follow logs")
+	mustCommand(serviceCommand, "log").Flags().BoolP("follow", "f", false, "follow logs")
 	return serviceCommand
 }
 
 func newSboxctlServiceInstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install [TARGET]",
-		Short: "安装实例服务文件",
+		Short: "Install instance service files",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, set, manager, err := loadServiceCommandContext(cmd)
@@ -425,8 +521,7 @@ func newSboxctlServiceInstallCommand() *cobra.Command {
 			if err := installSboxctlServiceFiles(cmd, manager, set, optionalArg(args)); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "service install 完成: %s\n", manager.Kind())
-			return err
+			return writeStatus(cmd, outputStatusOK, "Instance service files installed.", outputKV("Service manager", manager.Kind()))
 		},
 	}
 }
@@ -438,7 +533,7 @@ func installSboxctlServiceFiles(cmd *cobra.Command, manager *service.Manager, se
 	}
 	binary, err := trafficExecutablePath()
 	if err != nil {
-		return fmt.Errorf("解析 sboxctl 路径: %w", err)
+		return fmt.Errorf("resolve sboxctl path: %w", err)
 	}
 	if err := manager.InstallTrafficTimers(cmd.Context(), set.BaseDir, set.Global.Paths.Traffic, set.Global.Paths.Logs, binary); err != nil {
 		return err
@@ -446,14 +541,13 @@ func installSboxctlServiceFiles(cmd *cobra.Command, manager *service.Manager, se
 	if _, err := manager.RunTrafficTimers(cmd.Context(), "enable", false); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), "traffic timer enable 完成")
-	return err
+	return writeStatus(cmd, outputStatusOK, "Traffic timers enabled.")
 }
 
 func newSboxctlServiceUninstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall [TARGET]",
-		Short: "卸载实例服务文件",
+		Short: "Uninstall instance service files",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, set, manager, err := loadServiceCommandContext(cmd)
@@ -463,8 +557,7 @@ func newSboxctlServiceUninstallCommand() *cobra.Command {
 			if err := manager.Uninstall(cmd.Context(), set.Instances, optionalArg(args)); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "service uninstall 完成")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Instance service files uninstalled.")
 		},
 	}
 }
@@ -516,12 +609,11 @@ func loadServiceCommandContext(cmd *cobra.Command) (*rootOptions, *config.AgentC
 
 func writeServiceResults(cmd *cobra.Command, action string, results []service.Result) error {
 	if len(results) == 0 {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 完成，无目标服务\n", action)
-		return err
+		return writeStatus(cmd, outputStatusInfo, "No target services matched.", outputKV("Action", action))
 	}
 	for _, result := range results {
 		if len(result.Output) > 0 {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "==> %s\n%s", result.Service, result.Output); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Output: %s\n%s", result.Service, result.Output); err != nil {
 				return err
 			}
 			if !strings.HasSuffix(string(result.Output), "\n") {
@@ -531,7 +623,7 @@ func writeServiceResults(cmd *cobra.Command, action string, results []service.Re
 			}
 			continue
 		}
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s 完成: %s\n", action, result.Service); err != nil {
+		if err := writeStatus(cmd, outputStatusOK, "Service action completed.", outputKV("Action", action), outputKV("Service", result.Service)); err != nil {
 			return err
 		}
 	}
@@ -572,6 +664,7 @@ func newResourceCommand(use string, short string) *cobra.Command {
 					}
 				}
 			}
+			progress := newInstallProgressWriter(cmd)
 			err = newResourceInstaller().Run(cmd.Context(), set.Global, installer.Options{
 				Operation:     use,
 				Resource:      args[0],
@@ -580,8 +673,9 @@ func newResourceCommand(use string, short string) *cobra.Command {
 				SHA256:        sha256Text,
 				ArchiveMember: member,
 				Purge:         purge,
-				Progress:      installProgress(cmd),
+				Progress:      progress.Write,
 			})
+			progress.Finish()
 			if err != nil {
 				return err
 			}
@@ -600,14 +694,16 @@ func newResourceCommand(use string, short string) *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s 完成\n", use, args[0])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Resource operation completed.",
+				outputKV("Operation", use),
+				outputKV("Resource", args[0]),
+			)
 		},
 	}
-	cmd.Flags().String("version", "", "目标版本")
-	cmd.Flags().String("source", "", "下载源")
-	cmd.Flags().String("sha256", "", "sha256 校验值")
-	cmd.Flags().String("archive-member", "", "归档内成员名称")
+	cmd.Flags().String("version", "", "target version")
+	cmd.Flags().String("source", "", "download source")
+	cmd.Flags().String("sha256", "", "sha256 checksum")
+	cmd.Flags().String("archive-member", "", "archive member name")
 	return cmd
 }
 
@@ -627,7 +723,7 @@ func loadResourceCommandConfigSet(baseDir string, allowPurgedBaseDir bool) (*con
 func defaultAgentConfigSetForPurgedBaseDir(baseDir string) (*config.AgentConfigSet, error) {
 	resolvedBase, err := filepath.Abs(baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("清理 base-dir %s: %w", baseDir, err)
+		return nil, fmt.Errorf("clean base-dir %s: %w", baseDir, err)
 	}
 	resolvedBase = filepath.Clean(resolvedBase)
 	global := domain.DefaultGlobalConfig()
@@ -645,7 +741,7 @@ func defaultAgentConfigSetForPurgedBaseDir(baseDir string) (*config.AgentConfigS
 func purgeAgentBaseDir(baseDir string) error {
 	cleaned := filepath.Clean(baseDir)
 	if cleaned == "." || cleaned == string(os.PathSeparator) {
-		return fmt.Errorf("拒绝清理危险 base-dir %s", cleaned)
+		return fmt.Errorf("refuse to clean dangerous base-dir %s", cleaned)
 	}
 	exists, err := pathExists(cleaned)
 	if err != nil {
@@ -655,7 +751,7 @@ func purgeAgentBaseDir(baseDir string) error {
 		return nil
 	}
 	if err := os.RemoveAll(cleaned); err != nil {
-		return fmt.Errorf("清理 agent base-dir %s: %w", cleaned, err)
+		return fmt.Errorf("clean agent base-dir %s: %w", cleaned, err)
 	}
 	return nil
 }
@@ -666,7 +762,7 @@ func pathExists(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+		return false, fmt.Errorf("check path %s: %w", path, err)
 	}
 	return true, nil
 }
@@ -723,10 +819,10 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	draft := draftPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取配置文件 %s: %w", path, err)
+		return fmt.Errorf("read config file %s: %w", path, err)
 	}
 	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("写入草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("write draft file %s: %w", draft, err)
 	}
 	defer os.Remove(draft)
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
@@ -734,7 +830,7 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	}
 	draftData, err := os.ReadFile(draft)
 	if err != nil {
-		return fmt.Errorf("读取草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("read draft file %s: %w", draft, err)
 	}
 	if len(args) == 0 {
 		loaded, err := config.LoadGlobalConfig(draft, options.baseDir)
@@ -752,13 +848,12 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 		return err
 	}
 	if bytes.Equal(data, draftData) {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "配置未变化: %s\n", path)
-		return err
+		return writeStatus(cmd, outputStatusInfo, "Configuration unchanged.", outputKV("File", path))
 	}
 	if err := os.Rename(draft, path); err != nil {
-		return fmt.Errorf("替换配置文件 %s: %w", path, err)
+		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "配置已更新: %s\n", path); err != nil {
+	if err := writeStatus(cmd, outputStatusOK, "Configuration updated.", outputKV("File", path)); err != nil {
 		return err
 	}
 	if len(args) == 1 {
@@ -767,11 +862,9 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 			return err
 		}
 		if restarted {
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "实例运行中，已自动重启: %s\n", args[0])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Running instance restarted automatically.", outputKV("Instance", args[0]))
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "实例未运行，跳过自动重启: %s\n", args[0])
-		return err
+		return writeStatus(cmd, outputStatusInfo, "Instance is not running; automatic restart skipped.", outputKV("Instance", args[0]))
 	}
 	return nil
 }
@@ -813,7 +906,7 @@ func restartEditedInstanceIfRunning(cmd *cobra.Command, options *rootOptions, na
 func validateInstanceDraft(path string, extension string, global domain.GlobalConfig) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取草稿文件 %s: %w", path, err)
+		return fmt.Errorf("read draft file %s: %w", path, err)
 	}
 	instanceValue := domain.DefaultInstance(global)
 	format := "yaml"
@@ -839,10 +932,10 @@ func editInstanceByName(baseDir string, name string, editor string) error {
 	draft := draftPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取配置文件 %s: %w", path, err)
+		return fmt.Errorf("read config file %s: %w", path, err)
 	}
 	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("写入草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("write draft file %s: %w", draft, err)
 	}
 	defer os.Remove(draft)
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
@@ -852,7 +945,7 @@ func editInstanceByName(baseDir string, name string, editor string) error {
 		return err
 	}
 	if err := os.Rename(draft, path); err != nil {
-		return fmt.Errorf("替换配置文件 %s: %w", path, err)
+		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
 	return nil
 }
@@ -864,25 +957,48 @@ func draftPath(path string) string {
 func serviceActionShort(action string) string {
 	switch action {
 	case "stop":
-		return "停止实例服务"
+		return "Stop instance services"
 	case "status":
-		return "查看实例服务状态"
+		return "Show instance service status"
 	case "logs":
-		return "查看实例服务日志"
+		return "Show instance service logs"
 	case "enable":
-		return "启用实例服务"
+		return "Enable instance services"
 	case "disable":
-		return "禁用实例服务"
+		return "Disable instance services"
 	default:
-		return "管理实例服务"
+		return "Manage instance services"
 	}
 }
 
-// installProgress 将资源安装器的英文进度日志输出到 stderr。
-func installProgress(cmd *cobra.Command) installer.Progress {
-	return func(message string) {
-		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), message)
+type installProgressWriter struct {
+	cmd        *cobra.Command
+	inProgress bool
+}
+
+// newInstallProgressWriter 创建安装进度输出器，下载进度会覆盖当前行展示。
+func newInstallProgressWriter(cmd *cobra.Command) *installProgressWriter {
+	return &installProgressWriter{cmd: cmd}
+}
+
+// Write 将资源安装器的英文进度日志输出到 stderr。
+func (w *installProgressWriter) Write(message string) {
+	if strings.HasPrefix(message, "download: progress ") {
+		_, _ = fmt.Fprintf(w.cmd.ErrOrStderr(), "\r\033[2K%s", message)
+		w.inProgress = true
+		return
 	}
+	w.Finish()
+	_, _ = fmt.Fprintln(w.cmd.ErrOrStderr(), message)
+}
+
+// Finish 在下载进度覆盖行之后补换行，避免后续输出粘在同一行。
+func (w *installProgressWriter) Finish() {
+	if !w.inProgress {
+		return
+	}
+	_, _ = fmt.Fprintln(w.cmd.ErrOrStderr())
+	w.inProgress = false
 }
 
 func exampleSnippet(kind string, typeName string) (string, error) {
@@ -895,45 +1011,30 @@ func exampleSnippet(kind string, typeName string) (string, error) {
 		}
 		return globalExampleSnippet(), nil
 	case "instance":
-		return instanceExampleSnippet(typeName)
+		return configtemplate.RenderInstanceExample(typeName, configtemplate.DefaultContext())
 	case "inbound":
-		return inboundExampleSnippet(typeName)
+		return configtemplate.RenderExample("inbound", typeName, configtemplate.DefaultContext())
 	case "outbound":
-		return outboundExampleSnippet(typeName)
+		return configtemplate.RenderExample("outbound", typeName, configtemplate.DefaultContext())
 	case "group":
-		return groupExampleSnippet(typeName)
+		return configtemplate.RenderExample("group", typeName, configtemplate.DefaultContext())
 	case "route":
-		return routeExampleSnippet(typeName)
+		return configtemplate.RenderExample("route", typeName, configtemplate.DefaultContext())
 	case "traffic":
 		if typeName != "" {
 			return "", unsupportedExampleType("traffic", typeName, []string{""})
 		}
 		return trafficExampleSnippet(), nil
 	default:
-		return "", fmt.Errorf("不支持的 example 类型 %q，支持：global, instance, inbound, outbound, group, route, traffic", kind)
+		return "", fmt.Errorf("unsupported example kind %q; supported values: global, instance, inbound, outbound, group, route, traffic", kind)
 	}
 }
 
 func unsupportedExampleType(kind string, typeName string, supported []string) error {
 	if len(supported) == 1 && supported[0] == "" {
-		return fmt.Errorf("%s example 不支持额外 TYPE %q", kind, typeName)
+		return fmt.Errorf("%s example does not accept extra TYPE %q", kind, typeName)
 	}
-	return fmt.Errorf("不支持的 %s example TYPE %q，支持：%s", kind, typeName, strings.Join(supported, ", "))
-}
-
-func normalizeExampleType(typeName string) string {
-	switch strings.ReplaceAll(strings.ReplaceAll(typeName, "-", ""), "_", "") {
-	case "ss", "shadowsocks22", "shadowsocks2022":
-		return "shadowsocks"
-	case "socks":
-		return "socks5"
-	case "hy2", "hysteria2":
-		return "hysteria2"
-	case "urltest":
-		return "urltest"
-	default:
-		return typeName
-	}
+	return fmt.Errorf("unsupported %s example TYPE %q; supported values: %s", kind, typeName, strings.Join(supported, ", "))
 }
 
 func globalExampleSnippet() string {
@@ -992,663 +1093,6 @@ security:
   require_auth_for_public_socks_http: true # 公网 socks5/http inbound 默认要求密码鉴权。
   allow_noauth_public: false # 只有明确放开时才允许公网 noauth。
 `
-}
-
-func instanceExampleSnippet(typeName string) (string, error) {
-	typeName = normalizeExampleType(typeName)
-	switch typeName {
-	case "", "edge":
-		return `# Edge instance 完整示例，可保存为 instances/edge-us.yaml。
-name: edge-us # 实例名，必须是安全 basename，不能为 ALL。
-enabled: true # false 时不参与默认生命周期操作。
-role: edge # 支持 edge、relay、urltest。
-labels: [prod, us] # 自定义标签，用于展示和过滤。
-
-api:
-  enabled: false # 是否覆盖全局默认并启用 sing-box API。
-  listen: 127.0.0.1:10085 # API 监听地址。
-  token: "" # 非 loopback 监听必须配置 token。
-
-inbounds:
-  - name: vmess-main # inbound 名称，实例内唯一。
-    type: vmess # 支持 vmess、shadowsocks、socks5、http。
-    listen: 0.0.0.0 # 监听主机，不包含端口。
-    port: 24100 # 监听端口，范围 1-65535。
-    tag: vmess-vmess-main # sing-box inbound tag；不填默认 <type>-<name>。
-    udp: true # 是否启用 UDP。
-    users:
-      - name: alice # 用户名，vmess/shadowsocks 必填。
-        uuid: 11111111-1111-4111-8111-111111111111 # vmess 用户 UUID。
-        remark: US VMess # subscription.remark 为空时的订阅展示名。
-        tag: edge-us-vmess-main # 订阅节点 tag 覆盖。
-    subscription:
-      enabled: true # 是否导出到 sboxsub 订阅 input。
-      user: alice # 启用订阅时必填，必须引用 users.name。
-      server: proxy.example.com # 为空时使用全局 external_host。
-      remark: US VMess # 启用订阅时必填，客户端展示名。
-      region: US # 可选，两位大写地区码。
-  - name: local-socks
-    type: socks5
-    listen: 127.0.0.1
-    port: 17000
-    tag: socks5-local-socks
-    udp: true
-    auth:
-      type: noauth # loopback 本地代理可用 noauth；公网监听建议 password。
-      username: ""
-      password: ""
-    subscription:
-      enabled: false
-      user: ""
-      server: ""
-      remark: ""
-      region: ""
-  - name: local-http
-    type: http
-    listen: 127.0.0.1
-    port: 18000
-    tag: http-local-http
-    udp: false
-    auth:
-      type: noauth
-      username: ""
-      password: ""
-    subscription:
-      enabled: false
-      user: ""
-      server: ""
-      remark: ""
-      region: ""
-
-outbounds:
-  - name: direct # outbound 名称，也会作为 sing-box tag。
-    type: direct # 直连，不需要 server/port。
-  - name: block
-    type: block # 阻断，不需要 server/port。
-  - name: ss-upstream
-    type: shadowsocks
-    server: ss.example.com # 远端类型必填。
-    port: 443
-    method: 2022-blake3-aes-256-gcm # Shadowsocks 2022 示例方法。
-    password: change-me # shadowsocks 必填。
-    tls:
-      enabled: false # 是否启用 TLS。
-      server_name: ss.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-  - name: vmess-upstream
-    type: vmess
-    server: vmess.example.com
-    port: 443
-    uuid: 22222222-2222-4222-8222-222222222222 # vmess 必填。
-    alter_id: 0 # 可选，默认 0。
-    security: auto # VMess 加密方式，常用 auto。
-    tls:
-      enabled: true
-      server_name: vmess.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-    network: tcp # VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
-    transport:
-      type: ws # 支持 http、ws、quic、grpc、httpupgrade。
-      path: /vmess
-      headers:
-        Host: vmess.example.com
-
-groups:
-  - name: auto
-    type: urltest # 支持 selector、urltest。
-    outbounds: [ss-upstream, vmess-upstream, direct] # 引用已定义 outbound。
-    url: http://www.gstatic.com/generate_204 # urltest 探测地址。
-    interval: 300 # 探测间隔，单位秒。
-    tolerance: 50 # 延迟容差，单位毫秒。
-
-route:
-  default: auto # 默认 outbound 或 group 名称。
-  rules:
-    - type: domain_suffix # 支持 domain、domain_suffix、domain_keyword、ip_cidr、geoip、geosite。
-      values: [google.com, youtube.com]
-      outbound: auto
-    - type: ip_cidr
-      values: [10.0.0.0/8, 192.168.0.0/16]
-      outbound: direct
-
-traffic:
-  enabled: true # 是否为该实例采集 traffic。
-  scopes: [user, inbound, outbound] # 支持 user、inbound、outbound。
-`, nil
-	case "relay":
-		return `# Relay instance 示例，公网入口使用 Shadowsocks 2022。
-name: relay-us
-enabled: true
-role: relay
-labels: [relay, us]
-api:
-  enabled: false
-  listen: 127.0.0.1:10086
-  token: ""
-inbounds:
-  - name: ss-main
-    type: shadowsocks
-    listen: 0.0.0.0
-    port: 24200
-    tag: shadowsocks-ss-main
-    udp: true
-    method: 2022-blake3-aes-256-gcm # 可被 users[].method 覆盖。
-    users:
-      - name: alice
-        password: change-me-32-byte-key # shadowsocks 用户必填。
-        method: 2022-blake3-aes-256-gcm # 为空时继承 inbound.method。
-        remark: US Shadowsocks
-        tag: relay-us-ss-main
-    subscription:
-      enabled: true
-      user: alice
-      server: proxy.example.com
-      remark: US Shadowsocks
-      region: US
-outbounds:
-  - name: vmess-upstream
-    type: vmess
-    server: vmess.example.com
-    port: 443
-    uuid: 22222222-2222-4222-8222-222222222222
-    alter_id: 0
-    security: auto
-    tls:
-      enabled: true
-      server_name: vmess.example.com
-      insecure: false
-      alpn: [h2, http/1.1]
-    transport:
-      type: ws
-      path: /vmess
-      headers:
-        Host: vmess.example.com
-route:
-  default: vmess-upstream
-traffic:
-  enabled: true
-  scopes: [user, inbound, outbound]
-`, nil
-	case "urltest":
-		return `# URLTest instance 示例，通过已有 instance ref 成员自动选择延迟更低的 outbound。
-# 创建前可使用：sboxctl add auto-us --template urltest --members edge-us,relay-us
-name: auto-us
-enabled: true
-role: urltest
-labels: [auto, us]
-api:
-  enabled: false
-  listen: 127.0.0.1:10087
-  token: ""
-inbounds:
-  - name: vmess-main
-    type: vmess
-    listen: 0.0.0.0
-    port: 24300
-    tag: vmess-vmess-main
-    udp: true
-    users:
-      - name: alice
-        uuid: 11111111-1111-4111-8111-111111111111
-    subscription:
-      enabled: true
-      user: alice
-      server: proxy.example.com
-      remark: Auto VMess
-      region: US
-outbounds:
-  - name: edge-us-local-socks
-    type: ref # sbox-manager 抽象类型，生成 sing-box 时解析为 socks5/http outbound。
-    ref: edge-us.local-socks # 引用已有 instance 的 socks5/http inbound。
-  - name: relay-us-local-socks
-    type: ref
-    ref: relay-us.local-socks
-groups:
-  - name: auto
-    type: urltest
-    outbounds: [edge-us-local-socks, relay-us-local-socks]
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50
-route:
-  default: auto
-traffic:
-  enabled: true
-  scopes: [user, inbound, outbound]
-`, nil
-	default:
-		return "", unsupportedExampleType("instance", typeName, []string{"edge", "relay", "urltest"})
-	}
-}
-
-func inboundExampleSnippet(typeName string) (string, error) {
-	typeName = normalizeExampleType(typeName)
-	switch typeName {
-	case "", "all":
-		return inboundVmessExample() + "\n" + inboundVLESSExample() + "\n" + inboundAnyTLSExample() + "\n" + inboundShadowsocksExample() + "\n" + inboundSocks5Example() + "\n" + inboundHTTPExample(), nil
-	case "vmess":
-		return inboundVmessExample(), nil
-	case "vless":
-		return inboundVLESSExample(), nil
-	case "anytls":
-		return inboundAnyTLSExample(), nil
-	case "shadowsocks":
-		return inboundShadowsocksExample(), nil
-	case "socks5":
-		return inboundSocks5Example(), nil
-	case "http":
-		return inboundHTTPExample(), nil
-	default:
-		return "", unsupportedExampleType("inbound", typeName, []string{"vmess", "vless", "anytls", "shadowsocks", "shadowsocks22", "socks5", "http", "all"})
-	}
-}
-
-func inboundVmessExample() string {
-	return `# VMess inbound，可放入 instance.inbounds。
-- name: vmess-main # 实例内唯一名称。
-  type: vmess # 协议类型。
-  listen: 0.0.0.0 # 监听主机，不包含端口。
-  port: 24100 # 监听端口。
-  tag: vmess-vmess-main # 可选；不填默认 <type>-<name>。
-  udp: true # 是否启用 UDP。
-  users:
-    - name: alice # VMess 用户名。
-      uuid: 11111111-1111-4111-8111-111111111111 # VMess 必填 UUID。
-      remark: US VMess # subscription.remark 为空时的订阅展示名。
-      tag: edge-us-vmess-main # 订阅节点 tag 覆盖。
-  subscription:
-    enabled: true # 是否导出订阅节点。
-    user: alice # 启用时必填，必须引用 users.name。
-    server: proxy.example.com # 为空时使用 global.external_host。
-    remark: US VMess # 启用时必填。
-    region: US # 可选，两位大写地区码。`
-}
-
-// inboundVLESSExample 返回 VLESS inbound 示例片段。
-func inboundVLESSExample() string {
-	return `# VLESS inbound，可放入 instance.inbounds。
-- name: vless-main
-  type: vless
-  listen: 0.0.0.0
-  port: 24110
-  tag: vless-vless-main
-  udp: true
-  tls:
-    enabled: true # 可按需启用 TLS。
-  transport:
-    type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
-    path: /vless
-    headers:
-      Host: proxy.example.com
-  users:
-    - name: alice
-      uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填 UUID。
-      flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
-      remark: US VLESS
-      tag: edge-us-vless-main
-  subscription:
-    enabled: true
-    user: alice
-    server: proxy.example.com
-    remark: US VLESS
-    region: US`
-}
-
-// inboundAnyTLSExample 返回 AnyTLS inbound 示例片段。
-func inboundAnyTLSExample() string {
-	return `# AnyTLS inbound，可放入 instance.inbounds。
-- name: anytls-main
-  type: anytls
-  listen: 0.0.0.0
-  port: 24120
-  tag: anytls-anytls-main
-  udp: true
-  tls:
-    enabled: true # AnyTLS 必须启用 TLS。
-  users:
-    - name: alice
-      password: change-me # AnyTLS 用户必填密码。
-      remark: US AnyTLS
-      tag: edge-us-anytls-main
-  subscription:
-    enabled: true
-    user: alice
-    server: proxy.example.com
-    remark: US AnyTLS
-    region: US`
-}
-
-func inboundShadowsocksExample() string {
-	return `# Shadowsocks inbound，method 可使用 Shadowsocks 2022 方法。
-- name: ss-main
-  type: shadowsocks # 配置类型仍为 shadowsocks；shadowsocks22 是示例别名。
-  listen: 0.0.0.0
-  port: 24200
-  tag: shadowsocks-ss-main
-  udp: true
-  method: 2022-blake3-aes-256-gcm # 可被 users[].method 覆盖。
-  users:
-    - name: alice
-      password: change-me-32-byte-key # Shadowsocks 用户必填。
-      method: 2022-blake3-aes-256-gcm # 为空时继承 inbound.method。
-      remark: US Shadowsocks
-      tag: edge-us-ss-main
-  subscription:
-    enabled: true
-    user: alice
-    server: proxy.example.com
-    remark: US Shadowsocks
-    region: US`
-}
-
-func inboundSocks5Example() string {
-	return `# SOCKS5 inbound，本地监听可 noauth，公网监听建议 password。
-- name: local-socks
-  type: socks5
-  listen: 127.0.0.1
-  port: 17000
-  tag: socks5-local-socks
-  udp: true
-  auth:
-    type: password # 支持 noauth、password。
-    username: alice # type=password 时必填。
-    password: change-me # type=password 时必填。
-  subscription:
-    enabled: false # socks5/http 也可导出订阅，启用时填写下面字段。
-    user: alice
-    server: proxy.example.com
-    remark: Local SOCKS5
-    region: US`
-}
-
-func inboundHTTPExample() string {
-	return `# HTTP inbound，本地监听可 noauth，公网监听建议 password。
-- name: local-http
-  type: http
-  listen: 127.0.0.1
-  port: 18000
-  tag: http-local-http
-  udp: false
-  auth:
-    type: password # 支持 noauth、password。
-    username: alice
-    password: change-me
-  subscription:
-    enabled: false
-    user: alice
-    server: proxy.example.com
-    remark: Local HTTP
-    region: US`
-}
-
-func outboundExampleSnippet(typeName string) (string, error) {
-	typeName = normalizeExampleType(typeName)
-	switch typeName {
-	case "", "all":
-		return outboundDirectExample() + "\n" + outboundBlockExample() + "\n" + outboundRefExample() + "\n" + outboundShadowsocksExample() + "\n" + outboundVMessExample() + "\n" + outboundVLESSExample() + "\n" + outboundAnyTLSExample() + "\n" + outboundTrojanExample() + "\n" + outboundHysteria2Example() + "\n" + outboundSocks5Example() + "\n" + outboundHTTPExample(), nil
-	case "direct":
-		return outboundDirectExample(), nil
-	case "block":
-		return outboundBlockExample(), nil
-	case "ref":
-		return outboundRefExample(), nil
-	case "shadowsocks":
-		return outboundShadowsocksExample(), nil
-	case "vmess":
-		return outboundVMessExample(), nil
-	case "vless":
-		return outboundVLESSExample(), nil
-	case "anytls":
-		return outboundAnyTLSExample(), nil
-	case "trojan":
-		return outboundTrojanExample(), nil
-	case "hysteria2":
-		return outboundHysteria2Example(), nil
-	case "socks5":
-		return outboundSocks5Example(), nil
-	case "http":
-		return outboundHTTPExample(), nil
-	default:
-		return "", unsupportedExampleType("outbound", typeName, []string{"direct", "block", "ref", "shadowsocks", "shadowsocks22", "vmess", "vless", "anytls", "trojan", "hysteria2", "socks5", "http", "all"})
-	}
-}
-
-func outboundDirectExample() string {
-	return `# Direct outbound，直连出站。
-- name: direct # outbound 名称，也会作为 sing-box tag。
-  type: direct # 不需要 server、port 或认证字段。`
-}
-
-func outboundBlockExample() string {
-	return `# Block outbound，阻断匹配流量。
-- name: block
-  type: block # 不需要 server、port 或认证字段。`
-}
-
-func outboundRefExample() string {
-	return `# Ref outbound，引用已有 instance 的 socks5/http inbound。
-- name: edge-us-local-socks
-  type: ref # sbox-manager 抽象类型，生成 sing-box 时解析为 socks5/http outbound。
-  ref: edge-us.local-socks # 格式为 <instance>.<inbound>。`
-}
-
-func outboundShadowsocksExample() string {
-	return `# Shadowsocks outbound，含 Shadowsocks 2022 示例方法。
-- name: ss-upstream
-  type: shadowsocks
-  server: ss.example.com # 远端服务器主机名或 IP。
-  port: 443 # 远端端口。
-  method: 2022-blake3-aes-256-gcm # Shadowsocks 必填。
-  password: change-me # Shadowsocks 必填。
-  tls:
-    enabled: false # 是否启用 TLS。
-    server_name: ss.example.com
-    insecure: false
-    alpn: [h2, http/1.1]`
-}
-
-func outboundVMessExample() string {
-	return `# VMess outbound。
-- name: vmess-upstream
-  type: vmess
-  server: vmess.example.com
-  port: 443
-  uuid: 22222222-2222-4222-8222-222222222222 # VMess 必填。
-  alter_id: 0 # 可选，默认 0。
-  security: auto # VMess 加密方式，常用 auto。
-  tls:
-    enabled: true # 是否启用 TLS。
-    server_name: vmess.example.com # TLS SNI。
-    insecure: false # 是否跳过证书校验，生产环境建议 false。
-    alpn: [h2, http/1.1] # 可选 TLS ALPN。
-  network: tcp # 可选；VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
-  transport:
-    type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
-    path: /vmess
-    headers:
-      Host: vmess.example.com`
-}
-
-// outboundVLESSExample 返回 VLESS outbound 示例片段。
-func outboundVLESSExample() string {
-	return `# VLESS outbound。
-- name: vless-upstream
-  type: vless
-  server: vless.example.com
-  port: 443
-  uuid: 33333333-3333-4333-8333-333333333333 # VLESS 必填。
-  flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
-  tls:
-    enabled: true # 是否启用 TLS。
-    server_name: vless.example.com
-    insecure: false
-    alpn: [h2, http/1.1]
-  transport:
-    type: httpupgrade # 可选；支持 http、ws、quic、grpc、httpupgrade。
-    host: vless.example.com
-    path: /upgrade`
-}
-
-// outboundAnyTLSExample 返回 AnyTLS outbound 示例片段。
-func outboundAnyTLSExample() string {
-	return `# AnyTLS outbound。
-- name: anytls-upstream
-  type: anytls
-  server: anytls.example.com
-  port: 443
-  password: change-me # AnyTLS 必填。
-  tls:
-    enabled: true # AnyTLS 必须启用 TLS。
-    server_name: anytls.example.com
-    insecure: false
-    alpn: [h2, http/1.1]`
-}
-
-func outboundTrojanExample() string {
-	return `# Trojan outbound。
-- name: trojan-upstream
-  type: trojan
-  server: trojan.example.com
-  port: 443
-  password: change-me # Trojan 必填。
-  tls:
-    enabled: true # Trojan 通常需要 TLS。
-    server_name: trojan.example.com
-    insecure: false
-    alpn: [h2, http/1.1]`
-}
-
-func outboundHysteria2Example() string {
-	return `# Hysteria2 outbound。
-- name: hy2-upstream
-  type: hysteria2
-  server: hy2.example.com
-  port: 443
-  password: change-me # Hysteria2 必填。
-  tls:
-    enabled: true
-    server_name: hy2.example.com
-    insecure: false
-    alpn: [h2, http/1.1]`
-}
-
-func outboundSocks5Example() string {
-	return `# SOCKS5 outbound。
-- name: socks5-upstream
-  type: socks5
-  server: socks.example.com
-  port: 1080
-  auth:
-    type: password # 可为空、noauth 或 password。
-    username: alice # type=password 时必填。
-    password: change-me # type=password 时必填。
-  tls:
-    enabled: false`
-}
-
-func outboundHTTPExample() string {
-	return `# HTTP outbound。
-- name: http-upstream
-  type: http
-  server: http-proxy.example.com
-  port: 8080
-  auth:
-    type: password # 可为空、noauth 或 password。
-    username: alice
-    password: change-me
-  tls:
-    enabled: false`
-}
-
-func groupExampleSnippet(typeName string) (string, error) {
-	typeName = normalizeExampleType(typeName)
-	switch typeName {
-	case "", "all":
-		return groupSelectorExample() + "\n" + groupURLTestExample(), nil
-	case "selector":
-		return groupSelectorExample(), nil
-	case "urltest":
-		return groupURLTestExample(), nil
-	default:
-		return "", unsupportedExampleType("group", typeName, []string{"selector", "urltest", "all"})
-	}
-}
-
-func groupSelectorExample() string {
-	return `# Selector group，客户端或运行时可在多个 outbound 间选择。
-- name: manual
-  type: selector
-  outbounds: [ss-upstream, vmess-upstream, direct] # 必须引用已定义 outbound。`
-}
-
-func groupURLTestExample() string {
-	return `# URLTest group，按探测延迟自动选择 outbound。
-- name: auto
-  type: urltest
-  outbounds: [ss-upstream, vmess-upstream, direct]
-  url: http://www.gstatic.com/generate_204 # 探测 URL，默认同此值。
-  interval: 300 # 探测间隔，单位秒。
-  tolerance: 50 # 延迟容差，单位毫秒。`
-}
-
-func routeExampleSnippet(typeName string) (string, error) {
-	typeName = normalizeExampleType(typeName)
-	switch typeName {
-	case "", "all":
-		return `# Route 示例，可放入 instance.route。
-default: auto # 默认 outbound 或 group 名称。
-rules:
-  - type: domain # 完整域名匹配。
-    values: [example.com]
-    outbound: auto
-  - type: domain_suffix # 域名后缀匹配。
-    values: [google.com, youtube.com]
-    outbound: auto
-  - type: domain_keyword # 域名关键字匹配。
-    values: [netflix]
-    outbound: auto
-  - type: ip_cidr # IP CIDR 匹配。
-    values: [10.0.0.0/8, 192.168.0.0/16]
-    outbound: direct
-  - type: geoip # geoip 规则匹配。
-    values: [cn, private]
-    outbound: direct
-  - type: geosite # geosite 规则匹配。
-    values: [category-ads-all]
-    outbound: block
-`, nil
-	case "domain", "domain_suffix", "domain_keyword", "ip_cidr", "geoip", "geosite":
-		return fmt.Sprintf(`# Route %s 规则示例。
-default: auto
-rules:
-  - type: %s
-    values: [%s]
-    outbound: auto
-`, typeName, typeName, routeExampleValue(typeName)), nil
-	default:
-		return "", unsupportedExampleType("route", typeName, []string{"domain", "domain_suffix", "domain_keyword", "ip_cidr", "geoip", "geosite", "all"})
-	}
-}
-
-func routeExampleValue(typeName string) string {
-	switch typeName {
-	case "domain":
-		return "example.com"
-	case "domain_suffix":
-		return "google.com"
-	case "domain_keyword":
-		return "netflix"
-	case "ip_cidr":
-		return "10.0.0.0/8"
-	case "geoip":
-		return "cn"
-	case "geosite":
-		return "category-ads-all"
-	default:
-		return "example.com"
-	}
 }
 
 func trafficExampleSnippet() string {

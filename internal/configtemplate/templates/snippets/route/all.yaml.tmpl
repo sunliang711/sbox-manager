@@ -1,0 +1,21 @@
+# Route 示例，可放入 instance.route。
+default: auto # 默认 outbound 或 group 名称。
+rules:
+  - type: domain # 完整域名匹配。
+    values: [example.com]
+    outbound: auto
+  - type: domain_suffix # 域名后缀匹配。
+    values: [google.com, youtube.com]
+    outbound: auto
+  - type: domain_keyword # 域名关键字匹配。
+    values: [netflix]
+    outbound: auto
+  - type: ip_cidr # IP CIDR 匹配。
+    values: [10.0.0.0/8, 192.168.0.0/16]
+    outbound: direct
+  - type: geoip # geoip 规则匹配。
+    values: [cn, private]
+    outbound: direct
+  - type: geosite # geosite 规则匹配。
+    values: [category-ads-all]
+    outbound: block

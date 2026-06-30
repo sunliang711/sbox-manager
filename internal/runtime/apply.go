@@ -23,7 +23,7 @@ func DefaultClock() string {
 // ApplyPlan 原子应用 runtime plan，no-change 时不改写 generated 或 manifest。
 func ApplyPlan(plan *Plan, clock Clock) (*ApplyResult, error) {
 	if plan == nil {
-		return nil, fmt.Errorf("plan 不能为空")
+		return nil, fmt.Errorf("plan cannot be empty")
 	}
 	if clock == nil {
 		clock = DefaultClock
@@ -49,7 +49,7 @@ func ApplyPlan(plan *Plan, clock Clock) (*ApplyResult, error) {
 		case ActionNoChange:
 			continue
 		default:
-			return nil, fmt.Errorf("未知 runtime action %q", change.Action)
+			return nil, fmt.Errorf("unknown runtime action %q", change.Action)
 		}
 	}
 
@@ -105,7 +105,7 @@ func buildAppliedManifest(plan *Plan, generatedAt string) Manifest {
 func writeManifest(path string, manifest Manifest) error {
 	data, err := singbox.MarshalStable(manifest)
 	if err != nil {
-		return fmt.Errorf("编码 runtime manifest: %w", err)
+		return fmt.Errorf("encode runtime manifest: %w", err)
 	}
 	return writeFileAtomic(path, data, managedFileMode)
 }
@@ -113,13 +113,13 @@ func writeManifest(path string, manifest Manifest) error {
 // removeManagedFile 删除 generated 下的受管文件，文件不存在时视为成功。
 func removeManagedFile(path string, generatedDir string) error {
 	if !isPathUnder(generatedDir, path) {
-		return fmt.Errorf("拒绝删除 generated 目录外文件: %s", path)
+		return fmt.Errorf("refuse to delete file outside generated directory: %s", path)
 	}
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("删除生成文件 %s: %w", path, err)
+		return fmt.Errorf("delete generated file %s: %w", path, err)
 	}
 	return syncDir(filepath.Dir(path))
 }
@@ -128,12 +128,12 @@ func removeManagedFile(path string, generatedDir string) error {
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 
 	tempFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件 %s: %w", dir, err)
+		return fmt.Errorf("create temp file %s: %w", dir, err)
 	}
 	tempPath := tempFile.Name()
 	closed := false
@@ -145,22 +145,22 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	}()
 
 	if err := tempFile.Chmod(mode); err != nil {
-		return fmt.Errorf("设置临时文件权限 %s: %w", tempPath, err)
+		return fmt.Errorf("set temp file permissions %s: %w", tempPath, err)
 	}
 	if _, err := tempFile.Write(data); err != nil {
-		return fmt.Errorf("写入临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("write temp file %s: %w", tempPath, err)
 	}
 	if err := tempFile.Sync(); err != nil {
-		return fmt.Errorf("同步临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("sync temp file %s: %w", tempPath, err)
 	}
 	if err := tempFile.Close(); err != nil {
 		closed = true
-		return fmt.Errorf("关闭临时文件 %s: %w", tempPath, err)
+		return fmt.Errorf("close temp file %s: %w", tempPath, err)
 	}
 	closed = true
 
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", path, err)
+		return fmt.Errorf("replace file %s: %w", path, err)
 	}
 	if err := applyServiceOwnership(path); err != nil {
 		return err
@@ -182,10 +182,10 @@ func applyServiceOwnership(path string) error {
 	}
 	dir := filepath.Dir(path)
 	if err := os.Chown(dir, uid, gid); err != nil {
-		return fmt.Errorf("设置 runtime 目录属主 %s: %w", dir, err)
+		return fmt.Errorf("set runtime directory owner %s: %w", dir, err)
 	}
 	if err := os.Chown(path, uid, gid); err != nil {
-		return fmt.Errorf("设置 runtime 文件属主 %s: %w", path, err)
+		return fmt.Errorf("set runtime file owner %s: %w", path, err)
 	}
 	return nil
 }
@@ -211,11 +211,11 @@ func serviceOwnerIDs() (int, int, bool) {
 func syncDir(dir string) error {
 	handle, err := os.Open(dir)
 	if err != nil {
-		return fmt.Errorf("打开目录 %s: %w", dir, err)
+		return fmt.Errorf("open directory %s: %w", dir, err)
 	}
 	defer handle.Close()
 	if err := handle.Sync(); err != nil {
-		return fmt.Errorf("同步目录 %s: %w", dir, err)
+		return fmt.Errorf("sync directory %s: %w", dir, err)
 	}
 	return nil
 }

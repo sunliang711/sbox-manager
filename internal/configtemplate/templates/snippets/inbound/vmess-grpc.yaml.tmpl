@@ -1,0 +1,25 @@
+# VMess gRPC inbound，可放入 instance.inbounds。
+- name: vmess-grpc
+  type: vmess
+  listen: 0.0.0.0
+  port: 24102
+  tag: vmess-vmess-grpc
+  udp: true
+  transport:
+    type: grpc
+    service_name: TunService
+    idle_timeout: 30s
+    ping_timeout: 15s
+    permit_without_stream: false
+  users:
+    - name: alice
+      uuid: "{{ .VmessUUID }}"
+      alter_id: 0
+      remark: US VMess gRPC
+      tag: edge-us-vmess-grpc
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VMess gRPC
+    region: US

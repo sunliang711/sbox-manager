@@ -99,7 +99,7 @@ func ParseFormat(value string) (Format, error) {
 	case FormatClash, FormatPremiumClash, FormatSurge, FormatSingBox:
 		return Format(value), nil
 	default:
-		return "", fmt.Errorf("不支持的订阅格式 %q", value)
+		return "", fmt.Errorf("unsupported subscription format %q", value)
 	}
 }
 
@@ -173,7 +173,7 @@ func (r *Renderer) loadTemplate(name string) (*template.Template, error) {
 	}
 	builtin, ok := builtinTemplates[name]
 	if !ok {
-		return nil, fmt.Errorf("缺少内置模板 %s", name)
+		return nil, fmt.Errorf("missing built-in template %s", name)
 	}
 	return parseTemplate(name, builtin)
 }
@@ -464,14 +464,14 @@ func templateName(format Format) (string, error) {
 	case FormatSingBox:
 		return "sing-box.json.tmpl", nil
 	default:
-		return "", fmt.Errorf("不支持的订阅格式 %q", format)
+		return "", fmt.Errorf("unsupported subscription format %q", format)
 	}
 }
 
 // validateTemplateName 校验模板文件名只能是安全 basename。
 func validateTemplateName(name string) error {
 	if name == "" || filepath.Base(name) != name || strings.ContainsAny(name, `/\`) {
-		return fmt.Errorf("模板文件名不安全: %s", name)
+		return fmt.Errorf("template filename is unsafe: %s", name)
 	}
 	return nil
 }

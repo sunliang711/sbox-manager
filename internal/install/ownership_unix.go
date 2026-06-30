@@ -27,7 +27,7 @@ func chownTreeLike(path string, ownerPath string) error {
 			return nil
 		}
 		if err := os.Lchown(item, targetUID, targetGID); err != nil {
-			return fmt.Errorf("设置 owner %s: %w", item, err)
+			return fmt.Errorf("set owner %s: %w", item, err)
 		}
 		return nil
 	})
@@ -37,11 +37,11 @@ func chownTreeLike(path string, ownerPath string) error {
 func pathOwner(path string) (int, int, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return 0, 0, fmt.Errorf("读取 owner %s: %w", path, err)
+		return 0, 0, fmt.Errorf("read owner %s: %w", path, err)
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0, 0, fmt.Errorf("读取 owner %s: 不支持的 stat 类型", path)
+		return 0, 0, fmt.Errorf("read owner %s: unsupported stat type", path)
 	}
 	return int(stat.Uid), int(stat.Gid), nil
 }

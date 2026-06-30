@@ -1,0 +1,11 @@
+# AnyTLS outbound。
+- name: anytls-upstream
+  type: anytls
+  server: anytls.example.com
+  port: 443
+  password: change-me # AnyTLS 必填。
+  tls:
+    enabled: true # AnyTLS 必须启用 TLS。
+    server_name: anytls.example.com
+    insecure: false
+    alpn: [h2, http/1.1]

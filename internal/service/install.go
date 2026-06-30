@@ -28,15 +28,15 @@ func (m *Manager) Install(ctx context.Context, baseDir string, global domain.Glo
 		path := m.TemplateUnitPath()
 		data := RenderSystemdTemplateUnit(baseDir, global.Paths.Bin, global.Paths.Generated, global.Paths.Traffic, global.Paths.Logs)
 		if err := WriteFileAtomic(path, data, systemdUnitMode); err != nil {
-			return fmt.Errorf("安装 systemd unit %s: %w", path, err)
+			return fmt.Errorf("install systemd unit %s: %w", path, err)
 		}
 		for _, instance := range targets {
 			if _, err := removeFileIfExists(m.UnitPath(instance.Name)); err != nil {
-				return fmt.Errorf("清理旧 systemd unit %s: %w", m.UnitPath(instance.Name), err)
+				return fmt.Errorf("clean old systemd unit %s: %w", m.UnitPath(instance.Name), err)
 			}
 		}
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 		return nil
 	}
@@ -46,10 +46,10 @@ func (m *Manager) Install(ctx context.Context, baseDir string, global domain.Glo
 			path := m.PlistPath(instance.Name)
 			data := RenderLaunchdPlist(baseDir, global.Paths.Bin, global.Paths.Generated, global.Paths.Logs, instance.Name)
 			if err := WriteFileAtomic(path, data, launchdMode); err != nil {
-				return fmt.Errorf("安装 launchd plist %s: %w", path, err)
+				return fmt.Errorf("install launchd plist %s: %w", path, err)
 			}
 		default:
-			return fmt.Errorf("不支持的 service-manager %q", m.kind)
+			return fmt.Errorf("unsupported service-manager %q", m.kind)
 		}
 	}
 	return nil
@@ -77,7 +77,7 @@ func (m *Manager) StopInstancesForUninstall(ctx context.Context, instances []dom
 		serviceName := ServiceNameForKind(m.kind, instance.Name)
 		output, err := m.runOne(ctx, "stop", serviceName, false)
 		if err != nil && !isServiceNotLoaded(output, err) {
-			return fmt.Errorf("停止服务 %s: %w", serviceName, err)
+			return fmt.Errorf("stop service %s: %w", serviceName, err)
 		}
 	}
 	return nil
@@ -86,7 +86,7 @@ func (m *Manager) StopInstancesForUninstall(ctx context.Context, instances []dom
 // UninstallInstances 删除给定实例集合的服务文件，且不启动服务。
 func (m *Manager) UninstallInstances(ctx context.Context, instances []domain.Instance) error {
 	if m.kind != KindSystemd && m.kind != KindLaunchd {
-		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 	removed := false
 	seen := map[string]struct{}{}
@@ -98,14 +98,14 @@ func (m *Manager) UninstallInstances(ctx context.Context, instances []domain.Ins
 			seen[path] = struct{}{}
 			deleted, err := removeFileIfExists(path)
 			if err != nil {
-				return fmt.Errorf("卸载服务文件 %s: %w", path, err)
+				return fmt.Errorf("uninstall service file %s: %w", path, err)
 			}
 			removed = removed || deleted
 		}
 	}
 	if m.kind == KindSystemd && removed {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 	}
 	return nil
@@ -135,7 +135,7 @@ func (m *Manager) instanceServiceFileExists(instance string) (bool, error) {
 		}
 	}
 	if m.kind != KindSystemd && m.kind != KindLaunchd {
-		return false, fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return false, fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 	return false, nil
 }
@@ -150,21 +150,21 @@ func (m *Manager) InstallSubscription(ctx context.Context, baseDir string, binar
 		path := filepath.Join(m.unitDir, SubscriptionSystemdServiceName())
 		data := RenderSubscriptionSystemdUnit(baseDir, binary)
 		if err := WriteFileAtomic(path, data, systemdUnitMode); err != nil {
-			return fmt.Errorf("安装 systemd unit %s: %w", path, err)
+			return fmt.Errorf("install systemd unit %s: %w", path, err)
 		}
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 		return nil
 	case KindLaunchd:
 		path := filepath.Join(m.launchAgentDir, SubscriptionLaunchdLabel()+".plist")
 		data := RenderSubscriptionLaunchdPlist(baseDir, binary)
 		if err := WriteFileAtomic(path, data, launchdMode); err != nil {
-			return fmt.Errorf("安装 launchd plist %s: %w", path, err)
+			return fmt.Errorf("install launchd plist %s: %w", path, err)
 		}
 		return nil
 	default:
-		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 
@@ -177,15 +177,15 @@ func (m *Manager) UninstallSubscription(ctx context.Context) error {
 	case KindLaunchd:
 		path = filepath.Join(m.launchAgentDir, SubscriptionLaunchdLabel()+".plist")
 	default:
-		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 	deleted, err := removeFileIfExists(path)
 	if err != nil {
-		return fmt.Errorf("卸载服务文件 %s: %w", path, err)
+		return fmt.Errorf("uninstall service file %s: %w", path, err)
 	}
 	if m.kind == KindSystemd && deleted {
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 	}
 	return nil
@@ -197,7 +197,7 @@ func pathExists(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("检查路径 %s: %w", path, err)
+		return false, fmt.Errorf("check path %s: %w", path, err)
 	}
 	return true, nil
 }
@@ -224,10 +224,10 @@ func (m *Manager) prepareSystemdServiceEnvironment(ctx context.Context, paths ..
 	}
 	for _, item := range uniqueCleanPaths(paths) {
 		if err := os.MkdirAll(item, 0750); err != nil {
-			return fmt.Errorf("创建服务目录 %s: %w", item, err)
+			return fmt.Errorf("create service directory %s: %w", item, err)
 		}
 		if _, err := m.runner.Run(ctx, "chown", "-R", systemdServiceUser+":"+systemdServiceGroup, item); err != nil {
-			return fmt.Errorf("设置服务目录权限 %s: %w", item, err)
+			return fmt.Errorf("set service directory permissions %s: %w", item, err)
 		}
 	}
 	return nil
@@ -237,12 +237,12 @@ func (m *Manager) prepareSystemdServiceEnvironment(ctx context.Context, paths ..
 func (m *Manager) ensureSystemdServiceUser(ctx context.Context) error {
 	if _, err := m.runner.Run(ctx, "getent", "group", systemdServiceGroup); err != nil {
 		if _, groupErr := m.runner.Run(ctx, "groupadd", "--system", systemdServiceGroup); groupErr != nil {
-			return fmt.Errorf("创建服务组 %s: %w", systemdServiceGroup, groupErr)
+			return fmt.Errorf("create service group %s: %w", systemdServiceGroup, groupErr)
 		}
 	}
 	if _, err := m.runner.Run(ctx, "id", "-u", systemdServiceUser); err != nil {
 		if _, userErr := m.runner.Run(ctx, "useradd", "--system", "--no-create-home", "--gid", systemdServiceGroup, "--shell", "/usr/sbin/nologin", systemdServiceUser); userErr != nil {
-			return fmt.Errorf("创建服务用户 %s: %w", systemdServiceUser, userErr)
+			return fmt.Errorf("create service user %s: %w", systemdServiceUser, userErr)
 		}
 	}
 	return nil
@@ -282,7 +282,7 @@ func SelectInstances(instances []domain.Instance, target string) ([]domain.Insta
 			return []domain.Instance{instance}, nil
 		}
 	}
-	return nil, fmt.Errorf("instance %q 不存在", target)
+	return nil, fmt.Errorf("instance %q does not exist", target)
 }
 
 // ServicesForInstances 返回当前管理器语义下的服务标识。

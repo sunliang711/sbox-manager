@@ -1,0 +1,23 @@
+# AnyTLS inbound，可放入 instance.inbounds。
+- name: anytls-main
+  type: anytls
+  listen: 0.0.0.0
+  port: 24120
+  tag: anytls-anytls-main
+  udp: true
+  tls:
+    enabled: true # AnyTLS 必须启用 TLS。
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  users:
+    - name: alice
+      password: "{{ .AnyTLSPassword }}" # AnyTLS 用户必填密码。
+      remark: US AnyTLS
+      tag: edge-us-anytls-main
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US AnyTLS
+    region: US

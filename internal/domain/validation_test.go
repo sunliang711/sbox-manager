@@ -19,7 +19,7 @@ func TestDefaultConfigsValidate(t *testing.T) {
 	}
 }
 
-// TestPublicSocksHTTPNoauthFails 验证公开 socks/http 默认禁止 noauth。
+// TestPublicSocksHTTPNoauthFails 验证public socks/http 默认禁止 noauth。
 func TestPublicSocksHTTPNoauthFails(t *testing.T) {
 	global := DefaultGlobalConfig()
 	instance := validInstance("edge-us", 24000)
@@ -37,7 +37,7 @@ func TestPublicSocksHTTPNoauthFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected public noauth error")
 	}
-	if !strings.Contains(err.Error(), "公开 socks/http") {
+	if !strings.Contains(err.Error(), "public socks/http") {
 		t.Fatalf("expected public noauth error, got %v", err)
 	}
 }
@@ -112,7 +112,7 @@ func TestPortConflictDetected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected port conflict error")
 	}
-	if !strings.Contains(err.Error(), "端口 24000") {
+	if !strings.Contains(err.Error(), "port 24000") {
 		t.Fatalf("expected port conflict error, got %v", err)
 	}
 }

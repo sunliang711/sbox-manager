@@ -34,38 +34,38 @@ func OpenRepositoryReadOnly(path string) (*Repository, error) {
 
 func openRepository(path string, readOnly bool) (*Repository, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("traffic db path 不能为空")
+		return nil, fmt.Errorf("traffic db path cannot be empty")
 	}
 	if !isSpecialSQLiteDSN(path) {
 		if readOnly {
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				return openRepository(":memory:", true)
 			} else if err != nil {
-				return nil, fmt.Errorf("读取 traffic DB %s: %w", path, err)
+				return nil, fmt.Errorf("read traffic DB %s: %w", path, err)
 			}
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
-			return nil, fmt.Errorf("创建 traffic DB 目录: %w", err)
+			return nil, fmt.Errorf("create traffic DB directory: %w", err)
 		}
 	}
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
-		return nil, fmt.Errorf("打开 traffic DB: %w", err)
+		return nil, fmt.Errorf("open traffic DB: %w", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("获取 traffic DB 连接: %w", err)
+		return nil, fmt.Errorf("get traffic DB connection: %w", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	if !readOnly {
 		if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
-			return nil, fmt.Errorf("启用 SQLite WAL: %w", err)
+			return nil, fmt.Errorf("enable SQLite WAL: %w", err)
 		}
 	}
 	if err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d", sqliteBusyTimeoutMS)).Error; err != nil {
-		return nil, fmt.Errorf("设置 SQLite busy_timeout: %w", err)
+		return nil, fmt.Errorf("set SQLite busy_timeout: %w", err)
 	}
 	if err := validateExistingSchemaVersion(db); err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func openRepository(path string, readOnly bool) (*Repository, error) {
 		return &Repository{db: db, readOnly: true}, nil
 	}
 	if err := db.AutoMigrate(&Record{}, &Baseline{}, &Metadata{}); err != nil {
-		return nil, fmt.Errorf("迁移 traffic DB: %w", err)
+		return nil, fmt.Errorf("migrate traffic DB: %w", err)
 	}
 	repo := &Repository{db: db}
 	if err := repo.ensureMetadata(context.Background()); err != nil {
@@ -108,7 +108,7 @@ func (r *Repository) GetBaseline(ctx context.Context, instance string, counter C
 	if r.readOnly && isMissingTrafficTableError(err) {
 		return 0, false, nil
 	}
-	return 0, false, fmt.Errorf("查询 traffic baseline: %w", err)
+	return 0, false, fmt.Errorf("query traffic baseline: %w", err)
 }
 
 // UpsertBaseline 写入或更新单个累计计数的 baseline。
@@ -131,7 +131,7 @@ func (r *Repository) UpsertBaseline(ctx context.Context, instance string, counte
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
 	}).Create(&baseline).Error
 	if err != nil {
-		return fmt.Errorf("更新 traffic baseline: %w", err)
+		return fmt.Errorf("update traffic baseline: %w", err)
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func (r *Repository) ReplaceRecords(ctx context.Context, records []Record) error
 			}),
 		}).Create(&record).Error
 		if err != nil {
-			return fmt.Errorf("写入 traffic aggregate: %w", err)
+			return fmt.Errorf("write traffic aggregate: %w", err)
 		}
 	}
 	return nil
@@ -214,11 +214,11 @@ func (r *Repository) ReplaceWindowRecords(ctx context.Context, period string, in
 			query = query.Where("instance IN ?", instances)
 		}
 		if err := query.Delete(&Record{}).Error; err != nil {
-			return fmt.Errorf("删除旧 traffic aggregate: %w", err)
+			return fmt.Errorf("delete old traffic aggregate: %w", err)
 		}
 		for _, record := range records {
 			if err := tx.Create(&record).Error; err != nil {
-				return fmt.Errorf("写入 traffic aggregate: %w", err)
+				return fmt.Errorf("write traffic aggregate: %w", err)
 			}
 		}
 		return nil
@@ -256,7 +256,7 @@ func (r *Repository) ListRecords(ctx context.Context, period string, filter Filt
 		if r.readOnly && isMissingTrafficTableError(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("查询 traffic records: %w", err)
+		return nil, fmt.Errorf("query traffic records: %w", err)
 	}
 	return records, nil
 }
@@ -266,7 +266,7 @@ func (r *Repository) CountBefore(ctx context.Context, period string, cutoff time
 	var count int64
 	err := r.db.WithContext(ctx).Model(&Record{}).Where("period = ? AND start_ts < ?", period, cutoff.Unix()).Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("统计待清理 traffic records: %w", err)
+		return 0, fmt.Errorf("count traffic records to clean: %w", err)
 	}
 	return count, nil
 }
@@ -275,7 +275,7 @@ func (r *Repository) CountBefore(ctx context.Context, period string, cutoff time
 func (r *Repository) DeleteBefore(ctx context.Context, period string, cutoff time.Time) (int64, error) {
 	result := r.db.WithContext(ctx).Where("period = ? AND start_ts < ?", period, cutoff.Unix()).Delete(&Record{})
 	if result.Error != nil {
-		return 0, fmt.Errorf("清理 traffic records: %w", result.Error)
+		return 0, fmt.Errorf("clean traffic records: %w", result.Error)
 	}
 	return result.RowsAffected, nil
 }
@@ -286,10 +286,10 @@ func (r *Repository) ensureMetadata(ctx context.Context) error {
 	var existing Metadata
 	err := r.db.WithContext(ctx).First(&existing, "id = ?", 1).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("读取 traffic metadata: %w", err)
+		return fmt.Errorf("read traffic metadata: %w", err)
 	}
 	if err == nil && existing.SchemaVersion > trafficSchemaVersion {
-		return fmt.Errorf("traffic DB schema version %d 高于当前支持版本 %d", existing.SchemaVersion, trafficSchemaVersion)
+		return fmt.Errorf("traffic DB schema version %d is higher than supported version %d", existing.SchemaVersion, trafficSchemaVersion)
 	}
 	metadata := Metadata{
 		ID:            1,
@@ -305,7 +305,7 @@ func (r *Repository) ensureMetadata(ctx context.Context) error {
 		DoUpdates: clause.AssignmentColumns([]string{"schema_version", "updated_at"}),
 	}).Create(&metadata).Error
 	if err != nil {
-		return fmt.Errorf("写入 traffic metadata: %w", err)
+		return fmt.Errorf("write traffic metadata: %w", err)
 	}
 	return nil
 }
@@ -313,7 +313,7 @@ func (r *Repository) ensureMetadata(ctx context.Context) error {
 func validateExistingSchemaVersion(db *gorm.DB) error {
 	var tableName string
 	if err := db.Raw("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", "traffic_metadata").Scan(&tableName).Error; err != nil {
-		return fmt.Errorf("检查 traffic metadata 表: %w", err)
+		return fmt.Errorf("check traffic metadata table: %w", err)
 	}
 	if tableName == "" {
 		return nil
@@ -324,10 +324,10 @@ func validateExistingSchemaVersion(db *gorm.DB) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("读取 traffic metadata: %w", err)
+		return fmt.Errorf("read traffic metadata: %w", err)
 	}
 	if metadata.SchemaVersion > trafficSchemaVersion {
-		return fmt.Errorf("traffic DB schema version %d 高于当前支持版本 %d", metadata.SchemaVersion, trafficSchemaVersion)
+		return fmt.Errorf("traffic DB schema version %d is higher than supported version %d", metadata.SchemaVersion, trafficSchemaVersion)
 	}
 	return nil
 }
@@ -341,7 +341,7 @@ func getBaselineTx(tx *gorm.DB, instance string, counter Counter) (uint64, bool,
 	if err == gorm.ErrRecordNotFound {
 		return 0, false, nil
 	}
-	return 0, false, fmt.Errorf("查询 traffic baseline: %w", err)
+	return 0, false, fmt.Errorf("query traffic baseline: %w", err)
 }
 
 func upsertBaselineTx(tx *gorm.DB, instance string, counter Counter, now time.Time) error {
@@ -363,7 +363,7 @@ func upsertBaselineTx(tx *gorm.DB, instance string, counter Counter, now time.Ti
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
 	}).Create(&baseline).Error
 	if err != nil {
-		return fmt.Errorf("更新 traffic baseline: %w", err)
+		return fmt.Errorf("update traffic baseline: %w", err)
 	}
 	return nil
 }
@@ -380,7 +380,7 @@ func addRecordTx(tx *gorm.DB, record Record) error {
 		}),
 	}).Create(&record).Error
 	if err != nil {
-		return fmt.Errorf("写入 traffic record: %w", err)
+		return fmt.Errorf("write traffic record: %w", err)
 	}
 	return nil
 }

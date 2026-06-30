@@ -1,0 +1,11 @@
+# HTTP outbound。
+- name: http-upstream
+  type: http
+  server: http-proxy.example.com
+  port: 8080
+  auth:
+    type: password # 可为空、noauth 或 password。
+    username: alice
+    password: change-me
+  tls:
+    enabled: false

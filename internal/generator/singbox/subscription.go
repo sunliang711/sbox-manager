@@ -55,15 +55,15 @@ func BuildSubscriptionInput(global domain.GlobalConfig, instance domain.Instance
 // RenderUserConfig 根据用户和目标格式输出最小可用订阅配置。
 func RenderUserConfig(format string, user string, inputs []domain.SubscriptionInput) ([]byte, error) {
 	if !supportedUserConfigFormat(format) {
-		return nil, fmt.Errorf("不支持的导出格式 %q", format)
+		return nil, fmt.Errorf("unsupported export format %q", format)
 	}
 	nodes := filterNodesByUser(user, inputs)
 	if len(nodes) == 0 {
-		return nil, fmt.Errorf("用户 %q 没有可导出的订阅节点", user)
+		return nil, fmt.Errorf("user %q has no exportable subscription nodes", user)
 	}
 	nodes = filterNodesForUserConfig(format, nodes)
 	if len(nodes) == 0 {
-		return nil, fmt.Errorf("用户 %q 没有 %s 可导出的订阅节点", user, format)
+		return nil, fmt.Errorf("user %q has no %s exportable subscription nodes", user, format)
 	}
 	switch format {
 	case "sing-box":
@@ -73,7 +73,7 @@ func RenderUserConfig(format string, user string, inputs []domain.SubscriptionIn
 	case "surge":
 		return renderSurgeUserConfig(nodes)
 	default:
-		return nil, fmt.Errorf("不支持的导出格式 %q", format)
+		return nil, fmt.Errorf("unsupported export format %q", format)
 	}
 }
 
@@ -94,7 +94,7 @@ func buildSubscriptionNode(global domain.GlobalConfig, instance domain.Instance,
 		server = global.ExternalHost
 	}
 	if server == "" {
-		return domain.SubscriptionNode{}, fmt.Errorf("instance %s inbound %s 缺少 external_host", instance.Name, inbound.Name)
+		return domain.SubscriptionNode{}, fmt.Errorf("instance %s inbound %s missing external_host", instance.Name, inbound.Name)
 	}
 
 	user := findInboundUser(inbound, inbound.Subscription.User)
@@ -143,7 +143,7 @@ func buildSubscriptionNode(global domain.GlobalConfig, instance domain.Instance,
 	case "socks5", "http":
 		node.Auth = inbound.Auth
 	default:
-		return domain.SubscriptionNode{}, fmt.Errorf("不支持的订阅协议 %q", inbound.Type)
+		return domain.SubscriptionNode{}, fmt.Errorf("unsupported subscription protocol %q", inbound.Type)
 	}
 	return node, nil
 }
@@ -290,7 +290,7 @@ func renderSurgeUserConfig(nodes []domain.SubscriptionNode) ([]byte, error) {
 		}
 	}
 	if len(proxyNames) == 0 {
-		return nil, fmt.Errorf("没有 Surge 可导出的订阅节点")
+		return nil, fmt.Errorf("no Surge exportable subscription nodes")
 	}
 	builder.WriteString("\n[Proxy Group]\nproxy = select")
 	for _, name := range proxyNames {

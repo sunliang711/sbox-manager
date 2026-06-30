@@ -14,7 +14,7 @@ var csvHeader = []string{"instance", "server", "period", "start_time", "end_time
 func WriteCSV(writer io.Writer, records []Record) error {
 	csvWriter := csv.NewWriter(writer)
 	if err := csvWriter.Write(csvHeader); err != nil {
-		return fmt.Errorf("写入 CSV header: %w", err)
+		return fmt.Errorf("write CSV header: %w", err)
 	}
 	for _, record := range records {
 		row := []string{
@@ -30,12 +30,12 @@ func WriteCSV(writer io.Writer, records []Record) error {
 			record.CreatedAt.Format(time.RFC3339),
 		}
 		if err := csvWriter.Write(row); err != nil {
-			return fmt.Errorf("写入 CSV row: %w", err)
+			return fmt.Errorf("write CSV row: %w", err)
 		}
 	}
 	csvWriter.Flush()
 	if err := csvWriter.Error(); err != nil {
-		return fmt.Errorf("刷新 CSV: %w", err)
+		return fmt.Errorf("flush CSV: %w", err)
 	}
 	return nil
 }
@@ -44,7 +44,7 @@ func WriteCSV(writer io.Writer, records []Record) error {
 func WriteCSVFile(path string, records []Record) error {
 	file, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("创建 CSV 文件 %s: %w", path, err)
+		return fmt.Errorf("create CSV file %s: %w", path, err)
 	}
 	closed := false
 	defer func() {
@@ -57,7 +57,7 @@ func WriteCSVFile(path string, records []Record) error {
 	}
 	if err := file.Close(); err != nil {
 		closed = true
-		return fmt.Errorf("关闭 CSV 文件 %s: %w", path, err)
+		return fmt.Errorf("close CSV file %s: %w", path, err)
 	}
 	closed = true
 	return nil

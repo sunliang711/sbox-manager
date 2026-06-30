@@ -1,0 +1,29 @@
+{{ if .ShowExampleFields }}
+# URLTest instance 示例，通过已有 instance ref 成员自动选择延迟更低的 outbound。
+# 创建前可使用：sboxctl add auto-us --template urltest --members edge-us,relay-us
+{{ end }}
+name: {{ .InstanceName }}
+enabled: true
+role: urltest
+{{ if .ShowExampleFields }}
+labels: [auto, us]
+{{ end }}
+api:
+  enabled: false
+  listen: 127.0.0.1:10087
+  token: ""
+inbounds:
+{{ snippet "inbound.vmess-raw" 2 }}
+{{ snippet "inbound.socks5" 2 }}
+{{ snippet "inbound.http" 2 }}
+outbounds:
+{{ range .RefMembers }}
+{{ snippetWith "outbound.ref" . 2 }}
+{{ end }}
+groups:
+{{ snippet "group.urltest" 2 }}
+route:
+  default: {{ .GroupName }}
+traffic:
+  enabled: true
+  scopes: [user, inbound, outbound]

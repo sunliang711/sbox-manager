@@ -54,7 +54,7 @@ func LoadIndexFromDir(dir string) (*Index, error) {
 func LoadInputsFromDir(dir string) ([]InputFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("读取订阅 input 目录 %s: %w", dir, err)
+		return nil, fmt.Errorf("read subscription input directory %s: %w", dir, err)
 	}
 
 	names := make([]string, 0, len(entries))
@@ -70,11 +70,11 @@ func LoadInputsFromDir(dir string) ([]InputFile, error) {
 			continue
 		}
 		if err := domain.ValidateSubscriptionInputFilename(name); err != nil {
-			return nil, fmt.Errorf("订阅 input 文件名 %s: %w", name, err)
+			return nil, fmt.Errorf("subscription input filename %s: %w", name, err)
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil, fmt.Errorf("读取订阅 input 文件信息 %s: %w", name, err)
+			return nil, fmt.Errorf("read subscription input file info %s: %w", name, err)
 		}
 		if !info.Mode().IsRegular() {
 			continue
@@ -88,11 +88,11 @@ func LoadInputsFromDir(dir string) ([]InputFile, error) {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("读取订阅 input %s: %w", path, err)
+			return nil, fmt.Errorf("read subscription input %s: %w", path, err)
 		}
 		input, err := DecodeInput(name, data)
 		if err != nil {
-			return nil, fmt.Errorf("订阅 input %s: %w", path, err)
+			return nil, fmt.Errorf("subscription input %s: %w", path, err)
 		}
 		files = append(files, InputFile{Name: name, Data: data, Input: input})
 	}
@@ -222,7 +222,7 @@ func formatForInputName(name string) (string, error) {
 	case ".json":
 		return "json", nil
 	default:
-		return "", fmt.Errorf("不支持的订阅 input 扩展名")
+		return "", fmt.Errorf("unsupported subscription input extension")
 	}
 }
 

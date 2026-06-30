@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ var (
 func newSboxctlValidateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate [TARGET]",
-		Short: "校验 agent 配置",
+		Short: "Validate agent configuration",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -46,14 +47,13 @@ func newSboxctlValidateCommand() *cobra.Command {
 			}
 			if len(args) == 1 {
 				if _, ok := set.FindInstance(args[0]); !ok {
-					return fmt.Errorf("instance %q 不存在", args[0])
+					return fmt.Errorf("instance %q does not exist", args[0])
 				}
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "配置校验通过")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Configuration validation passed.")
 		},
 	}
-	cmd.Flags().Bool("skip-system-ports", false, "跳过系统端口检查")
+	cmd.Flags().Bool("skip-system-ports", false, "skip system port checks")
 	return cmd
 }
 
@@ -61,7 +61,7 @@ func newSboxctlValidateCommand() *cobra.Command {
 func newSboxctlCheckCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check [TARGET]",
-		Short: "检查生成计划和服务变更",
+		Short: "Check generation plan and service changes",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -76,7 +76,7 @@ func newSboxctlCheckCommand() *cobra.Command {
 			return writePlanPreview(cmd, plan)
 		},
 	}
-	cmd.Flags().Bool("skip-system-ports", false, "跳过系统端口检查")
+	cmd.Flags().Bool("skip-system-ports", false, "skip system port checks")
 	return cmd
 }
 
@@ -84,12 +84,12 @@ func newSboxctlCheckCommand() *cobra.Command {
 func newSboxctlRenderCommand() *cobra.Command {
 	render := &cobra.Command{
 		Use:   "render",
-		Short: "渲染模型、sing-box 配置或订阅 input",
+		Short: "Render model, sing-box configuration, or subscription input",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
-	render.PersistentFlags().Bool("skip-system-ports", false, "跳过系统端口检查")
+	render.PersistentFlags().Bool("skip-system-ports", false, "skip system port checks")
 	render.AddCommand(
 		newSboxctlRenderModelCommand(),
 		newSboxctlRenderSingBoxCommand(),
@@ -102,7 +102,7 @@ func newSboxctlRenderCommand() *cobra.Command {
 func newSboxctlRenderModelCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "model",
-		Short: "渲染完整配置模型",
+		Short: "Render the full configuration model",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -128,7 +128,7 @@ func newSboxctlRenderModelCommand() *cobra.Command {
 func newSboxctlRenderSingBoxCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sing-box INSTANCE",
-		Short: "渲染指定实例的 sing-box 配置",
+		Short: "Render sing-box configuration for an instance",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -137,7 +137,7 @@ func newSboxctlRenderSingBoxCommand() *cobra.Command {
 			}
 			instance, ok := set.FindInstance(args[0])
 			if !ok {
-				return fmt.Errorf("instance %q 不存在", args[0])
+				return fmt.Errorf("instance %q does not exist", args[0])
 			}
 			data, err := singbox.GenerateWithInstances(set.Global, set.Instances, instance)
 			if err != nil {
@@ -152,7 +152,7 @@ func newSboxctlRenderSingBoxCommand() *cobra.Command {
 func newSboxctlRenderSubCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sub",
-		Short: "渲染订阅 input",
+		Short: "Render subscription input",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := loadAgentSetFromCommand(cmd)
@@ -180,7 +180,7 @@ func newSboxctlRenderSubCommand() *cobra.Command {
 func newSboxctlExportConfigCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "export-config clash|premium-clash|surge|sing-box USER",
-		Short:     "导出指定用户订阅配置",
+		Short:     "Export subscription configuration for a user",
 		Args:      cobra.ExactArgs(2),
 		ValidArgs: []string{"clash", "premium-clash", "surge", "sing-box"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,7 +238,7 @@ func newSboxctlLifecycleCommand(action string) *cobra.Command {
 			case "restart":
 				result, err = runtimeplan.Restart(cmd.Context(), plan, checker, manager, runtimeplan.DefaultClock)
 			default:
-				return fmt.Errorf("不支持的生命周期动作 %q", action)
+				return fmt.Errorf("unsupported lifecycle action %q", action)
 			}
 			if err != nil {
 				return err
@@ -247,11 +247,9 @@ func newSboxctlLifecycleCommand(action string) *cobra.Command {
 				return err
 			}
 			if result != nil && result.Changed {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s 完成，runtime 已更新\n", action)
-				return err
+				return writeStatus(cmd, outputStatusOK, "Runtime updated and services "+action+"ed.")
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s 完成，runtime 无变化\n", action)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Runtime already up to date; services "+action+"ed.")
 		},
 	}
 }
@@ -259,9 +257,9 @@ func newSboxctlLifecycleCommand(action string) *cobra.Command {
 // lifecycleShort 返回生命周期命令说明。
 func lifecycleShort(action string) string {
 	if action == "restart" {
-		return "重新生成 runtime 并重启实例服务"
+		return "Regenerate runtime and restart instance services"
 	}
-	return "生成 runtime 并启动实例服务"
+	return "Generate runtime and start instance services"
 }
 
 // loadAgentSetFromCommand 根据 CLI 全局参数加载 agent 配置集合。
@@ -270,21 +268,29 @@ func loadAgentSetFromCommand(cmd *cobra.Command) (*config.AgentConfigSet, error)
 	if err != nil {
 		return nil, err
 	}
-	return config.LoadAgentConfigSet(options.baseDir)
+	set, err := config.LoadAgentConfigSet(options.baseDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("agent environment is not initialized at %s; run: sboxctl --base-dir %s setup local", options.baseDir, options.baseDir)
+		}
+		return nil, err
+	}
+	return set, nil
 }
 
 // writePlanPreview 输出 runtime plan diff 预览。
 func writePlanPreview(cmd *cobra.Command, plan *runtimeplan.Plan) error {
 	if plan == nil || len(plan.Changes) == 0 {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), "no-change")
+		return writeStatus(cmd, outputStatusOK, "No runtime changes are required.")
+	}
+	rows := make([][]string, 0, len(plan.Changes))
+	for _, change := range plan.Changes {
+		rows = append(rows, []string{string(change.Action), change.Instance, change.RelativePath, change.Service})
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Plan"); err != nil {
 		return err
 	}
-	for _, change := range plan.Changes {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s %s\n", change.Action, change.Instance, change.RelativePath, change.Service); err != nil {
-			return err
-		}
-	}
-	return nil
+	return writeTable(cmd, []string{"ACTION", "INSTANCE", "FILE", "SERVICE"}, rows)
 }
 
 // writeOutput 将命令结果写到 stdout。

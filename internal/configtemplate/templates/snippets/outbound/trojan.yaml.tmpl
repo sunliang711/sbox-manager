@@ -1,0 +1,11 @@
+# Trojan outbound。
+- name: trojan-upstream
+  type: trojan
+  server: trojan.example.com
+  port: 443
+  password: change-me # Trojan 必填。
+  tls:
+    enabled: true # Trojan 通常需要 TLS。
+    server_name: trojan.example.com
+    insecure: false
+    alpn: [h2, http/1.1]

@@ -116,27 +116,27 @@ func (m *Manager) InstallTrafficTimers(ctx context.Context, baseDir string, traf
 		for _, period := range TrafficPeriods() {
 			servicePath := filepath.Join(m.unitDir, TrafficSystemdServiceName(period))
 			if err := WriteFileAtomic(servicePath, RenderTrafficSystemdService(baseDir, trafficDir, logsDir, binary, period), systemdUnitMode); err != nil {
-				return fmt.Errorf("安装 traffic systemd service %s: %w", servicePath, err)
+				return fmt.Errorf("install traffic systemd service %s: %w", servicePath, err)
 			}
 			timerPath := filepath.Join(m.unitDir, TrafficSystemdTimerName(period))
 			if err := WriteFileAtomic(timerPath, RenderTrafficSystemdTimer(period), systemdUnitMode); err != nil {
-				return fmt.Errorf("安装 traffic systemd timer %s: %w", timerPath, err)
+				return fmt.Errorf("install traffic systemd timer %s: %w", timerPath, err)
 			}
 		}
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 		return nil
 	case KindLaunchd:
 		for _, period := range TrafficPeriods() {
 			path := filepath.Join(m.launchAgentDir, TrafficLaunchdLabel(period)+".plist")
 			if err := WriteFileAtomic(path, RenderTrafficLaunchdPlist(baseDir, logsDir, binary, period), launchdMode); err != nil {
-				return fmt.Errorf("安装 traffic launchd plist %s: %w", path, err)
+				return fmt.Errorf("install traffic launchd plist %s: %w", path, err)
 			}
 		}
 		return nil
 	default:
-		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 
@@ -154,7 +154,7 @@ func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 			if timerExists {
 				output, err := m.runner.Run(ctx, "systemctl", "disable", "--now", TrafficSystemdTimerName(period))
 				if err != nil && !isServiceNotLoaded(output, err) {
-					return fmt.Errorf("停用 traffic timer %s: %w", period, err)
+					return fmt.Errorf("disable traffic timer %s: %w", period, err)
 				}
 			}
 			for _, path := range []string{
@@ -163,7 +163,7 @@ func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 			} {
 				deleted, err := removeFileIfExists(path)
 				if err != nil {
-					return fmt.Errorf("删除 traffic 服务文件 %s: %w", path, err)
+					return fmt.Errorf("delete traffic service file %s: %w", path, err)
 				}
 				removed = removed || deleted
 			}
@@ -172,7 +172,7 @@ func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 			return nil
 		}
 		if _, err := m.runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
-			return fmt.Errorf("执行 systemctl daemon-reload: %w", err)
+			return fmt.Errorf("run systemctl daemon-reload: %w", err)
 		}
 		return nil
 	case KindLaunchd:
@@ -189,15 +189,15 @@ func (m *Manager) UninstallTrafficTimers(ctx context.Context) error {
 			}
 			output, err := m.runner.Run(ctx, "launchctl", "bootout", domain+"/"+label)
 			if err != nil && !isServiceNotLoaded(output, err) {
-				return fmt.Errorf("卸载 traffic launchd %s: %w", label, err)
+				return fmt.Errorf("uninstall traffic launchd %s: %w", label, err)
 			}
 			if _, err := removeFileIfExists(path); err != nil {
-				return fmt.Errorf("删除 traffic plist %s: %w", path, err)
+				return fmt.Errorf("delete traffic plist %s: %w", path, err)
 			}
 		}
 		return nil
 	default:
-		return fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 
@@ -234,7 +234,7 @@ func (m *Manager) runTrafficTimer(ctx context.Context, action string, period str
 			}
 			return m.runner.Run(ctx, "journalctl", args...)
 		default:
-			return nil, fmt.Errorf("不支持的 traffic timer 动作 %q", action)
+			return nil, fmt.Errorf("unsupported traffic timer action %q", action)
 		}
 	case KindLaunchd:
 		label := TrafficLaunchdLabel(period)
@@ -268,10 +268,10 @@ func (m *Manager) runTrafficTimer(ctx context.Context, action string, period str
 			}
 			return m.runner.Run(ctx, "log", args...)
 		default:
-			return nil, fmt.Errorf("不支持的 traffic timer 动作 %q", action)
+			return nil, fmt.Errorf("unsupported traffic timer action %q", action)
 		}
 	default:
-		return nil, fmt.Errorf("不支持的 service-manager %q", m.kind)
+		return nil, fmt.Errorf("unsupported service-manager %q", m.kind)
 	}
 }
 

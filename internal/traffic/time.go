@@ -14,7 +14,7 @@ const displayTimeLayout = "2006-01-02 15:04:05"
 func LoadLocation(name string) (*time.Location, error) {
 	location, err := time.LoadLocation(name)
 	if err != nil {
-		return nil, fmt.Errorf("加载 traffic timezone %q: %w", name, err)
+		return nil, fmt.Errorf("load traffic timezone %q: %w", name, err)
 	}
 	return location, nil
 }
@@ -52,12 +52,12 @@ func ResolveRange(period string, options RangeOptions, now time.Time, location *
 	switch period {
 	case PeriodHourly, PeriodDaily:
 		if options.Month != "" || options.Months > 0 || options.Year != "" || options.Years > 0 {
-			return TimeRange{}, fmt.Errorf("%s 不支持 month/months/year/years 范围参数", period)
+			return TimeRange{}, fmt.Errorf("%s does not support month/months/year/years range options", period)
 		}
 		return resolveDayBasedRange(options, localNow, location)
 	case PeriodMonthly:
 		if options.Year != "" || options.Years > 0 {
-			return TimeRange{}, fmt.Errorf("monthly 不支持 year/years 范围参数")
+			return TimeRange{}, fmt.Errorf("monthly does not support year/years range options")
 		}
 		if hasDayBasedRange(options) {
 			return resolveDayBasedRange(options, localNow, location)
@@ -72,7 +72,7 @@ func ResolveRange(period string, options RangeOptions, now time.Time, location *
 		}
 		return resolveYearRange(options, localNow, location)
 	default:
-		return TimeRange{}, fmt.Errorf("不支持的范围 period %q", period)
+		return TimeRange{}, fmt.Errorf("unsupported range period %q", period)
 	}
 }
 
@@ -85,7 +85,7 @@ func FormatTime(value time.Time, location *time.Location) string {
 func ParseRFC3339InLocation(value string, location *time.Location) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("时间必须是 RFC3339: %w", err)
+		return time.Time{}, fmt.Errorf("time must be RFC3339: %w", err)
 	}
 	return parsed.In(location), nil
 }
@@ -95,7 +95,7 @@ func resolveDayBasedRange(options RangeOptions, now time.Time, location *time.Lo
 	if options.Date != "" {
 		day, err := time.ParseInLocation(dateLayout, options.Date, location)
 		if err != nil {
-			return TimeRange{}, fmt.Errorf("date 必须是 YYYY-MM-DD: %w", err)
+			return TimeRange{}, fmt.Errorf("date must be YYYY-MM-DD: %w", err)
 		}
 		return DayRange(day, location), nil
 	}
@@ -106,18 +106,18 @@ func resolveDayBasedRange(options RangeOptions, now time.Time, location *time.Lo
 	}
 	if options.From != "" || options.To != "" {
 		if options.From == "" || options.To == "" {
-			return TimeRange{}, fmt.Errorf("from 和 to 必须同时指定")
+			return TimeRange{}, fmt.Errorf("from and to must be specified together")
 		}
 		start, err := time.ParseInLocation(dateLayout, options.From, location)
 		if err != nil {
-			return TimeRange{}, fmt.Errorf("from 必须是 YYYY-MM-DD: %w", err)
+			return TimeRange{}, fmt.Errorf("from must be YYYY-MM-DD: %w", err)
 		}
 		endDay, err := time.ParseInLocation(dateLayout, options.To, location)
 		if err != nil {
-			return TimeRange{}, fmt.Errorf("to 必须是 YYYY-MM-DD: %w", err)
+			return TimeRange{}, fmt.Errorf("to must be YYYY-MM-DD: %w", err)
 		}
 		if endDay.Before(start) {
-			return TimeRange{}, fmt.Errorf("to 不能早于 from")
+			return TimeRange{}, fmt.Errorf("to cannot be earlier than from")
 		}
 		return TimeRange{Start: DayRange(start, location).Start, End: DayRange(endDay, location).End}, nil
 	}
@@ -133,7 +133,7 @@ func resolveMonthRange(options RangeOptions, now time.Time, location *time.Locat
 	if options.Month != "" {
 		month, err := time.ParseInLocation(monthLayout, options.Month, location)
 		if err != nil {
-			return TimeRange{}, fmt.Errorf("month 必须是 YYYY-MM: %w", err)
+			return TimeRange{}, fmt.Errorf("month must be YYYY-MM: %w", err)
 		}
 		return MonthRange(month, location), nil
 	}
@@ -151,7 +151,7 @@ func resolveYearRange(options RangeOptions, now time.Time, location *time.Locati
 	if options.Year != "" {
 		year, err := strconv.Atoi(options.Year)
 		if err != nil || year < 1 {
-			return TimeRange{}, fmt.Errorf("year 必须是 YYYY")
+			return TimeRange{}, fmt.Errorf("year must be YYYY")
 		}
 		return YearRange(year, location), nil
 	}

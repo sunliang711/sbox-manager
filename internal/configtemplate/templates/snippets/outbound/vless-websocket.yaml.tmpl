@@ -1,0 +1,18 @@
+# VLESS outbound（WebSocket）。
+- name: vless-ws-upstream
+  type: vless
+  server: vless.example.com
+  port: 443
+  uuid: "{{ .VlessUUID }}" # VLESS 必填。
+  flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+  tls:
+    enabled: true # 是否启用 TLS。
+    server_name: vless.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  transport:
+    type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
+    host: vless.example.com
+    path: /vless-websocket
+    headers:
+      Host: vless.example.com

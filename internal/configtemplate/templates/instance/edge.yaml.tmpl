@@ -1,0 +1,24 @@
+{{ if .ShowExampleFields }}
+# Edge instance 完整示例，可保存为 instances/edge-us.yaml。
+{{ end }}
+name: {{ .InstanceName }}
+enabled: true
+role: edge
+{{ if .ShowExampleFields }}
+labels: [prod, us]
+{{ end }}
+api:
+  enabled: false
+  listen: 127.0.0.1:10085
+  token: ""
+inbounds:
+{{ snippet "inbound.vmess-raw" 2 }}
+{{ snippet "inbound.socks5" 2 }}
+{{ snippet "inbound.http" 2 }}
+outbounds:
+{{ snippet "outbound.vmess-websocket" 2 }}
+route:
+  default: {{ .VmessOutboundName }}
+traffic:
+  enabled: true
+  scopes: [user, inbound, outbound]

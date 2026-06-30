@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -29,7 +30,7 @@ var newSboxsubServiceManager = func(options *rootOptions) (*service.Manager, err
 func newSboxsubInitCommandT05() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "初始化订阅服务环境目录和默认配置",
+		Short: "Initialize the subscription service environment directory and default config",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -40,22 +41,29 @@ func newSboxsubInitCommandT05() *cobra.Command {
 			if err := initSubBaseDir(options.baseDir, force); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "初始化完成: %s\n%s", options.baseDir, sboxsubInitNextSteps(options.baseDir))
-			return err
+			if err := writeStatus(cmd, outputStatusOK, "Subscription service initialized.", outputKV("Base dir", options.baseDir)); err != nil {
+				return err
+			}
+			return writeNextSteps(cmd, sboxsubInitNextSteps(options.baseDir)...)
 		},
 	}
 }
 
 // sboxsubInitNextSteps 返回订阅服务初始化后的下一步提示。
-func sboxsubInitNextSteps(baseDir string) string {
-	return fmt.Sprintf("下一步：\n- 为了导入 agent 导出的订阅 bundle，执行：sboxsub --base-dir %s import /path/to/sbox-sub-bundle.zip\n- 为了安装订阅服务文件，执行：sudo sboxsub --base-dir %s service install\n- 为了启动订阅服务，执行：sudo sboxsub --base-dir %s start\n- 不确定还缺什么，执行：sboxsub --base-dir %s doctor\n", baseDir, baseDir, baseDir, baseDir)
+func sboxsubInitNextSteps(baseDir string) []string {
+	return []string{
+		fmt.Sprintf("Import a subscription bundle exported by the agent: sboxsub --base-dir %s import /path/to/sbox-sub-bundle.zip", baseDir),
+		fmt.Sprintf("Install the service files: sudo sboxsub --base-dir %s service install", baseDir),
+		fmt.Sprintf("Start the subscription service: sudo sboxsub --base-dir %s start", baseDir),
+		fmt.Sprintf("Check the environment: sboxsub --base-dir %s doctor", baseDir),
+	}
 }
 
 // newSboxsubConfigCommandT05 创建订阅服务配置命令组。
 func newSboxsubConfigCommandT05() *cobra.Command {
 	configCommand := &cobra.Command{
 		Use:   "config",
-		Short: "编辑、展示或检查订阅服务配置",
+		Short: "Edit, show, or check subscription service config",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			editor, _ := cmd.Flags().GetString("editor")
 			return editSubConfigCommand(cmd, editor)
@@ -72,7 +80,7 @@ func newSboxsubConfigCommandT05() *cobra.Command {
 func newSboxsubImportCommandT05() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import BUNDLE",
-		Short: "导入订阅 bundle",
+		Short: "Import a subscription bundle",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -84,8 +92,11 @@ func newSboxsubImportCommandT05() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 bundle 已导入: inputs=%d nodes=%d replace_all=%t\n", result.Inputs, result.Nodes, result.Replace)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription bundle imported.",
+				outputKV("Inputs", fmt.Sprintf("%d", result.Inputs)),
+				outputKV("Nodes", fmt.Sprintf("%d", result.Nodes)),
+				outputKV("Replace all", fmt.Sprintf("%t", result.Replace)),
+			)
 		},
 	}
 }
@@ -94,7 +105,7 @@ func newSboxsubImportCommandT05() *cobra.Command {
 func newSboxsubClearCommandT05() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clear",
-		Short: "清空订阅服务数据",
+		Short: "Clear subscription service data",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -103,13 +114,12 @@ func newSboxsubClearCommandT05() *cobra.Command {
 			}
 			inputDir := subscription.InputsDir(options.baseDir)
 			if err := os.RemoveAll(inputDir); err != nil {
-				return fmt.Errorf("清空 input 目录: %w", err)
+				return fmt.Errorf("clear input directory: %w", err)
 			}
 			if err := os.MkdirAll(inputDir, 0750); err != nil {
-				return fmt.Errorf("创建 input 目录: %w", err)
+				return fmt.Errorf("create input directory: %w", err)
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "订阅 input 已清空")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription inputs cleared.", outputKV("Directory", inputDir))
 		},
 	}
 }
@@ -118,7 +128,7 @@ func newSboxsubClearCommandT05() *cobra.Command {
 func newSboxsubInputCommandT05() *cobra.Command {
 	input := &cobra.Command{
 		Use:   "input",
-		Short: "管理订阅服务输入源",
+		Short: "Manage subscription service input sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -132,11 +142,11 @@ func newSboxsubInputCommandT05() *cobra.Command {
 		newSboxsubInputSetHostCommand(),
 		newSboxsubInputRemoveCommand(),
 	)
-	mustCommand(input, "show").Flags().Bool("raw", false, "输出原始内容")
-	mustCommand(input, "show").Flags().Bool("show-secrets", false, "显示敏感字段明文")
-	mustCommand(input, "edit").Flags().String("editor", "", "指定编辑器命令")
-	mustCommand(input, "clone").Flags().String("editor", "", "指定编辑器命令")
-	mustCommand(input, "set-host").Flags().Bool("all", false, "应用到全部输入源")
+	mustCommand(input, "show").Flags().Bool("raw", false, "print raw content")
+	mustCommand(input, "show").Flags().Bool("show-secrets", false, "show sensitive fields in plaintext")
+	mustCommand(input, "edit").Flags().String("editor", "", "editor command")
+	mustCommand(input, "clone").Flags().String("editor", "", "editor command")
+	mustCommand(input, "set-host").Flags().Bool("all", false, "apply to all input sources")
 	return input
 }
 
@@ -144,7 +154,7 @@ func newSboxsubInputCommandT05() *cobra.Command {
 func newSboxsubServeCommandT05() *cobra.Command {
 	serve := &cobra.Command{
 		Use:   "serve",
-		Short: "启动订阅 HTTP 服务",
+		Short: "Start the subscription HTTP service",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -170,8 +180,8 @@ func newSboxsubServeCommandT05() *cobra.Command {
 			})
 		},
 	}
-	serve.Flags().String("host", "", "覆盖 HTTP 监听 host")
-	serve.Flags().Int("port", 0, "覆盖 HTTP 监听 port")
+	serve.Flags().String("host", "", "override HTTP listen host")
+	serve.Flags().Int("port", 0, "override HTTP listen port")
 	return serve
 }
 
@@ -179,7 +189,7 @@ func newSboxsubServeCommandT05() *cobra.Command {
 func newSboxsubServiceCommandT05() *cobra.Command {
 	serviceCommand := &cobra.Command{
 		Use:   "service",
-		Short: "管理订阅服务 systemd unit 或 launchd plist",
+		Short: "Manage subscription service systemd unit or launchd plist",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -195,7 +205,7 @@ func newSboxsubServiceCommandT05() *cobra.Command {
 func newSboxsubServiceInstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
-		Short: "安装订阅服务文件",
+		Short: "Install subscription service files",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -208,16 +218,15 @@ func newSboxsubServiceInstallCommand() *cobra.Command {
 			}
 			binary, err := os.Executable()
 			if err != nil {
-				return fmt.Errorf("解析当前 sboxsub binary: %w", err)
+				return fmt.Errorf("resolve current sboxsub binary: %w", err)
 			}
 			if err := os.MkdirAll(filepath.Join(options.baseDir, "logs"), 0750); err != nil {
-				return fmt.Errorf("创建日志目录: %w", err)
+				return fmt.Errorf("create log directory: %w", err)
 			}
 			if err := manager.InstallSubscription(cmd.Context(), options.baseDir, binary); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "订阅服务文件已安装")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription service files installed.")
 		},
 	}
 }
@@ -226,7 +235,7 @@ func newSboxsubServiceInstallCommand() *cobra.Command {
 func newSboxsubServiceUninstallCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "uninstall",
-		Short: "卸载订阅服务文件",
+		Short: "Uninstall subscription service files",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -240,8 +249,7 @@ func newSboxsubServiceUninstallCommand() *cobra.Command {
 			if err := manager.UninstallSubscription(cmd.Context()); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "订阅服务文件已卸载")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription service files uninstalled.")
 		},
 	}
 }
@@ -270,8 +278,7 @@ func newSboxsubServiceActionCommand(action string) *cobra.Command {
 			if err := writeServiceActionOutput(cmd, results); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s 完成: %s\n", action, serviceName)
-			return err
+			return writeStatus(cmd, outputStatusOK, "Service action completed.", outputKV("Action", action), outputKV("Service", serviceName))
 		},
 	}
 }
@@ -280,7 +287,7 @@ func newSboxsubServiceActionCommand(action string) *cobra.Command {
 func newSboxsubDoctorCommandT05() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "执行订阅服务诊断检查",
+		Short: "Run subscription service diagnostics",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -292,7 +299,7 @@ func newSboxsubDoctorCommandT05() *cobra.Command {
 				return err
 			}
 			if diagnostics.HasIssue(checks) {
-				return fmt.Errorf("doctor found ISSUE")
+				return fmt.Errorf("doctor found issues")
 			}
 			return nil
 		},
@@ -303,7 +310,7 @@ func newSboxsubDoctorCommandT05() *cobra.Command {
 func newSboxsubConfigShowCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "展示订阅服务配置",
+		Short: "Show subscription service config",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			subConfig, err := loadSubConfigFromCommand(cmd)
@@ -324,14 +331,13 @@ func newSboxsubConfigShowCommand() *cobra.Command {
 func newSboxsubConfigCheckCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "check",
-		Short: "检查订阅服务配置",
+		Short: "Check subscription service config",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if _, err := loadSubConfigFromCommand(cmd); err != nil {
 				return err
 			}
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "订阅服务配置校验通过")
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription service config validation passed.")
 		},
 	}
 }
@@ -340,7 +346,7 @@ func newSboxsubConfigCheckCommand() *cobra.Command {
 func newSboxsubInputListCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "列出输入源",
+		Short: "List input sources",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -351,12 +357,11 @@ func newSboxsubInputListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			rows := make([][]string, 0, len(files))
 			for _, file := range files {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), file.Name); err != nil {
-					return err
-				}
+				rows = append(rows, []string{file.Name, file.Input.Source, fmt.Sprintf("%d", len(file.Input.Nodes))})
 			}
-			return nil
+			return writeTable(cmd, []string{"FILE", "SOURCE", "NODES"}, rows)
 		},
 	}
 }
@@ -365,7 +370,7 @@ func newSboxsubInputListCommand() *cobra.Command {
 func newSboxsubInputShowCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show SOURCE",
-		Short: "展示输入源",
+		Short: "Show an input source",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -406,7 +411,7 @@ func newSboxsubInputShowCommand() *cobra.Command {
 func newSboxsubInputValidateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate [SOURCE]",
-		Short: "校验输入源",
+		Short: "Validate input sources",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -421,15 +426,17 @@ func newSboxsubInputValidateCommand() *cobra.Command {
 				if _, err := config.LoadSubscriptionInput(path); err != nil {
 					return err
 				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 校验通过: %s\n", args[0])
-				return err
+				return writeStatus(cmd, outputStatusOK, "Subscription input validation passed.", outputKV("Source", args[0]))
 			}
 			index, err := subscription.LoadIndexFromDir(subscription.InputsDir(options.baseDir))
 			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 校验通过: sources=%d users=%d nodes=%d\n", len(index.Sources), index.UserCount(), len(index.Nodes))
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription inputs validation passed.",
+				outputKV("Sources", fmt.Sprintf("%d", len(index.Sources))),
+				outputKV("Users", fmt.Sprintf("%d", index.UserCount())),
+				outputKV("Nodes", fmt.Sprintf("%d", len(index.Nodes))),
+			)
 		},
 	}
 }
@@ -438,7 +445,7 @@ func newSboxsubInputValidateCommand() *cobra.Command {
 func newSboxsubInputEditCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit SOURCE",
-		Short: "编辑输入源",
+		Short: "Edit an input source",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -449,8 +456,7 @@ func newSboxsubInputEditCommand() *cobra.Command {
 			if err := editSubInput(options.baseDir, args[0], editor); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 已更新: %s\n", args[0])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription input updated.", outputKV("Source", args[0]))
 		},
 	}
 }
@@ -459,7 +465,7 @@ func newSboxsubInputEditCommand() *cobra.Command {
 func newSboxsubInputCloneCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clone SOURCE TARGET",
-		Short: "克隆输入源",
+		Short: "Clone an input source",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -475,7 +481,7 @@ func newSboxsubInputCloneCommand() *cobra.Command {
 				return err
 			}
 			if _, err := os.Stat(targetPath); err == nil {
-				return fmt.Errorf("target 已存在: %s", args[1])
+				return fmt.Errorf("target already exists: %s", args[1])
 			} else if err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -491,8 +497,7 @@ func newSboxsubInputCloneCommand() *cobra.Command {
 			if err := writeEditableInputClone(options.baseDir, args[1], cloneData, editor); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 已克隆: %s -> %s\n", args[0], args[1])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription input cloned.", outputKV("Source", args[0]), outputKV("Target", args[1]))
 		},
 	}
 }
@@ -501,7 +506,7 @@ func newSboxsubInputCloneCommand() *cobra.Command {
 func newSboxsubInputSetHostCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set-host HOST [SOURCE]",
-		Short: "设置输入源 external host",
+		Short: "Set input source external host",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -510,7 +515,7 @@ func newSboxsubInputSetHostCommand() *cobra.Command {
 			}
 			all, _ := cmd.Flags().GetBool("all")
 			if !all && len(args) != 2 {
-				return fmt.Errorf("未指定 --all 时必须提供 SOURCE")
+				return fmt.Errorf("SOURCE is required unless --all is specified")
 			}
 			names := []string{}
 			if all {
@@ -530,8 +535,10 @@ func newSboxsubInputSetHostCommand() *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input external_host 已更新: %d\n", len(names))
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription input host updated.",
+				outputKV("Host", args[0]),
+				outputKV("Sources", fmt.Sprintf("%d", len(names))),
+			)
 		},
 	}
 }
@@ -540,7 +547,7 @@ func newSboxsubInputSetHostCommand() *cobra.Command {
 func newSboxsubInputRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove SOURCE",
-		Short: "移除输入源",
+		Short: "Remove an input source",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options, err := getRootOptions(cmd)
@@ -554,8 +561,7 @@ func newSboxsubInputRemoveCommand() *cobra.Command {
 			if err := os.Remove(path); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅 input 已移除: %s\n", args[0])
-			return err
+			return writeStatus(cmd, outputStatusOK, "Subscription input removed.", outputKV("Source", args[0]))
 		},
 	}
 }
@@ -563,7 +569,7 @@ func newSboxsubInputRemoveCommand() *cobra.Command {
 // initSubBaseDir 创建订阅服务目录和默认配置。
 func initSubBaseDir(baseDir string, force bool) error {
 	if strings.TrimSpace(baseDir) == "" {
-		return fmt.Errorf("base dir 不能为空")
+		return fmt.Errorf("base dir cannot be empty")
 	}
 	for _, dir := range []string{
 		baseDir,
@@ -572,12 +578,12 @@ func initSubBaseDir(baseDir string, force bool) error {
 		filepath.Join(baseDir, "logs"),
 	} {
 		if err := os.MkdirAll(dir, 0750); err != nil {
-			return fmt.Errorf("创建目录 %s: %w", dir, err)
+			return fmt.Errorf("create directory %s: %w", dir, err)
 		}
 	}
 	configPath := filepath.Join(baseDir, "config.yaml")
 	if _, err := os.Stat(configPath); err == nil && !force {
-		return fmt.Errorf("配置文件 %s 已存在，覆盖请使用 --force", configPath)
+		return fmt.Errorf("config file %s already exists; use --force to overwrite", configPath)
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -592,6 +598,9 @@ func loadSubConfigFromCommand(cmd *cobra.Command) (*domain.SubConfig, error) {
 	}
 	subConfig, err := config.LoadSubConfig(filepath.Join(options.baseDir, "config.yaml"), options.baseDir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("subscription service environment is not initialized at %s; run: sboxsub --base-dir %s init", options.baseDir, options.baseDir)
+		}
 		return nil, err
 	}
 	if options.listen != "" {
@@ -617,7 +626,7 @@ func applyServeListenOverride(subConfig *domain.SubConfig, host string, port int
 	}
 	if port != 0 {
 		if port < 1 || port > 65535 {
-			return fmt.Errorf("port 必须在 1-65535 范围内")
+			return fmt.Errorf("port must be in range 1-65535")
 		}
 		currentPort = strconv.Itoa(port)
 	}
@@ -703,10 +712,10 @@ func editSubConfigCommand(cmd *cobra.Command, editor string) error {
 	draft := draftPath(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取配置文件 %s: %w", path, err)
+		return fmt.Errorf("read config file %s: %w", path, err)
 	}
 	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("写入草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("write draft file %s: %w", draft, err)
 	}
 	defer os.Remove(draft)
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
@@ -716,10 +725,9 @@ func editSubConfigCommand(cmd *cobra.Command, editor string) error {
 		return err
 	}
 	if err := os.Rename(draft, path); err != nil {
-		return fmt.Errorf("替换配置文件 %s: %w", path, err)
+		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "订阅服务配置已更新: %s\n", path)
-	return err
+	return writeStatus(cmd, outputStatusOK, "Subscription service config updated.", outputKV("File", path))
 }
 
 // editSubInput 编辑单个 input 并在替换前校验整体 index。
@@ -730,7 +738,7 @@ func editSubInput(baseDir string, name string, editor string) error {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取订阅 input %s: %w", path, err)
+		return fmt.Errorf("read subscription input %s: %w", path, err)
 	}
 	return editInputData(baseDir, name, data, editor)
 }
@@ -748,7 +756,7 @@ func editInputData(baseDir string, name string, data []byte, editor string) erro
 	}
 	draft := draftPath(targetPath)
 	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("写入草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("write draft file %s: %w", draft, err)
 	}
 	defer os.Remove(draft)
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
@@ -756,7 +764,7 @@ func editInputData(baseDir string, name string, data []byte, editor string) erro
 	}
 	draftData, err := os.ReadFile(draft)
 	if err != nil {
-		return fmt.Errorf("读取草稿文件 %s: %w", draft, err)
+		return fmt.Errorf("read draft file %s: %w", draft, err)
 	}
 	input, err := subscription.DecodeInput(name, draftData)
 	if err != nil {
@@ -797,6 +805,9 @@ func writeServiceActionOutput(cmd *cobra.Command, results []service.Result) erro
 		if len(result.Output) == 0 {
 			continue
 		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Output: %s\n", result.Service); err != nil {
+			return err
+		}
 		if _, err := cmd.OutOrStdout().Write(result.Output); err != nil {
 			return err
 		}
@@ -813,21 +824,21 @@ func writeServiceActionOutput(cmd *cobra.Command, results []service.Result) erro
 func sboxsubServiceActionShort(action string) string {
 	switch action {
 	case "start":
-		return "启动订阅服务"
+		return "Start the subscription service"
 	case "stop":
-		return "停止订阅服务"
+		return "Stop the subscription service"
 	case "restart":
-		return "重启订阅服务"
+		return "Restart the subscription service"
 	case "status":
-		return "查看订阅服务状态"
+		return "Show subscription service status"
 	case "logs":
-		return "查看订阅服务日志"
+		return "Show subscription service logs"
 	case "enable":
-		return "启用订阅服务"
+		return "Enable the subscription service"
 	case "disable":
-		return "禁用订阅服务"
+		return "Disable the subscription service"
 	default:
-		return "管理订阅服务"
+		return "Manage the subscription service"
 	}
 }
 

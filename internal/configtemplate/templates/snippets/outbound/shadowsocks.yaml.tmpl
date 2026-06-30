@@ -1,0 +1,12 @@
+# Shadowsocks outbound，含 Shadowsocks 2022 示例方法。
+- name: ss-upstream
+  type: shadowsocks
+  server: ss.example.com # 远端服务器主机名或 IP。
+  port: 443 # 远端端口。
+  method: 2022-blake3-aes-256-gcm # Shadowsocks 必填。
+  password: change-me # Shadowsocks 必填。
+  tls:
+    enabled: false # 是否启用 TLS。
+    server_name: ss.example.com
+    insecure: false
+    alpn: [h2, http/1.1]

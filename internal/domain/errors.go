@@ -19,7 +19,7 @@ type ValidationErrors struct {
 // Error 返回所有校验问题的单行摘要。
 func (e *ValidationErrors) Error() string {
 	if e == nil || len(e.Issues) == 0 {
-		return "配置校验失败"
+		return "configuration validation failed"
 	}
 
 	parts := make([]string, 0, len(e.Issues))
@@ -30,7 +30,7 @@ func (e *ValidationErrors) Error() string {
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", issue.Path, issue.Message))
 	}
-	return "配置校验失败: " + strings.Join(parts, "; ")
+	return "configuration validation failed: " + strings.Join(parts, "; ")
 }
 
 // Add 追加一条校验问题。

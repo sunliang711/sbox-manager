@@ -17,8 +17,8 @@ func newSboxsubCommand() *cobra.Command {
 	root := newRootCommand(
 		"sboxsub",
 		sboxsubDefaultBaseDir,
-		"运行和管理订阅服务",
-		"sboxsub 只管理订阅服务自身配置、输入 bundle、HTTP 服务和订阅服务生命周期，不读取 agent 配置或 runtime。",
+		"Run and manage the subscription service",
+		"sboxsub manages only subscription service configuration, input bundles, HTTP service, and subscription service lifecycle; it does not read agent configuration or runtime.",
 		true,
 	)
 
@@ -50,12 +50,12 @@ func newSboxsubCommand() *cobra.Command {
 // addSboxsubCommandGroups 设置 sboxsub 根命令 usage 的功能分组。
 func addSboxsubCommandGroups(root *cobra.Command) {
 	addCommandGroups(root,
-		&cobra.Group{ID: sboxsubGroupConfig, Title: "环境与配置"},
-		&cobra.Group{ID: sboxsubGroupInput, Title: "输入与导入"},
-		&cobra.Group{ID: sboxsubGroupHTTP, Title: "HTTP 服务"},
-		&cobra.Group{ID: sboxsubGroupService, Title: "生命周期与服务"},
-		&cobra.Group{ID: sboxsubGroupDiagnostics, Title: "诊断"},
-		&cobra.Group{ID: commandGroupHelp, Title: "帮助"},
+		&cobra.Group{ID: sboxsubGroupConfig, Title: "Setup and Configuration"},
+		&cobra.Group{ID: sboxsubGroupInput, Title: "Inputs"},
+		&cobra.Group{ID: sboxsubGroupHTTP, Title: "HTTP Service"},
+		&cobra.Group{ID: sboxsubGroupService, Title: "Runtime and Service Files"},
+		&cobra.Group{ID: sboxsubGroupDiagnostics, Title: "Diagnostics"},
+		&cobra.Group{ID: commandGroupHelp, Title: "Help"},
 	)
 	setCommandGroup(root, sboxsubGroupConfig, "init", "config", "clear", "version")
 	setCommandGroup(root, sboxsubGroupInput, "import", "input")
@@ -66,11 +66,11 @@ func addSboxsubCommandGroups(root *cobra.Command) {
 
 // addSboxsubFlags 为 sboxsub 占位命令补充规格中的常用参数。
 func addSboxsubFlags(root *cobra.Command) {
-	mustCommand(root, "init").Flags().Bool("force", false, "覆盖已有初始化结果")
-	mustCommand(root, "config").Flags().String("editor", "", "指定编辑器命令")
-	mustCommand(root, "config", "show").Flags().Bool("show-secrets", false, "显示敏感字段明文")
-	mustCommand(root, "import").Flags().Bool("replace-all", false, "替换所有现有输入")
-	mustCommand(root, "logs").Flags().BoolP("follow", "f", false, "持续跟随日志")
+	mustCommand(root, "init").Flags().Bool("force", false, "overwrite existing initialization result")
+	mustCommand(root, "config").Flags().String("editor", "", "editor command")
+	mustCommand(root, "config", "show").Flags().Bool("show-secrets", false, "show sensitive fields in plaintext")
+	mustCommand(root, "import").Flags().Bool("replace-all", false, "replace all existing inputs")
+	mustCommand(root, "logs").Flags().BoolP("follow", "f", false, "follow logs")
 }
 
 // newSboxsubConfigCommand 创建订阅服务配置命令组。

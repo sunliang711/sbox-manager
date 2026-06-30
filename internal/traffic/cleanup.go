@@ -55,7 +55,7 @@ func cleanupPeriods(period string) ([]string, error) {
 	case PeriodHourly, PeriodDaily, PeriodMonthly:
 		return []string{period}, nil
 	default:
-		return nil, fmt.Errorf("不支持的 cleanup period %q", period)
+		return nil, fmt.Errorf("unsupported cleanup period %q", period)
 	}
 }
 

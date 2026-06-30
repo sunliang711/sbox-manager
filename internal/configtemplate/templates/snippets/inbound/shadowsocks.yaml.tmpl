@@ -1,0 +1,22 @@
+# Shadowsocks inbound，method 可使用 Shadowsocks 2022 方法。
+- name: {{ .ShadowsocksInboundName }}
+  type: shadowsocks # 配置类型仍为 shadowsocks；shadowsocks22 是示例别名。
+  listen: 0.0.0.0
+  port: {{ .ShadowsocksInboundPort }}
+  tag: shadowsocks-{{ .ShadowsocksInboundName }}
+  udp: true
+  method: 2022-blake3-aes-256-gcm # 可被 users[].method 覆盖。
+  users:
+    - name: alice
+      password: "{{ .ShadowsocksPassword }}" # Shadowsocks 用户必填。
+      method: 2022-blake3-aes-256-gcm # 为空时继承 inbound.method。
+{{ if .ShowExampleFields }}
+      remark: US Shadowsocks
+      tag: edge-us-ss-main
+{{ end }}
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: {{ .ShadowsocksRemark }}
+    region: US

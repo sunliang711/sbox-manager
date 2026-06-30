@@ -1,0 +1,30 @@
+# VLESS inbound（WebSocket），可放入 instance.inbounds。
+- name: vless-ws
+  type: vless
+  listen: 0.0.0.0
+  port: 24110
+  tag: vless-vless-ws
+  udp: true
+  tls:
+    enabled: true # 可按需启用 TLS。
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  transport:
+    type: ws
+    host: proxy.example.com
+    path: /vless-websocket
+    headers:
+      Host: proxy.example.com
+  users:
+    - name: alice
+      uuid: "{{ .VlessUUID }}" # VLESS 必填 UUID。
+      flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
+      remark: US VLESS WS
+      tag: edge-us-vless-ws
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VLESS WS
+    region: US

@@ -21,7 +21,7 @@ func BuildPlan(global domain.GlobalConfig, instances []domain.Instance, target s
 
 	configHash, err := hashStable(global)
 	if err != nil {
-		return nil, fmt.Errorf("计算全局配置 hash: %w", err)
+		return nil, fmt.Errorf("calculate global config hash: %w", err)
 	}
 	plan := &Plan{
 		ManifestPath:   filepath.Join(global.Paths.Runtime, "manifest.json"),
@@ -37,7 +37,7 @@ func BuildPlan(global domain.GlobalConfig, instances []domain.Instance, target s
 	for _, instance := range targetInstances {
 		instanceHash, err := hashStable(instance)
 		if err != nil {
-			return nil, fmt.Errorf("计算 instance %s hash: %w", instance.Name, err)
+			return nil, fmt.Errorf("calculate instance %s hash: %w", instance.Name, err)
 		}
 		plan.InstanceSHA256[instance.Name] = instanceHash
 
@@ -123,7 +123,7 @@ func selectTargetInstances(instances []domain.Instance, target string) ([]domain
 			return []domain.Instance{instance}, map[string]struct{}{target: {}}, false, nil
 		}
 	}
-	return nil, nil, false, fmt.Errorf("instance %q 不存在", target)
+	return nil, nil, false, fmt.Errorf("instance %q does not exist", target)
 }
 
 // buildChanges 对比期望文件、manifest 和磁盘文件，生成稳定 diff。
@@ -221,7 +221,7 @@ func (p *Plan) inTargetScope(instance string) bool {
 func relativeRuntimePath(runtimeDir string, filePath string) (string, error) {
 	relative, err := filepath.Rel(runtimeDir, filePath)
 	if err != nil {
-		return "", fmt.Errorf("计算 relative_path: %w", err)
+		return "", fmt.Errorf("calculate relative_path: %w", err)
 	}
 	relative = filepath.ToSlash(relative)
 	if err := validateRelativePath(relative); err != nil {
@@ -257,7 +257,7 @@ func fileSHA256(path string) (string, bool, error) {
 		if os.IsNotExist(err) {
 			return "", false, nil
 		}
-		return "", false, fmt.Errorf("读取生成文件 %s: %w", path, err)
+		return "", false, fmt.Errorf("read generated file %s: %w", path, err)
 	}
 	return hashBytes(data), true, nil
 }

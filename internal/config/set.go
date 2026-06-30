@@ -88,7 +88,7 @@ func (s *AgentConfigSet) FindInstance(name string) (domain.Instance, bool) {
 // TargetInstances 返回指定 target 对应的 instance 集合。
 func (s *AgentConfigSet) TargetInstances(target string) ([]domain.Instance, error) {
 	if s == nil {
-		return nil, fmt.Errorf("配置集合不能为空")
+		return nil, fmt.Errorf("config set cannot be empty")
 	}
 	if strings.TrimSpace(target) == "" {
 		targets := make([]domain.Instance, 0, len(s.Instances))
@@ -101,7 +101,7 @@ func (s *AgentConfigSet) TargetInstances(target string) ([]domain.Instance, erro
 	}
 	instance, ok := s.FindInstance(target)
 	if !ok {
-		return nil, fmt.Errorf("instance %q 不存在", target)
+		return nil, fmt.Errorf("instance %q does not exist", target)
 	}
 	return []domain.Instance{instance}, nil
 }

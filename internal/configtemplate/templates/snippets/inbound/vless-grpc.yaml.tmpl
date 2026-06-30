@@ -1,0 +1,30 @@
+# VLESS gRPC inbound，可放入 instance.inbounds。
+- name: vless-grpc
+  type: vless
+  listen: 0.0.0.0
+  port: 24111
+  tag: vless-vless-grpc
+  udp: true
+  tls:
+    enabled: true
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h2, http/1.1]
+  transport:
+    type: grpc
+    service_name: TunService
+    idle_timeout: 30s
+    ping_timeout: 15s
+    permit_without_stream: false
+  users:
+    - name: alice
+      uuid: "{{ .VlessUUID }}"
+      flow: xtls-rprx-vision
+      remark: US VLESS gRPC
+      tag: edge-us-vless-grpc
+  subscription:
+    enabled: true
+    user: alice
+    server: "{{ .SubscriptionServer }}"
+    remark: US VLESS gRPC
+    region: US

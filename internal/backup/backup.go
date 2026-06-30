@@ -110,7 +110,7 @@ func Import(baseDir string, backupPath string, force bool) (*ImportResult, error
 func Read(backupPath string) (map[string][]byte, domain.BackupManifest, error) {
 	reader, err := zip.OpenReader(backupPath)
 	if err != nil {
-		return nil, domain.BackupManifest{}, fmt.Errorf("打开 agent 备份 %s: %w", backupPath, err)
+		return nil, domain.BackupManifest{}, fmt.Errorf("open agent backup %s: %w", backupPath, err)
 	}
 	defer reader.Close()
 
@@ -118,14 +118,14 @@ func Read(backupPath string) (map[string][]byte, domain.BackupManifest, error) {
 	files := make(map[string][]byte)
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
-			return nil, domain.BackupManifest{}, fmt.Errorf("agent 备份不允许目录成员: %s", file.Name)
+			return nil, domain.BackupManifest{}, fmt.Errorf("agent backup does not allow directory member: %s", file.Name)
 		}
 		if file.Name == "manifest.json" {
-			return nil, domain.BackupManifest{}, fmt.Errorf("不接受订阅 bundle 或旧格式备份: %s", file.Name)
+			return nil, domain.BackupManifest{}, fmt.Errorf("subscription bundle or legacy backup is not accepted: %s", file.Name)
 		}
 		if file.Name == ManifestName {
 			if manifestData != nil {
-				return nil, domain.BackupManifest{}, fmt.Errorf("agent 备份 manifest 重复")
+				return nil, domain.BackupManifest{}, fmt.Errorf("duplicate agent backup manifest")
 			}
 			data, err := readZipFile(file)
 			if err != nil {
@@ -135,10 +135,10 @@ func Read(backupPath string) (map[string][]byte, domain.BackupManifest, error) {
 			continue
 		}
 		if err := domain.ValidateBackupFileName(file.Name); err != nil {
-			return nil, domain.BackupManifest{}, fmt.Errorf("agent 备份成员 %s: %w", file.Name, err)
+			return nil, domain.BackupManifest{}, fmt.Errorf("agent backup member %s: %w", file.Name, err)
 		}
 		if _, exists := files[file.Name]; exists {
-			return nil, domain.BackupManifest{}, fmt.Errorf("agent 备份成员重复: %s", file.Name)
+			return nil, domain.BackupManifest{}, fmt.Errorf("duplicate agent backup member: %s", file.Name)
 		}
 		data, err := readZipFile(file)
 		if err != nil {
@@ -147,12 +147,12 @@ func Read(backupPath string) (map[string][]byte, domain.BackupManifest, error) {
 		files[file.Name] = data
 	}
 	if manifestData == nil {
-		return nil, domain.BackupManifest{}, fmt.Errorf("agent 备份缺少 %s", ManifestName)
+		return nil, domain.BackupManifest{}, fmt.Errorf("agent backup missing %s", ManifestName)
 	}
 
 	var manifest domain.BackupManifest
 	if err := config.DecodeStrict(manifestData, "json", "BackupManifest", &manifest); err != nil {
-		return nil, domain.BackupManifest{}, fmt.Errorf("解析 agent 备份 manifest: %w", err)
+		return nil, domain.BackupManifest{}, fmt.Errorf("parse agent backup manifest: %w", err)
 	}
 	if err := domain.ValidateBackupManifest(manifest); err != nil {
 		return nil, domain.BackupManifest{}, err
@@ -167,27 +167,27 @@ func Read(backupPath string) (map[string][]byte, domain.BackupManifest, error) {
 func WriteFileAtomic(target string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(target)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	tempName := temp.Name()
 	defer os.Remove(tempName)
 	if _, err := temp.Write(data); err != nil {
 		temp.Close()
-		return fmt.Errorf("写入临时文件: %w", err)
+		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := temp.Chmod(mode); err != nil {
 		temp.Close()
-		return fmt.Errorf("设置临时文件权限: %w", err)
+		return fmt.Errorf("set temp file permissions: %w", err)
 	}
 	if err := temp.Close(); err != nil {
-		return fmt.Errorf("关闭临时文件: %w", err)
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tempName, target); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", target, err)
+		return fmt.Errorf("replace file %s: %w", target, err)
 	}
 	return nil
 }
@@ -197,13 +197,13 @@ func collectFiles(set *config.AgentConfigSet) (map[string][]byte, error) {
 	files := make(map[string][]byte)
 	configData, err := os.ReadFile(filepath.Join(set.BaseDir, "config.yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("读取 agent config.yaml: %w", err)
+		return nil, fmt.Errorf("read agent config.yaml: %w", err)
 	}
 	files["config.yaml"] = configData
 
 	entries, err := os.ReadDir(set.Global.Paths.Instances)
 	if err != nil {
-		return nil, fmt.Errorf("读取 instances 目录 %s: %w", set.Global.Paths.Instances, err)
+		return nil, fmt.Errorf("read instances directory %s: %w", set.Global.Paths.Instances, err)
 	}
 	for _, entry := range entries {
 		if entry.IsDir() || !isInstanceConfigName(entry.Name()) {
@@ -211,7 +211,7 @@ func collectFiles(set *config.AgentConfigSet) (map[string][]byte, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return nil, fmt.Errorf("读取 instance 文件信息 %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("read instance file info %s: %w", entry.Name(), err)
 		}
 		if !info.Mode().IsRegular() {
 			continue
@@ -222,7 +222,7 @@ func collectFiles(set *config.AgentConfigSet) (map[string][]byte, error) {
 		}
 		data, err := os.ReadFile(filepath.Join(set.Global.Paths.Instances, entry.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("读取 instance 配置 %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("read instance config %s: %w", entry.Name(), err)
 		}
 		files[relativeName] = data
 	}
@@ -235,7 +235,7 @@ func encodeZip(manifest domain.BackupManifest, files map[string][]byte) ([]byte,
 	writer := zip.NewWriter(&buffer)
 	manifestData, err := marshalStable(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("编码 backup manifest: %w", err)
+		return nil, fmt.Errorf("encode backup manifest: %w", err)
 	}
 	if err := writeZipMember(writer, ManifestName, manifestData); err != nil {
 		return nil, err
@@ -246,7 +246,7 @@ func encodeZip(manifest domain.BackupManifest, files map[string][]byte) ([]byte,
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("关闭 agent backup zip: %w", err)
+		return nil, fmt.Errorf("close agent backup zip: %w", err)
 	}
 	return buffer.Bytes(), nil
 }
@@ -254,14 +254,14 @@ func encodeZip(manifest domain.BackupManifest, files map[string][]byte) ([]byte,
 // writeZipMember 写入一个普通 zip 文件成员。
 func writeZipMember(writer *zip.Writer, name string, data []byte) error {
 	if name == "" || strings.Contains(name, "\\") || path.IsAbs(name) || path.Clean(name) != name {
-		return fmt.Errorf("zip 成员路径不安全: %s", name)
+		return fmt.Errorf("zip member path is unsafe: %s", name)
 	}
 	member, err := writer.Create(name)
 	if err != nil {
-		return fmt.Errorf("创建 zip 成员 %s: %w", name, err)
+		return fmt.Errorf("create zip member %s: %w", name, err)
 	}
 	if _, err := member.Write(data); err != nil {
-		return fmt.Errorf("写入 zip 成员 %s: %w", name, err)
+		return fmt.Errorf("write zip member %s: %w", name, err)
 	}
 	return nil
 }
@@ -270,12 +270,12 @@ func writeZipMember(writer *zip.Writer, name string, data []byte) error {
 func readZipFile(file *zip.File) ([]byte, error) {
 	reader, err := file.Open()
 	if err != nil {
-		return nil, fmt.Errorf("打开 zip 成员 %s: %w", file.Name, err)
+		return nil, fmt.Errorf("open zip member %s: %w", file.Name, err)
 	}
 	defer reader.Close()
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("读取 zip 成员 %s: %w", file.Name, err)
+		return nil, fmt.Errorf("read zip member %s: %w", file.Name, err)
 	}
 	return data, nil
 }
@@ -283,12 +283,12 @@ func readZipFile(file *zip.File) ([]byte, error) {
 // validateHashes 校验 manifest 文件集合和 sha256 与 zip 成员完全一致。
 func validateHashes(manifest domain.BackupManifest, files map[string][]byte) error {
 	if len(manifest.FilesSHA256) != len(files) {
-		return fmt.Errorf("agent backup manifest files_sha256 与文件集合不一致")
+		return fmt.Errorf("agent backup manifest files_sha256 does not match file set")
 	}
 	for name, data := range files {
 		want, exists := manifest.FilesSHA256[name]
 		if !exists {
-			return fmt.Errorf("agent backup manifest 缺少文件 hash: %s", name)
+			return fmt.Errorf("agent backup manifest missing file hash: %s", name)
 		}
 		sum := sha256.Sum256(data)
 		if !strings.EqualFold(want, hex.EncodeToString(sum[:])) {
@@ -297,7 +297,7 @@ func validateHashes(manifest domain.BackupManifest, files map[string][]byte) err
 	}
 	for name := range manifest.FilesSHA256 {
 		if _, exists := files[name]; !exists {
-			return fmt.Errorf("agent backup manifest 包含不存在的文件: %s", name)
+			return fmt.Errorf("agent backup manifest contains missing file: %s", name)
 		}
 	}
 	return nil
@@ -307,16 +307,16 @@ func validateHashes(manifest domain.BackupManifest, files map[string][]byte) err
 func validateConfigFiles(baseDir string, files map[string][]byte) (domain.GlobalConfig, []domain.Instance, error) {
 	configData, ok := files["config.yaml"]
 	if !ok {
-		return domain.GlobalConfig{}, nil, fmt.Errorf("agent 备份缺少 config.yaml")
+		return domain.GlobalConfig{}, nil, fmt.Errorf("agent backup missing config.yaml")
 	}
 	tempDir, err := os.MkdirTemp("", "sbox-agent-backup-validate-*")
 	if err != nil {
-		return domain.GlobalConfig{}, nil, fmt.Errorf("创建校验临时目录: %w", err)
+		return domain.GlobalConfig{}, nil, fmt.Errorf("create validation temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 	configPath := filepath.Join(tempDir, "config.yaml")
 	if err := os.WriteFile(configPath, configData, 0600); err != nil {
-		return domain.GlobalConfig{}, nil, fmt.Errorf("写入校验 config: %w", err)
+		return domain.GlobalConfig{}, nil, fmt.Errorf("write validation config: %w", err)
 	}
 	global, err := config.LoadGlobalConfig(configPath, baseDir)
 	if err != nil {
@@ -330,7 +330,7 @@ func validateConfigFiles(baseDir string, files map[string][]byte) (domain.Global
 		}
 		tempPath := filepath.Join(tempDir, filepath.Base(name))
 		if err := os.WriteFile(tempPath, files[name], 0600); err != nil {
-			return domain.GlobalConfig{}, nil, fmt.Errorf("写入校验 instance %s: %w", name, err)
+			return domain.GlobalConfig{}, nil, fmt.Errorf("write validation instance %s: %w", name, err)
 		}
 		instance, err := config.LoadInstance(tempPath, *global)
 		if err != nil {
@@ -349,14 +349,14 @@ func ensureNoExistingConfig(baseDir string, instancesDir string) error {
 	if exists, err := pathExists(filepath.Join(baseDir, "config.yaml")); err != nil {
 		return err
 	} else if exists {
-		return fmt.Errorf("目标已存在 config.yaml，覆盖请使用 --force")
+		return fmt.Errorf("target config.yaml already exists; use --force to overwrite")
 	}
 	names, err := existingInstanceConfigNames(instancesDir)
 	if err != nil {
 		return err
 	}
 	if len(names) > 0 {
-		return fmt.Errorf("目标已存在 instance 配置，覆盖请使用 --force")
+		return fmt.Errorf("target instance config already exists; use --force to overwrite")
 	}
 	return nil
 }
@@ -403,7 +403,7 @@ func replaceImportFiles(files []importFile) error {
 		if err := replaceOneImportFile(&files[index]); err != nil {
 			rollbackErr := rollbackImportFiles(files)
 			if rollbackErr != nil {
-				return fmt.Errorf("%w；回滚失败: %v", err, rollbackErr)
+				return fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
 			}
 			return err
 		}
@@ -416,23 +416,23 @@ func replaceImportFiles(files []importFile) error {
 func prepareImportTemp(file *importFile) error {
 	dir := filepath.Dir(file.Target)
 	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("创建目录 %s: %w", dir, err)
+		return fmt.Errorf("create directory %s: %w", dir, err)
 	}
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(file.Target)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	file.temp = temp.Name()
 	if _, err := temp.Write(file.Data); err != nil {
 		temp.Close()
-		return fmt.Errorf("写入临时文件: %w", err)
+		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := temp.Chmod(file.Mode); err != nil {
 		temp.Close()
-		return fmt.Errorf("设置临时文件权限: %w", err)
+		return fmt.Errorf("set temp file permissions: %w", err)
 	}
 	if err := temp.Close(); err != nil {
-		return fmt.Errorf("关闭临时文件: %w", err)
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	return nil
 }
@@ -451,11 +451,11 @@ func replaceOneImportFile(file *importFile) error {
 		}
 		file.backup = backup
 		if err := os.Rename(file.Target, file.backup); err != nil {
-			return fmt.Errorf("备份目标文件 %s: %w", file.Target, err)
+			return fmt.Errorf("backup target file %s: %w", file.Target, err)
 		}
 	}
 	if err := os.Rename(file.temp, file.Target); err != nil {
-		return fmt.Errorf("替换文件 %s: %w", file.Target, err)
+		return fmt.Errorf("replace file %s: %w", file.Target, err)
 	}
 	file.temp = ""
 	file.installed = true
@@ -466,15 +466,15 @@ func replaceOneImportFile(file *importFile) error {
 func reserveImportBackupName(target string) (string, error) {
 	temp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".bak-*")
 	if err != nil {
-		return "", fmt.Errorf("创建备份占位文件: %w", err)
+		return "", fmt.Errorf("create backup placeholder file: %w", err)
 	}
 	name := temp.Name()
 	if err := temp.Close(); err != nil {
 		os.Remove(name)
-		return "", fmt.Errorf("关闭备份占位文件: %w", err)
+		return "", fmt.Errorf("close backup placeholder file: %w", err)
 	}
 	if err := os.Remove(name); err != nil {
-		return "", fmt.Errorf("移除备份占位文件: %w", err)
+		return "", fmt.Errorf("remove backup placeholder file: %w", err)
 	}
 	return name, nil
 }
@@ -528,10 +528,10 @@ func cleanupImportBackups(files []importFile) {
 func validateImportTarget(baseDir string, target string, field string) error {
 	relative, err := filepath.Rel(baseDir, filepath.Clean(target))
 	if err != nil {
-		return fmt.Errorf("%s 路径不安全: %w", field, err)
+		return fmt.Errorf("%s path is unsafe: %w", field, err)
 	}
 	if relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%s 必须位于 base dir 内部: %s", field, target)
+		return fmt.Errorf("%s must be inside base dir: %s", field, target)
 	}
 	return nil
 }
@@ -543,7 +543,7 @@ func existingInstanceConfigNames(dir string) ([]string, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("读取目标 instances 目录 %s: %w", dir, err)
+		return nil, fmt.Errorf("read target instances directory %s: %w", dir, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -580,19 +580,19 @@ func pathExists(target string) (bool, error) {
 // cleanBaseDir 解析并校验导入目标 base dir。
 func cleanBaseDir(baseDir string) (string, error) {
 	if strings.TrimSpace(baseDir) == "" {
-		return "", fmt.Errorf("base dir 不能为空")
+		return "", fmt.Errorf("base dir cannot be empty")
 	}
 	if strings.Contains(baseDir, "\\") {
-		return "", fmt.Errorf("base dir 不允许反斜杠")
+		return "", fmt.Errorf("base dir must not contain backslashes")
 	}
 	for _, segment := range strings.Split(strings.ReplaceAll(baseDir, "\\", "/"), "/") {
 		if segment == ".." {
-			return "", fmt.Errorf("base dir 不允许路径穿越")
+			return "", fmt.Errorf("base dir must not contain path traversal")
 		}
 	}
 	absolute, err := filepath.Abs(baseDir)
 	if err != nil {
-		return "", fmt.Errorf("清理 base dir: %w", err)
+		return "", fmt.Errorf("clean base dir: %w", err)
 	}
 	return filepath.Clean(absolute), nil
 }

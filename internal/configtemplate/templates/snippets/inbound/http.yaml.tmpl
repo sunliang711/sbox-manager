@@ -1,0 +1,13 @@
+# HTTP inbound，本地监听可 noauth，公网监听建议 password。
+- name: {{ .LocalHTTPName }}
+  type: http
+  listen: 127.0.0.1
+  port: {{ .LocalHTTPPort }}
+  tag: http-{{ .LocalHTTPName }}
+  udp: false
+{{ if .IncludeProxyAuth }}
+  auth:
+    type: password # 支持 noauth、password。
+    username: alice
+    password: change-me
+{{ end }}

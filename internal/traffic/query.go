@@ -53,7 +53,7 @@ func SummarizeRecords(records []Record) []SummaryRecord {
 // WriteRecordsTable 输出流量记录表。
 func WriteRecordsTable(writer io.Writer, records []Record) error {
 	if len(records) == 0 {
-		_, err := fmt.Fprintln(writer, "未找到记录")
+		_, err := fmt.Fprintln(writer, "No traffic records found.")
 		return err
 	}
 	table := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
@@ -90,23 +90,26 @@ func WriteSummaryTable(writer io.Writer, period string, timeRange TimeRange, ins
 	if name == "" {
 		name = "all"
 	}
-	if _, err := fmt.Fprintf(writer, "周期: %s\n", period); err != nil {
+	if _, err := fmt.Fprintln(writer, "Summary"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "时间范围: %s 至 %s\n", timeRange.Start.Format(displayTimeLayout), timeRange.End.Format(displayTimeLayout)); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Period: %s\n", period); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "实例: %s\n", instance); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Time range: %s to %s\n", timeRange.Start.Format(displayTimeLayout), timeRange.End.Format(displayTimeLayout)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "统计范围: %s\n", scope); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Instance: %s\n", instance); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "名称: %s\n", name); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Scope: %s\n", scope); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "  Name: %s\n", name); err != nil {
 		return err
 	}
 	if len(records) == 0 {
-		_, err := fmt.Fprintln(writer, "未找到记录")
+		_, err := fmt.Fprintln(writer, "No traffic records found.")
 		return err
 	}
 	table := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
