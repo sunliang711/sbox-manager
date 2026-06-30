@@ -203,13 +203,9 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 		Listen:     inbound.Listen,
 		ListenPort: inbound.Port,
 	}
-	if inbound.UDP {
-		udp := inbound.UDP
-		result.UDP = &udp
-	}
 	result.TLS = convertTLS(inbound.TLS, inbound.Type == "anytls")
 	if inboundSupportsTransport(inbound.Type) {
-		result.Transport = convertTransport(inbound.Transport)
+		result.Transport = convertInboundTransport(inbound.Transport)
 	}
 
 	switch inbound.Type {
@@ -247,17 +243,16 @@ func convertInbound(inbound domain.Inbound) (Inbound, error) {
 			if method == "" {
 				method = inbound.Method
 			}
+			if result.Method == "" {
+				result.Method = method
+			}
 			result.Users = append(result.Users, InboundUser{
 				Name:     user.Name,
 				Password: user.Password,
-				Method:   method,
 			})
 		}
 		if len(result.Users) == 1 {
 			result.Password = result.Users[0].Password
-			if result.Method == "" {
-				result.Method = result.Users[0].Method
-			}
 		}
 	case "socks5", "http":
 		if inbound.Auth.Type == "password" {
@@ -353,6 +348,16 @@ func convertRouteRule(rule domain.RouteRule) RouteRule {
 	return converted
 }
 
+// convertInboundTransport 将领域 transport 转换为 sing-box inbound 传输配置。
+func convertInboundTransport(transport domain.TransportConfig) *Transport {
+	result := convertTransport(transport)
+	if result == nil {
+		return nil
+	}
+	result.Host = nil
+	return result
+}
+
 // convertTransport 将领域 transport 转换为 sing-box V2Ray transport 配置。
 func convertTransport(transport domain.TransportConfig) *Transport {
 	if transport.Type == "" {
@@ -372,7 +377,7 @@ func convertTransport(transport domain.TransportConfig) *Transport {
 	}
 	if transport.Type == "http" && len(transport.Hosts) > 0 {
 		result.Host = append([]string(nil), transport.Hosts...)
-	} else if transport.Host != "" {
+	} else if transport.Type == "httpupgrade" && transport.Host != "" {
 		result.Host = transport.Host
 	}
 	return result
@@ -384,10 +389,12 @@ func convertTLS(tls domain.TLSConfig, forceEnabled bool) *TLS {
 		return nil
 	}
 	return &TLS{
-		Enabled:    tls.Enabled || forceEnabled,
-		ServerName: tls.ServerName,
-		Insecure:   tls.Insecure,
-		ALPN:       append([]string(nil), tls.ALPN...),
+		Enabled:         tls.Enabled || forceEnabled,
+		ServerName:      tls.ServerName,
+		Insecure:        tls.Insecure,
+		ALPN:            append([]string(nil), tls.ALPN...),
+		CertificatePath: tls.CertificatePath,
+		KeyPath:         tls.KeyPath,
 	}
 }
 

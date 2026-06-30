@@ -148,7 +148,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name:    "inbound vless",
 			args:    []string{"example", "inbound", "vless"},
-			want:    []string{"# VLESS inbound", "type: vless", "uuid:", "flow:", "transport:"},
+			want:    []string{"# VLESS inbound", "type: vless", "uuid:", "transport:"},
 			notWant: []string{"type: anytls"},
 		},
 		{
@@ -186,7 +186,7 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name:    "outbound vless",
 			args:    []string{"example", "outbound", "vless"},
-			want:    []string{"# VLESS outbound", "type: vless", "uuid:", "flow:", "transport:"},
+			want:    []string{"# VLESS outbound", "type: vless", "uuid:", "transport:"},
 			notWant: []string{"type: vmess"},
 		},
 		{

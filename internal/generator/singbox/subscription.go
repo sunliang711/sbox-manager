@@ -123,6 +123,8 @@ func buildSubscriptionNode(global domain.GlobalConfig, instance domain.Instance,
 		TLS:       inbound.TLS,
 		Transport: inbound.Transport,
 	}
+	node.TLS.CertificatePath = ""
+	node.TLS.KeyPath = ""
 	switch inbound.Type {
 	case "vmess":
 		node.UUID = user.UUID

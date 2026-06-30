@@ -155,12 +155,14 @@ type Outbound struct {
 	Transport TransportConfig `yaml:"transport" json:"transport"`
 }
 
-// TLSConfig 表示连接的 TLS 客户端配置。
+// TLSConfig 表示 inbound/outbound 连接的 TLS 配置。
 type TLSConfig struct {
-	Enabled    bool     `yaml:"enabled" json:"enabled"`
-	ServerName string   `yaml:"server_name" json:"server_name"`
-	Insecure   bool     `yaml:"insecure" json:"insecure"`
-	ALPN       []string `yaml:"alpn" json:"alpn"`
+	Enabled         bool     `yaml:"enabled" json:"enabled"`
+	ServerName      string   `yaml:"server_name" json:"server_name"`
+	Insecure        bool     `yaml:"insecure" json:"insecure"`
+	ALPN            []string `yaml:"alpn" json:"alpn"`
+	CertificatePath string   `yaml:"certificate_path" json:"certificate_path"`
+	KeyPath         string   `yaml:"key_path" json:"key_path"`
 }
 
 // TransportConfig 表示 VMess/VLESS 使用的 V2Ray transport 配置。

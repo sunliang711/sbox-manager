@@ -33,7 +33,6 @@ type Inbound struct {
 	Tag        string        `json:"tag"`
 	Listen     string        `json:"listen"`
 	ListenPort int           `json:"listen_port"`
-	UDP        *bool         `json:"udp,omitempty"`
 	TLS        *TLS          `json:"tls,omitempty"`
 	Transport  *Transport    `json:"transport,omitempty"`
 	Method     string        `json:"method,omitempty"`
@@ -46,7 +45,6 @@ type InboundUser struct {
 	Name     string `json:"name,omitempty"`
 	UUID     string `json:"uuid,omitempty"`
 	Password string `json:"password,omitempty"`
-	Method   string `json:"method,omitempty"`
 	Username string `json:"username,omitempty"`
 	Flow     string `json:"flow,omitempty"`
 	AlterID  int    `json:"alterId,omitempty"`
@@ -76,10 +74,12 @@ type Outbound struct {
 
 // TLS 表示 sing-box 的 TLS 配置。
 type TLS struct {
-	Enabled    bool     `json:"enabled"`
-	ServerName string   `json:"server_name,omitempty"`
-	Insecure   bool     `json:"insecure,omitempty"`
-	ALPN       []string `json:"alpn,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	ServerName      string   `json:"server_name,omitempty"`
+	Insecure        bool     `json:"insecure,omitempty"`
+	ALPN            []string `json:"alpn,omitempty"`
+	CertificatePath string   `json:"certificate_path,omitempty"`
+	KeyPath         string   `json:"key_path,omitempty"`
 }
 
 // Transport 表示 sing-box vmess 等协议的传输配置。

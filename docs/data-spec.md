@@ -201,6 +201,8 @@ traffic:
 | `tls.server_name` | string | 否 | 无 | TLS SNI |
 | `tls.insecure` | bool | 否 | `false` | 是否跳过证书校验，生产环境建议 `false` |
 | `tls.alpn` | string list | 否 | `[]` | TLS ALPN 列表 |
+| `tls.certificate_path` | string | TLS inbound 启用时必填 | 无 | 服务端证书路径 |
+| `tls.key_path` | string | TLS inbound 启用时必填 | 无 | 服务端私钥路径 |
 | `transport` | object | 否 | 无 | VMess/VLESS 的 V2Ray transport 配置 |
 | `users` | list | vmess/vless/anytls/shadowsocks 必填 | 无 | 多用户凭据 |
 | `subscription` | object | 否 | `{enabled:false}` | 是否导出订阅节点 |
@@ -213,7 +215,7 @@ traffic:
 | `uuid` | string | vmess/vless 必填 | vmess、vless |
 | `password` | string | shadowsocks/anytls 必填 | shadowsocks、anytls |
 | `method` | string | shadowsocks 可选 | shadowsocks，缺省继承 inbound method |
-| `flow` | string | 否 | vless，支持 `xtls-rprx-vision` |
+| `flow` | string | 否 | vless，支持 `xtls-rprx-vision`，不能和 `transport` 同时使用 |
 | `alter_id` | int | 否 | vmess，`0` 表示 VMess AEAD |
 | `remark` | string | 订阅启用时建议 | 订阅展示名 |
 | `tag` | string | 否 | 订阅 tag 覆盖 |
@@ -241,7 +243,7 @@ traffic:
 | `password` | string | shadowsocks/anytls/trojan/hysteria2 可必填 | 对应协议 |
 | `method` | string | shadowsocks 必填 | shadowsocks |
 | `security` | string | 否 | vmess 加密参数，Surge 输出为 `encrypt-method` |
-| `flow` | string | 否 | vless，支持 `xtls-rprx-vision` |
+| `flow` | string | 否 | vless，支持 `xtls-rprx-vision`，不能和 `transport` 同时使用 |
 | `alter_id` | int | 否 | vmess，`0` 表示 VMess AEAD |
 | `auth.username` | string | socks5/http 可选 | socks5/http |
 | `auth.password` | string | socks5/http 可选 | socks5/http |
@@ -504,7 +506,7 @@ nodes:
 | `uuid` | string | vmess/vless 必填 | UUID |
 | `network` | string | 否 | VMess 底层网络，支持 `tcp`、`udp`；V2Ray transport 必须写入 `transport.type` |
 | `security` | string | 否 | VMess 加密参数 |
-| `flow` | string | 否 | VLESS flow |
+| `flow` | string | 否 | VLESS flow，不能和 `transport` 同时使用 |
 | `alter_id` | int | 否 | VMess alterId，`0` 表示 AEAD |
 | `method` | string | shadowsocks 必填 | 加密方法 |
 | `password` | string | shadowsocks/anytls 必填 | 密码 |

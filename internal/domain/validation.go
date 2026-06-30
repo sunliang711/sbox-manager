@@ -637,12 +637,26 @@ func validateInbounds(global GlobalConfig, inbounds []Inbound, errs *ValidationE
 		if inbound.Type == "anytls" && !inbound.TLS.Enabled {
 			errs.Add(path+".tls.enabled", "anytls inbound requires TLS to be enabled")
 		}
+		validateInboundTLS(path+".tls", inbound.TLS, errs)
 		if inboundSupportsTransport(inbound.Type) {
 			validateTransportConfig(path+".transport", inbound.Transport, errs)
 		}
 		validateInboundAuth(global, path, inbound, errs)
 		validateInboundUsers(path, inbound, errs)
 		validateInboundSubscription(path, inbound, errs)
+	}
+}
+
+// validateInboundTLS 校验启用 TLS 的 inbound 是否具备服务端证书。
+func validateInboundTLS(path string, tls TLSConfig, errs *ValidationErrors) {
+	if !tls.Enabled {
+		return
+	}
+	if strings.TrimSpace(tls.CertificatePath) == "" {
+		errs.Add(path+".certificate_path", "tls inbound requires certificate_path")
+	}
+	if strings.TrimSpace(tls.KeyPath) == "" {
+		errs.Add(path+".key_path", "tls inbound requires key_path")
 	}
 }
 
@@ -704,6 +718,9 @@ func validateInboundUsers(path string, inbound Inbound, errs *ValidationErrors) 
 			}
 			if strings.TrimSpace(user.Flow) != "" && !allowedValue(user.Flow, "xtls-rprx-vision") {
 				errs.Add(userPath+".flow", "unsupported vless flow %q", user.Flow)
+			}
+			if strings.TrimSpace(user.Flow) != "" && strings.TrimSpace(inbound.Transport.Type) != "" {
+				errs.Add(userPath+".flow", "vless flow cannot be used with transport %q", inbound.Transport.Type)
 			}
 			if user.AlterID != 0 {
 				errs.Add(userPath+".alter_id", "vless user does not support alter_id")
@@ -813,6 +830,9 @@ func validateOutboundRemote(path string, outbound Outbound, errs *ValidationErro
 		}
 		if strings.TrimSpace(outbound.Flow) != "" && !allowedValue(outbound.Flow, "xtls-rprx-vision") {
 			errs.Add(path+".flow", "unsupported vless flow %q", outbound.Flow)
+		}
+		if strings.TrimSpace(outbound.Flow) != "" && strings.TrimSpace(outbound.Transport.Type) != "" {
+			errs.Add(path+".flow", "vless flow cannot be used with transport %q", outbound.Transport.Type)
 		}
 		if outbound.AlterID != 0 {
 			errs.Add(path+".alter_id", "vless outbound does not support alter_id")

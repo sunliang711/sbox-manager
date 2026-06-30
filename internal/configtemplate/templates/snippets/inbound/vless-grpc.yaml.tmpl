@@ -10,6 +10,8 @@
     server_name: proxy.example.com
     insecure: false
     alpn: [h2, http/1.1]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
   transport:
     type: grpc
     service_name: TunService
@@ -19,7 +21,6 @@
   users:
     - name: alice
       uuid: "{{ .VlessUUID }}"
-      flow: xtls-rprx-vision
       remark: US VLESS gRPC
       tag: edge-us-vless-grpc
   subscription:

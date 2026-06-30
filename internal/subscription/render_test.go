@@ -68,7 +68,6 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 			Tag:      "vless-main",
 			Remark:   "US VLESS",
 			UUID:     "22222222-2222-4222-8222-222222222222",
-			Flow:     "xtls-rprx-vision",
 			TLS:      domain.TLSConfig{Enabled: true},
 			Transport: domain.TransportConfig{
 				Type: "httpupgrade",
@@ -82,7 +81,7 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render sing-box outbounds: %v", err)
 	}
-	for _, want := range []string{`"type": "vless"`, `"flow": "xtls-rprx-vision"`, `"tls": {`, `"type": "httpupgrade"`, `"host": "vless.example.com"`, `"path": "/upgrade"`} {
+	for _, want := range []string{`"type": "vless"`, `"tls": {`, `"type": "httpupgrade"`, `"host": "vless.example.com"`, `"path": "/upgrade"`} {
 		if !strings.Contains(outboundsJSON, want) {
 			t.Fatalf("sing-box output missing %s: %s", want, outboundsJSON)
 		}

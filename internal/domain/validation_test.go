@@ -160,7 +160,6 @@ func TestVLESSAnyTLSAndTransportsValidate(t *testing.T) {
 					{
 						Name: "alice",
 						UUID: "11111111-1111-4111-8111-111111111111",
-						Flow: "xtls-rprx-vision",
 					},
 				},
 			},
@@ -169,7 +168,11 @@ func TestVLESSAnyTLSAndTransportsValidate(t *testing.T) {
 				Type:   "anytls",
 				Listen: "0.0.0.0",
 				Port:   24001,
-				TLS:    TLSConfig{Enabled: true},
+				TLS: TLSConfig{
+					Enabled:         true,
+					CertificatePath: "/etc/ssl/sbox/fullchain.pem",
+					KeyPath:         "/etc/ssl/sbox/private.key",
+				},
 				Users: []InboundUser{
 					{
 						Name:     "alice",
@@ -207,6 +210,69 @@ func TestVLESSAnyTLSAndTransportsValidate(t *testing.T) {
 
 		if err := ValidateInstance(global, &instance); err != nil {
 			t.Fatalf("transport %s should validate: %v", transportType, err)
+		}
+	}
+}
+
+// TestVLESSFlowRejectsTransport 验证 VLESS flow 不能和 V2Ray transport 混用。
+func TestVLESSFlowRejectsTransport(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Inbounds = []Inbound{
+		{
+			Name:   "vless-ws",
+			Type:   "vless",
+			Listen: "0.0.0.0",
+			Port:   24000,
+			Transport: TransportConfig{
+				Type: "ws",
+			},
+			Users: []InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+					Flow: "xtls-rprx-vision",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []Outbound{
+		{
+			Name:   "vless-ws-upstream",
+			Type:   "vless",
+			Server: "vless.example.com",
+			Port:   443,
+			UUID:   "22222222-2222-4222-8222-222222222222",
+			Flow:   "xtls-rprx-vision",
+			Transport: TransportConfig{
+				Type: "ws",
+			},
+		},
+	}
+	instance.Route = RouteConfig{Default: "vless-ws-upstream"}
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected vless flow with transport error")
+	}
+	if strings.Count(err.Error(), "cannot be used with transport") < 2 {
+		t.Fatalf("expected inbound and outbound flow transport errors, got %v", err)
+	}
+}
+
+// TestInboundTLSRequiresCertificatePaths 验证启用 TLS 的 inbound 必须配置服务端证书和私钥。
+func TestInboundTLSRequiresCertificatePaths(t *testing.T) {
+	global := DefaultGlobalConfig()
+	instance := validInstance("edge-us", 24000)
+	instance.Inbounds[0].TLS = TLSConfig{Enabled: true}
+
+	err := ValidateInstance(global, &instance)
+	if err == nil {
+		t.Fatal("expected inbound tls certificate error")
+	}
+	for _, want := range []string{"certificate_path", "key_path"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %s error, got %v", want, err)
 		}
 	}
 }

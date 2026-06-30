@@ -10,6 +10,8 @@
     server_name: proxy.example.com
     insecure: false
     alpn: [h2, http/1.1]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
   transport:
     type: ws
     host: proxy.example.com
@@ -19,7 +21,6 @@
   users:
     - name: alice
       uuid: "{{ .VlessUUID }}" # VLESS 必填 UUID。
-      flow: xtls-rprx-vision # 可选；当前仅支持 xtls-rprx-vision。
       remark: US VLESS WS
       tag: edge-us-vless-ws
   subscription:

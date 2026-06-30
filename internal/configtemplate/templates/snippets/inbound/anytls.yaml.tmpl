@@ -10,6 +10,8 @@
     server_name: proxy.example.com
     insecure: false
     alpn: [h2, http/1.1]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
   users:
     - name: alice
       password: "{{ .AnyTLSPassword }}" # AnyTLS 用户必填密码。

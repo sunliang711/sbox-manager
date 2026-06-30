@@ -84,7 +84,12 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 			Type:   "vless",
 			Listen: "0.0.0.0",
 			Port:   24101,
-			TLS:    domain.TLSConfig{Enabled: true},
+			UDP:    true,
+			TLS: domain.TLSConfig{
+				Enabled:         true,
+				CertificatePath: "/etc/ssl/sbox/fullchain.pem",
+				KeyPath:         "/etc/ssl/sbox/private.key",
+			},
 			Transport: domain.TransportConfig{
 				Type:        "grpc",
 				ServiceName: "TunService",
@@ -93,7 +98,6 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 				{
 					Name: "alice",
 					UUID: "11111111-1111-4111-8111-111111111111",
-					Flow: "xtls-rprx-vision",
 				},
 			},
 		},
@@ -102,7 +106,11 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 			Type:   "anytls",
 			Listen: "0.0.0.0",
 			Port:   24102,
-			TLS:    domain.TLSConfig{Enabled: true},
+			TLS: domain.TLSConfig{
+				Enabled:         true,
+				CertificatePath: "/etc/ssl/sbox/fullchain.pem",
+				KeyPath:         "/etc/ssl/sbox/private.key",
+			},
 			Users: []domain.InboundUser{
 				{
 					Name:     "alice",
@@ -142,10 +150,13 @@ func TestGenerateSupportsVLESSAnyTLSAndTransports(t *testing.T) {
 		t.Fatalf("generate config: %v", err)
 	}
 	output := string(generated)
-	for _, want := range []string{`"type": "vless"`, `"type": "anytls"`, `"type": "grpc"`, `"service_name": "TunService"`, `"type": "httpupgrade"`, `"path": "/upgrade"`, `"flow": "xtls-rprx-vision"`} {
+	for _, want := range []string{`"type": "vless"`, `"type": "anytls"`, `"type": "grpc"`, `"service_name": "TunService"`, `"type": "httpupgrade"`, `"path": "/upgrade"`, `"certificate_path": "/etc/ssl/sbox/fullchain.pem"`, `"key_path": "/etc/ssl/sbox/private.key"`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("generated config missing %s: %s", want, output)
 		}
+	}
+	if strings.Contains(output, `"udp"`) {
+		t.Fatalf("generated config should not emit unsupported inbound udp field: %s", output)
 	}
 }
 
@@ -189,6 +200,86 @@ func TestGenerateVMessWebSocketTLS(t *testing.T) {
 			t.Fatalf("generated config missing %s: %s", want, output)
 		}
 	}
+	if strings.Contains(output, `"host":`) {
+		t.Fatalf("generated websocket transport should not emit host field: %s", output)
+	}
+}
+
+// TestGenerateShadowsocksInboundUsesTopLevelMethod 验证 Shadowsocks inbound 只在顶层生成 method。
+func TestGenerateShadowsocksInboundUsesTopLevelMethod(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "ss-main",
+			Type:   "shadowsocks",
+			Listen: "127.0.0.1",
+			Port:   24200,
+			Method: "2022-blake3-aes-256-gcm",
+			Users: []domain.InboundUser{
+				{
+					Name:     "alice",
+					Password: "change-me-32-byte-key",
+					Method:   "2022-blake3-aes-256-gcm",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "direct"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	if strings.Count(output, `"method"`) != 1 {
+		t.Fatalf("generated config should emit only top-level shadowsocks method: %s", output)
+	}
+}
+
+// TestGenerateInboundWebSocketOmitsClientHost 验证 inbound WebSocket 不生成客户端侧 host 字段。
+func TestGenerateInboundWebSocketOmitsClientHost(t *testing.T) {
+	global, instance := testConfig()
+	instance.Inbounds = []domain.Inbound{
+		{
+			Name:   "vmess-ws",
+			Type:   "vmess",
+			Listen: "127.0.0.1",
+			Port:   24101,
+			Transport: domain.TransportConfig{
+				Type: "ws",
+				Host: "proxy.example.com",
+				Path: "/vmess-websocket",
+				Headers: map[string]string{
+					"Host": "proxy.example.com",
+				},
+			},
+			Users: []domain.InboundUser{
+				{
+					Name: "alice",
+					UUID: "11111111-1111-4111-8111-111111111111",
+				},
+			},
+		},
+	}
+	instance.Outbounds = []domain.Outbound{{Name: "direct", Type: "direct"}}
+	instance.Groups = nil
+	instance.Route = domain.RouteConfig{Default: "direct"}
+	domain.ApplyInstanceDefaults(&instance)
+
+	generated, err := Generate(global, instance)
+	if err != nil {
+		t.Fatalf("generate config: %v", err)
+	}
+	output := string(generated)
+	if strings.Contains(output, `"host":`) {
+		t.Fatalf("generated inbound transport should not emit host field: %s", output)
+	}
+	if !strings.Contains(output, `"Host": "proxy.example.com"`) {
+		t.Fatalf("generated inbound transport should keep headers: %s", output)
+	}
 }
 
 // TestBuildSubscriptionInputIncludesNewProtocolFields 验证 inbound 订阅节点保留新增协议字段。
@@ -208,7 +299,6 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 				{
 					Name: "alice",
 					UUID: "11111111-1111-4111-8111-111111111111",
-					Flow: "xtls-rprx-vision",
 				},
 			},
 			Subscription: domain.SubscriptionConfig{
@@ -223,7 +313,11 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 			Type:   "anytls",
 			Listen: "0.0.0.0",
 			Port:   24102,
-			TLS:    domain.TLSConfig{Enabled: true},
+			TLS: domain.TLSConfig{
+				Enabled:         true,
+				CertificatePath: "/etc/ssl/sbox/fullchain.pem",
+				KeyPath:         "/etc/ssl/sbox/private.key",
+			},
 			Users: []domain.InboundUser{
 				{
 					Name:     "alice",
@@ -247,11 +341,14 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 	if len(input.Nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(input.Nodes))
 	}
-	if input.Nodes[0].Protocol != "vless" || input.Nodes[0].Transport.Type != "ws" || input.Nodes[0].Flow != "xtls-rprx-vision" {
+	if input.Nodes[0].Protocol != "vless" || input.Nodes[0].Transport.Type != "ws" || input.Nodes[0].Flow != "" {
 		t.Fatalf("vless node missing fields: %+v", input.Nodes[0])
 	}
 	if input.Nodes[1].Protocol != "anytls" || input.Nodes[1].Password != "change-me" || !input.Nodes[1].TLS.Enabled {
 		t.Fatalf("anytls node missing fields: %+v", input.Nodes[1])
+	}
+	if input.Nodes[1].TLS.CertificatePath != "" || input.Nodes[1].TLS.KeyPath != "" {
+		t.Fatalf("subscription node should not expose server certificate paths: %+v", input.Nodes[1].TLS)
 	}
 }
 
