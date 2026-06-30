@@ -337,9 +337,6 @@ func singBoxOutbound(node domain.SubscriptionNode) map[string]interface{} {
 		"server":      node.Server,
 		"server_port": node.Port,
 	}
-	if node.UDP {
-		outbound["udp"] = true
-	}
 	if tls := singBoxTLS(node.TLS, node.Protocol == "anytls"); len(tls) > 0 {
 		outbound["tls"] = tls
 	}
@@ -447,7 +444,7 @@ func singBoxTransport(transport domain.TransportConfig) map[string]interface{} {
 	}
 	if transport.Type == "http" && len(transport.Hosts) > 0 {
 		result["host"] = append([]string(nil), transport.Hosts...)
-	} else if transport.Host != "" {
+	} else if transport.Type == "httpupgrade" && transport.Host != "" {
 		result["host"] = transport.Host
 	}
 	if transport.Path != "" {

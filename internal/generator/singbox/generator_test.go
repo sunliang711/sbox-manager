@@ -479,6 +479,9 @@ func TestBuildSubscriptionInputIncludesNewProtocolFields(t *testing.T) {
 	if !input.Nodes[0].TLS.Reality.Enabled || input.Nodes[0].TLS.Reality.PrivateKey != "" || input.Nodes[0].TLS.Reality.PublicKey != "change-me-reality-public-key" {
 		t.Fatalf("vless node should keep public reality fields only: %+v", input.Nodes[0].TLS.Reality)
 	}
+	if !input.Nodes[0].TLS.UTLS.Enabled || input.Nodes[0].TLS.UTLS.Fingerprint != "chrome" {
+		t.Fatalf("vless reality node should include client utls fingerprint: %+v", input.Nodes[0].TLS.UTLS)
+	}
 	if input.Nodes[1].Protocol != "anytls" || input.Nodes[1].Password != "change-me" || !input.Nodes[1].TLS.Enabled {
 		t.Fatalf("anytls node missing fields: %+v", input.Nodes[1])
 	}

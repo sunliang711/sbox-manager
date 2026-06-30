@@ -95,6 +95,45 @@ func TestSingBoxSubscriptionRendersVLESSTransport(t *testing.T) {
 	}
 }
 
+// TestSingBoxSubscriptionSkipsUnsupportedOutboundFields 验证 sing-box 订阅不会输出当前 sing-box outbound 不支持的字段。
+func TestSingBoxSubscriptionSkipsUnsupportedOutboundFields(t *testing.T) {
+	nodes := []domain.SubscriptionNode{
+		{
+			Protocol: "vmess",
+			Server:   "vmess.example.com",
+			Port:     443,
+			Tag:      "vmess-ws",
+			Remark:   "US VMess WS",
+			UUID:     "11111111-1111-4111-8111-111111111111",
+			Network:  "tcp",
+			UDP:      true,
+			Transport: domain.TransportConfig{
+				Type: "ws",
+				Host: "vmess.example.com",
+				Path: "/ws",
+				Headers: map[string]string{
+					"Host": "vmess.example.com",
+				},
+			},
+		},
+	}
+
+	outboundsJSON, err := singBoxOutboundsJSON(nodes)
+	if err != nil {
+		t.Fatalf("render sing-box outbounds: %v", err)
+	}
+	for _, want := range []string{`"type": "vmess"`, `"network": "tcp"`, `"type": "ws"`, `"headers": {`, `"Host": "vmess.example.com"`} {
+		if !strings.Contains(outboundsJSON, want) {
+			t.Fatalf("sing-box output missing %s: %s", want, outboundsJSON)
+		}
+	}
+	for _, unwanted := range []string{`"udp":`, `"host": "vmess.example.com"`} {
+		if strings.Contains(outboundsJSON, unwanted) {
+			t.Fatalf("sing-box output should not contain %s: %s", unwanted, outboundsJSON)
+		}
+	}
+}
+
 // TestSingBoxSubscriptionRendersVLESSRealityVision 验证 sing-box 订阅保留 VLESS REALITY Vision 字段。
 func TestSingBoxSubscriptionRendersVLESSRealityVision(t *testing.T) {
 	nodes := []domain.SubscriptionNode{

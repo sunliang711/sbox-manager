@@ -12,6 +12,7 @@ import (
 const (
 	subscriptionInputSchema  = "sbox.subscription-input"
 	subscriptionInputVersion = 1
+	defaultRealityUTLS       = "chrome"
 )
 
 // BuildSubscriptionInputs 根据启用订阅的 inbound 生成订阅 input 列表。
@@ -129,6 +130,12 @@ func buildSubscriptionNode(global domain.GlobalConfig, instance domain.Instance,
 	node.TLS.Reality.HandshakeServer = ""
 	node.TLS.Reality.HandshakeServerPort = 0
 	node.TLS.Reality.MaxTimeDifference = ""
+	if node.TLS.Reality.Enabled {
+		node.TLS.UTLS = domain.UTLSConfig{
+			Enabled:     true,
+			Fingerprint: defaultRealityUTLS,
+		}
+	}
 	switch inbound.Type {
 	case "vmess":
 		node.UUID = user.UUID
