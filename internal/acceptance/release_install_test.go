@@ -221,6 +221,110 @@ func TestInstallScriptChecksumMismatchDoesNotInstall(t *testing.T) {
 	}
 }
 
+// TestInstallScriptOverwritesExistingByDefault 验证远程安装脚本默认覆盖已有二进制。
+func TestInstallScriptOverwritesExistingByDefault(t *testing.T) {
+	root := repoRoot(t)
+	requireCommand(t, "bash")
+	requireCommand(t, "tar")
+
+	tempDir := t.TempDir()
+	assetName := "sbox-manager_v0.0.0_linux_amd64.tar.gz"
+	assetPath := filepath.Join(tempDir, assetName)
+	writeTarGz(t, assetPath, map[string]string{
+		"sbox-manager_v0.0.0_linux_amd64/bin/sboxctl": "#!/bin/sh\nprintf 'new sboxctl\\n'\n",
+		"sbox-manager_v0.0.0_linux_amd64/bin/sboxsub": "#!/bin/sh\nprintf 'new sboxsub\\n'\n",
+	})
+	fakeBin := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(fakeBin, 0750); err != nil {
+		t.Fatalf("mkdir fake bin: %v", err)
+	}
+	writeFakeCurl(t, filepath.Join(fakeBin, "curl"), assetPath, assetName)
+
+	installDir := filepath.Join(tempDir, "install")
+	tmpDir := filepath.Join(tempDir, "tmp")
+	writeExecutable(t, filepath.Join(installDir, "sboxctl"))
+	writeExecutable(t, filepath.Join(installDir, "sboxsub"))
+
+	command := exec.Command("bash", filepath.Join(root, "scripts", "install.sh"),
+		"--version", "v0.0.0",
+		"--repo", "owner/repo",
+		"--os", "linux",
+		"--arch", "amd64",
+		"--install-dir", installDir,
+		"--tmp-dir", tmpDir,
+		"--no-checksum",
+	)
+	command.Dir = root
+	command.Env = append(os.Environ(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected default overwrite success: %v\n%s", err, output)
+	}
+	for _, name := range []string{"sboxctl", "sboxsub"} {
+		data, err := os.ReadFile(filepath.Join(installDir, name))
+		if err != nil {
+			t.Fatalf("read installed %s: %v", name, err)
+		}
+		if !strings.Contains(string(data), "new "+name) {
+			t.Fatalf("%s was not overwritten:\n%s", name, data)
+		}
+	}
+}
+
+// TestInstallScriptNoOverwriteRejectsExisting 验证 --no-overwrite 会拒绝已有二进制且不写入部分结果。
+func TestInstallScriptNoOverwriteRejectsExisting(t *testing.T) {
+	root := repoRoot(t)
+	requireCommand(t, "bash")
+	requireCommand(t, "tar")
+
+	tempDir := t.TempDir()
+	assetName := "sbox-manager_v0.0.0_linux_amd64.tar.gz"
+	assetPath := filepath.Join(tempDir, assetName)
+	writeTarGz(t, assetPath, map[string]string{
+		"sbox-manager_v0.0.0_linux_amd64/bin/sboxctl": "#!/bin/sh\nprintf 'new sboxctl\\n'\n",
+		"sbox-manager_v0.0.0_linux_amd64/bin/sboxsub": "#!/bin/sh\nprintf 'new sboxsub\\n'\n",
+	})
+	fakeBin := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(fakeBin, 0750); err != nil {
+		t.Fatalf("mkdir fake bin: %v", err)
+	}
+	writeFakeCurl(t, filepath.Join(fakeBin, "curl"), assetPath, assetName)
+
+	installDir := filepath.Join(tempDir, "install")
+	tmpDir := filepath.Join(tempDir, "tmp")
+	writeExecutable(t, filepath.Join(installDir, "sboxctl"))
+
+	command := exec.Command("bash", filepath.Join(root, "scripts", "install.sh"),
+		"--version", "v0.0.0",
+		"--repo", "owner/repo",
+		"--os", "linux",
+		"--arch", "amd64",
+		"--install-dir", installDir,
+		"--tmp-dir", tmpDir,
+		"--no-checksum",
+		"--no-overwrite",
+	)
+	command.Dir = root
+	command.Env = append(os.Environ(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected --no-overwrite failure, output=%s", output)
+	}
+	if !strings.Contains(string(output), "--no-overwrite") {
+		t.Fatalf("expected --no-overwrite output, got:\n%s", output)
+	}
+	data, err := os.ReadFile(filepath.Join(installDir, "sboxctl"))
+	if err != nil {
+		t.Fatalf("read existing sboxctl: %v", err)
+	}
+	if strings.Contains(string(data), "new sboxctl") {
+		t.Fatalf("--no-overwrite should keep existing sboxctl:\n%s", data)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "sboxsub")); !os.IsNotExist(err) {
+		t.Fatalf("--no-overwrite should not partially install sboxsub, stat err: %v", err)
+	}
+}
+
 // repoRoot 从当前测试目录向上查找 go.mod，返回仓库根目录。
 func repoRoot(t *testing.T) string {
 	t.Helper()

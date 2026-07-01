@@ -9,14 +9,14 @@ ARCH=""
 INSTALL_DIR="/usr/local/bin"
 TMP_DIR=""
 DRY_RUN=0
-FORCE=0
+NO_OVERWRITE=0
 NO_CHECKSUM=0
 
 # 输出帮助信息，适用于用户直接执行脚本或传入 --help。
 usage() {
     cat <<'EOF'
 Usage:
-  install.sh [--version vX.Y.Z] [--repo OWNER/REPO] [--os OS] [--arch ARCH] [--install-dir DIR] [--tmp-dir DIR] [--dry-run] [--force] [--no-checksum]
+  install.sh [--version vX.Y.Z] [--repo OWNER/REPO] [--os OS] [--arch ARCH] [--install-dir DIR] [--tmp-dir DIR] [--dry-run] [--no-overwrite] [--no-checksum]
 
 Options:
   --version V              Release tag, default latest
@@ -26,7 +26,7 @@ Options:
   --install-dir DIR        Install directory, default /usr/local/bin
   --tmp-dir DIR            Temporary directory
   --dry-run                Print actions without writing files
-  --force                  Overwrite existing binaries
+  --no-overwrite           Refuse to overwrite existing binaries
   --no-checksum            Skip checksum verification
   -h, --help               Show help
 EOF
@@ -86,8 +86,8 @@ parse_args() {
         --dry-run)
             DRY_RUN=1
             ;;
-        --force)
-            FORCE=1
+        --no-overwrite)
+            NO_OVERWRITE=1
             ;;
         --no-checksum)
             NO_CHECKSUM=1
@@ -101,6 +101,21 @@ parse_args() {
             ;;
         esac
         shift
+    done
+}
+
+# 校验安装目标，适用于真实写入前统一拒绝目录或 no-overwrite 冲突。
+validate_install_targets() {
+    local name
+    local target
+    for name in sboxctl sboxsub; do
+        target="${INSTALL_DIR}/${name}"
+        if [ -d "$target" ]; then
+            die "Refuse to overwrite directory: $target"
+        fi
+        if [ "$NO_OVERWRITE" -eq 1 ] && [ -e "$target" ]; then
+            die "Refuse to overwrite existing file with --no-overwrite: $target"
+        fi
     done
 }
 
@@ -256,8 +271,8 @@ install_binary() {
     if [ -d "$target" ]; then
         die "Refuse to overwrite directory: $target"
     fi
-    if [ -e "$target" ] && [ "$FORCE" -ne 1 ]; then
-        die "Refuse to overwrite existing file without --force: $target"
+    if [ "$NO_OVERWRITE" -eq 1 ] && [ -e "$target" ]; then
+        die "Refuse to overwrite existing file with --no-overwrite: $target"
     fi
     cp "$source" "$tmp_target"
     chmod 0755 "$tmp_target"
@@ -291,6 +306,7 @@ main() {
         exit 0
     fi
 
+    validate_install_targets
     resolve_version
     validate_version
     require_command curl

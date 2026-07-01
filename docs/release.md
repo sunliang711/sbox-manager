@@ -158,7 +158,7 @@ bash install.sh --version vX.Y.Z
 | `--install-dir DIR` | `/usr/local/bin` | 二进制安装目录 |
 | `--tmp-dir DIR` | mktemp | 临时下载目录 |
 | `--dry-run` | false | 只展示操作 |
-| `--force` | false | 覆盖已存在二进制 |
+| `--no-overwrite` | false | 已存在二进制时拒绝覆盖 |
 | `--no-checksum` | false | 禁用 checksum 校验，仅用于受控离线场景 |
 
 行为：
@@ -168,7 +168,7 @@ bash install.sh --version vX.Y.Z
 - 默认必须校验 sha256。
 - 解压时拒绝绝对路径、`..`、反斜杠路径和未知成员。
 - 安装前先写临时文件，设置权限后原子 rename 到目标路径。
-- 已存在非受管文件且未传 `--force` 时失败。
+- 默认覆盖已存在二进制；传 `--no-overwrite` 时，任一目标已存在都会在写入前失败。
 - 安装完成后执行 `sboxctl version` 和 `sboxsub version` 做轻量验证。
 
 禁止行为：
