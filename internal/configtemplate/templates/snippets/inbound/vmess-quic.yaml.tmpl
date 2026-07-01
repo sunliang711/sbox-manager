@@ -5,6 +5,13 @@
   port: 24104
   tag: vmess-vmess-quic
   udp: true
+  tls:
+    enabled: true # QUIC transport 必须启用 TLS。
+    server_name: proxy.example.com
+    insecure: false
+    alpn: [h3]
+    certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
+    key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
   transport:
     type: quic
   users:

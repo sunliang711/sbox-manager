@@ -9,12 +9,11 @@
     enabled: true # 可按需启用 TLS。
     server_name: proxy.example.com
     insecure: false
-    alpn: [h2, http/1.1]
+    # alpn: [h2, http/1.1] # 可选 TLS ALPN；服务端明确需要时再启用。
     certificate_path: /etc/ssl/sbox/fullchain.pem # TLS inbound 必填服务端证书。
     key_path: /etc/ssl/sbox/private.key # TLS inbound 必填私钥。
   transport:
     type: ws
-    host: proxy.example.com
     path: /vless-websocket
     headers:
       Host: proxy.example.com

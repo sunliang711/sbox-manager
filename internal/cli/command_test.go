@@ -141,15 +141,27 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			want: []string{"VMess inbound（raw）", "VMess WebSocket inbound", "VMess gRPC inbound", "VMess HTTP inbound", "VMess QUIC inbound", "VMess HTTPUpgrade inbound", "VLESS inbound（WebSocket）", "VLESS REALITY Vision inbound", "type: anytls", "type: shadowsocks", "type: socks5", "type: http"},
 		},
 		{
-			name: "inbound vmess websocket",
-			args: []string{"example", "inbound", "vmess-websocket"},
-			want: []string{"# VMess WebSocket inbound", "type: vmess", "type: ws", "/vmess-websocket"},
+			name:    "inbound vmess websocket",
+			args:    []string{"example", "inbound", "vmess-websocket"},
+			want:    []string{"# VMess WebSocket inbound", "type: vmess", "type: ws", "/vmess-websocket"},
+			notWant: []string{"\n    host:"},
+		},
+		{
+			name: "inbound vmess quic",
+			args: []string{"example", "inbound", "vmess-quic"},
+			want: []string{"# VMess QUIC inbound", "type: vmess", "tls:", "alpn: [h3]", "certificate_path:", "key_path:", "type: quic"},
 		},
 		{
 			name:    "inbound vless",
 			args:    []string{"example", "inbound", "vless"},
 			want:    []string{"# VLESS inbound", "type: vless", "uuid:", "transport:"},
-			notWant: []string{"type: anytls"},
+			notWant: []string{"type: anytls", "\n    alpn:"},
+		},
+		{
+			name:    "inbound vless httpupgrade",
+			args:    []string{"example", "inbound", "vless-httpupgrade"},
+			want:    []string{"# VLESS HTTPUpgrade inbound", "type: vless", "type: httpupgrade", "host:", "path:", "headers:"},
+			notWant: []string{"\n    alpn:", "\n    method:"},
 		},
 		{
 			name: "inbound vless reality vision",
@@ -178,6 +190,12 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 			want: []string{"# VMess gRPC outbound", "type: vmess", "type: grpc", "service_name:"},
 		},
 		{
+			name:    "outbound vmess httpupgrade",
+			args:    []string{"example", "outbound", "vmess-httpupgrade"},
+			want:    []string{"# VMess HTTPUpgrade outbound", "type: vmess", "type: httpupgrade", "host:", "path:", "headers:"},
+			notWant: []string{"\n    alpn:", "\n    method:"},
+		},
+		{
 			name: "outbound ref",
 			args: []string{"example", "outbound", "ref"},
 			want: []string{"# Ref outbound", "type: ref", "ref: edge-us.local-socks"},
@@ -185,14 +203,20 @@ func TestSboxctlExampleUsesKindAndType(t *testing.T) {
 		{
 			name:    "outbound vmess",
 			args:    []string{"example", "outbound", "vmess"},
-			want:    []string{"# VMess outbound", "uuid:", "alter_id:", "security: auto", "tls:", "server_name:", "insecure:", "alpn:", "network: tcp", "type: ws", "headers:"},
-			notWant: []string{"type: shadowsocks"},
+			want:    []string{"# VMess outbound", "uuid:", "alter_id:", "security: auto", "tls:", "server_name:", "insecure:", "network: tcp", "type: ws", "path:", "headers:"},
+			notWant: []string{"type: shadowsocks", "\n    alpn:", "\n    host:", "\n    hosts:", "\n    method:", "\n    idle_timeout:", "\n    ping_timeout:", "\n    max_early_data:", "\n    early_data_header_name:"},
 		},
 		{
 			name:    "outbound vless",
 			args:    []string{"example", "outbound", "vless"},
 			want:    []string{"# VLESS outbound", "type: vless", "uuid:", "transport:"},
-			notWant: []string{"type: vmess"},
+			notWant: []string{"type: vmess", "\n    alpn:", "\n    host:"},
+		},
+		{
+			name:    "outbound vless httpupgrade",
+			args:    []string{"example", "outbound", "vless-httpupgrade"},
+			want:    []string{"# VLESS HTTPUpgrade outbound", "type: vless", "type: httpupgrade", "host:", "path:", "headers:"},
+			notWant: []string{"\n    alpn:", "\n    method:"},
 		},
 		{
 			name: "outbound vless reality alias",
@@ -1121,6 +1145,117 @@ func TestSboxctlConfigInstanceNoChangeSkipsRestart(t *testing.T) {
 	}
 	if got := runner.joined(); got != "" {
 		t.Fatalf("no-change config edit should not run service commands:\n%s", got)
+	}
+}
+
+// TestSboxctlConfigInstanceKeepsInvalidDraft 验证实例配置校验失败时保留用户刚编辑的草稿。
+func TestSboxctlConfigInstanceKeepsInvalidDraft(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	instancePath := filepath.Join(baseDir, "instances", "edge-us.yaml")
+	draft := draftPath(instancePath)
+	editor := writeReplaceEditor(t, "port: 24100", "port: 99999")
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "config", "--editor", editor, "edge-us")
+	if err == nil {
+		t.Fatalf("config edit should fail validation:\n%s", output)
+	}
+	if !strings.Contains(err.Error(), "edited draft saved at "+draft) {
+		t.Fatalf("error should mention preserved draft, got %v", err)
+	}
+	draftData, err := os.ReadFile(draft)
+	if err != nil {
+		t.Fatalf("read preserved draft: %v", err)
+	}
+	if !strings.Contains(string(draftData), "port: 99999") {
+		t.Fatalf("draft should keep edited invalid content:\n%s", draftData)
+	}
+	data, err := os.ReadFile(instancePath)
+	if err != nil {
+		t.Fatalf("read original instance: %v", err)
+	}
+	if strings.Contains(string(data), "port: 99999") {
+		t.Fatalf("invalid draft should not replace original instance:\n%s", data)
+	}
+}
+
+// TestSboxctlAddKeepsInvalidEditedDraft 验证 add 后编辑校验失败时也保留用户刚保存的草稿。
+func TestSboxctlAddKeepsInvalidEditedDraft(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	instancePath := filepath.Join(baseDir, "instances", "edge-add.yaml")
+	draft := draftPath(instancePath)
+	editor := writeReplaceEditor(t, "port: 24000", "port: 99999")
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "add", "edge-add", "--allocate-ports", "--editor", editor)
+	if err == nil {
+		t.Fatalf("add edit should fail validation:\n%s", output)
+	}
+	for _, want := range []string{"instance \"edge-add\" was created", "sboxctl config edge-add", "edited draft saved at " + draft} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("add error missing %q, got %v", want, err)
+		}
+	}
+	draftData, err := os.ReadFile(draft)
+	if err != nil {
+		t.Fatalf("read preserved add draft: %v", err)
+	}
+	if !strings.Contains(string(draftData), "port: 99999") {
+		t.Fatalf("add draft should keep invalid edited content:\n%s", draftData)
+	}
+	data, err := os.ReadFile(instancePath)
+	if err != nil {
+		t.Fatalf("read created instance: %v", err)
+	}
+	if strings.Contains(string(data), "port: 99999") {
+		t.Fatalf("invalid add draft should not replace created instance:\n%s", data)
+	}
+}
+
+// TestSboxctlConfigInstanceReusesPreservedDraft 验证再次编辑会继续使用上次保留的草稿。
+func TestSboxctlConfigInstanceReusesPreservedDraft(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	instancePath := filepath.Join(baseDir, "instances", "edge-us.yaml")
+	draft := draftPath(instancePath)
+	if err := os.WriteFile(draft, []byte(`name: edge-us
+api:
+  enabled: false
+inbounds:
+  - name: vmess-main
+    type: vmess
+    listen: 0.0.0.0
+    port: 99999
+    users:
+      - name: alice
+        uuid: 11111111-1111-4111-8111-111111111111
+outbounds:
+  - name: direct
+    type: direct
+route:
+  default: direct
+`), 0600); err != nil {
+		t.Fatalf("write preserved draft: %v", err)
+	}
+	editor := writeReplaceEditor(t, "port: 99999", "port: 24101")
+	runner := &cliRecordingRunner{outputs: map[string][]byte{
+		"systemctl is-active sbox@edge-us.service": []byte("inactive\n"),
+	}}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, UnitDir: filepath.Join(baseDir, "units"), Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "--service-manager", "systemd", "config", "--editor", editor, "edge-us")
+	if err != nil {
+		t.Fatalf("config edit should recover draft: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(instancePath)
+	if err != nil {
+		t.Fatalf("read instance: %v", err)
+	}
+	if !strings.Contains(string(data), "port: 24101") {
+		t.Fatalf("config edit should save fixed draft:\n%s", data)
+	}
+	if _, err := os.Stat(draft); !os.IsNotExist(err) {
+		t.Fatalf("successful edit should remove draft, stat err: %v", err)
 	}
 }
 

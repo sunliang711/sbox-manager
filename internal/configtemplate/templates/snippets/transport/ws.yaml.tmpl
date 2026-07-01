@@ -1,8 +1,7 @@
 transport:
   type: ws
-  host: proxy.example.com
   path: /ws
   headers:
     Host: proxy.example.com
-  max_early_data: 2048
-  early_data_header_name: Sec-WebSocket-Protocol
+  # max_early_data: 2048 # WebSocket early data，服务端明确支持时再启用。
+  # early_data_header_name: Sec-WebSocket-Protocol

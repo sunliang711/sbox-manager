@@ -10,17 +10,12 @@
     enabled: true # 是否启用 TLS。
     server_name: vmess.example.com # TLS SNI。
     insecure: false # 是否跳过证书校验，生产环境建议 false。
-    alpn: [h2, http/1.1] # 可选 TLS ALPN。
+    # alpn: [h2, http/1.1] # 可选 TLS ALPN；服务端明确需要时再启用。
   network: tcp # VMess 底层网络，仅支持 tcp、udp；WebSocket 写 transport.type: ws。
   transport:
     type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
-    host: vmess.example.com
-    hosts: [vmess.example.com]
     path: /vmess-websocket
-    method: GET
     headers:
       Host: vmess.example.com
-    idle_timeout: 30s
-    ping_timeout: 15s
-    max_early_data: 2048
-    early_data_header_name: Sec-WebSocket-Protocol
+    # max_early_data: 2048 # WebSocket early data，服务端明确支持时再启用。
+    # early_data_header_name: Sec-WebSocket-Protocol

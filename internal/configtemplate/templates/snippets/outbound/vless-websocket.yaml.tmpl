@@ -8,10 +8,9 @@
     enabled: true # 是否启用 TLS。
     server_name: vless.example.com
     insecure: false
-    alpn: [h2, http/1.1]
+    # alpn: [h2, http/1.1] # 可选 TLS ALPN；服务端明确需要时再启用。
   transport:
     type: ws # 可选；支持 http、ws、quic、grpc、httpupgrade。
-    host: vless.example.com
     path: /vless-websocket
     headers:
       Host: vless.example.com

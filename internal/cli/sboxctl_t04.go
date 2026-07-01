@@ -232,7 +232,7 @@ func newSboxctlAddCommand() *cobra.Command {
 			}
 			if edit && !noEdit {
 				if err := editInstanceByName(options.baseDir, created.Name, editor); err != nil {
-					return err
+					return editableInstanceRecoveryError("created", created.Name, err)
 				}
 			}
 			return writeStatus(cmd, outputStatusOK, "Instance created.", outputKV("Name", created.Name))
@@ -383,7 +383,7 @@ func newSboxctlCloneCommand() *cobra.Command {
 			}
 			if edit && !noEdit {
 				if err := editInstanceByName(options.baseDir, cloned.Name, editor); err != nil {
-					return err
+					return editableInstanceRecoveryError("cloned", cloned.Name, err)
 				}
 			}
 			return writeStatus(cmd, outputStatusOK, "Instance cloned.", outputKV("Source", args[0]), outputKV("Target", cloned.Name))
@@ -800,6 +800,7 @@ func checkConfigCommand(cmd *cobra.Command, args []string) error {
 	return err
 }
 
+// editConfigCommand 编辑全局或实例配置，校验通过后才替换正式文件。
 func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	options, err := getRootOptions(cmd)
 	if err != nil {
@@ -817,15 +818,20 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 		}
 	}
 	draft := draftPath(path)
-	data, err := os.ReadFile(path)
+	data, draftExisted, err := prepareEditableDraft(path, draft)
 	if err != nil {
-		return fmt.Errorf("read config file %s: %w", path, err)
+		return err
 	}
-	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("write draft file %s: %w", draft, err)
-	}
-	defer os.Remove(draft)
+	removeDraft := !draftExisted
+	defer func() {
+		if removeDraft {
+			_ = os.Remove(draft)
+		}
+	}()
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
+		if draftExisted {
+			return preservedDraftError(draft, err)
+		}
 		return err
 	}
 	draftData, err := os.ReadFile(draft)
@@ -835,24 +841,31 @@ func editConfigCommand(cmd *cobra.Command, args []string, editor string) error {
 	if len(args) == 0 {
 		loaded, err := config.LoadGlobalConfig(draft, options.baseDir)
 		if err != nil {
-			return err
+			removeDraft = false
+			return preservedDraftError(draft, err)
 		}
 		instances, err := config.LoadInstances(loaded.Paths.Instances, *loaded)
 		if err != nil {
-			return err
+			removeDraft = false
+			return preservedDraftError(draft, err)
 		}
 		if err := domain.ValidateConfigSet(*loaded, instances); err != nil {
-			return err
+			removeDraft = false
+			return preservedDraftError(draft, err)
 		}
 	} else if err := validateInstanceDraft(draft, filepath.Ext(path), set.Global); err != nil {
-		return err
+		removeDraft = false
+		return preservedDraftError(draft, err)
 	}
 	if bytes.Equal(data, draftData) {
+		removeDraft = true
 		return writeStatus(cmd, outputStatusInfo, "Configuration unchanged.", outputKV("File", path))
 	}
 	if err := os.Rename(draft, path); err != nil {
+		removeDraft = false
 		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
+	removeDraft = false
 	if err := writeStatus(cmd, outputStatusOK, "Configuration updated.", outputKV("File", path)); err != nil {
 		return err
 	}
@@ -920,6 +933,7 @@ func validateInstanceDraft(path string, extension string, global domain.GlobalCo
 	return domain.ValidateInstance(global, &instanceValue)
 }
 
+// editInstanceByName 编辑新增或克隆后的实例配置，校验通过后才写回。
 func editInstanceByName(baseDir string, name string, editor string) error {
 	set, err := config.LoadAgentConfigSet(baseDir)
 	if err != nil {
@@ -930,26 +944,62 @@ func editInstanceByName(baseDir string, name string, editor string) error {
 		return err
 	}
 	draft := draftPath(path)
-	data, err := os.ReadFile(path)
+	_, draftExisted, err := prepareEditableDraft(path, draft)
 	if err != nil {
-		return fmt.Errorf("read config file %s: %w", path, err)
+		return err
 	}
-	if err := os.WriteFile(draft, data, 0600); err != nil {
-		return fmt.Errorf("write draft file %s: %w", draft, err)
-	}
-	defer os.Remove(draft)
+	removeDraft := !draftExisted
+	defer func() {
+		if removeDraft {
+			_ = os.Remove(draft)
+		}
+	}()
 	if err := instancemgr.EditFileWithCommand(draft, editor); err != nil {
+		if draftExisted {
+			return preservedDraftError(draft, err)
+		}
 		return err
 	}
 	if err := validateInstanceDraft(draft, filepath.Ext(path), set.Global); err != nil {
-		return err
+		removeDraft = false
+		return preservedDraftError(draft, err)
 	}
 	if err := os.Rename(draft, path); err != nil {
+		removeDraft = false
 		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
+	removeDraft = false
 	return nil
 }
 
+// prepareEditableDraft 复用已有草稿，避免上次校验失败后的编辑内容被原文件覆盖。
+func prepareEditableDraft(path string, draft string) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("read config file %s: %w", path, err)
+	}
+	if _, err := os.Stat(draft); err == nil {
+		return data, true, nil
+	} else if !os.IsNotExist(err) {
+		return nil, false, fmt.Errorf("check draft file %s: %w", draft, err)
+	}
+	if err := os.WriteFile(draft, data, 0600); err != nil {
+		return nil, false, fmt.Errorf("write draft file %s: %w", draft, err)
+	}
+	return data, false, nil
+}
+
+// preservedDraftError 包装校验失败错误，并明确告知用户未丢失的草稿位置。
+func preservedDraftError(draft string, err error) error {
+	return fmt.Errorf("%w; edited draft saved at %s", err, draft)
+}
+
+// editableInstanceRecoveryError 为 add/clone 后编辑失败补充继续修复草稿的命令提示。
+func editableInstanceRecoveryError(action string, name string, err error) error {
+	return fmt.Errorf("instance %q was %s but edit validation failed; run `sboxctl config %s` to continue editing saved draft: %w", name, action, name, err)
+}
+
+// draftPath 返回配置编辑时使用的旁路草稿路径。
 func draftPath(path string) string {
 	return path + ".draft"
 }

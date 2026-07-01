@@ -8,11 +8,11 @@
     enabled: true
     server_name: vless.example.com
     insecure: false
-    alpn: [h2, http/1.1]
+    # alpn: [h2, http/1.1] # HTTPUpgrade 走 HTTP/1.1 upgrade，服务端明确需要时再启用。
   transport:
     type: httpupgrade
     host: vless.example.com
     path: /vless-upgrade
-    method: GET
+    # method: GET # HTTPUpgrade transport 不接受 method 字段。
     headers:
       Host: vless.example.com

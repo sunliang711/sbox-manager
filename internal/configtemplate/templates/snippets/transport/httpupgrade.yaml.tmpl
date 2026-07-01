@@ -2,6 +2,6 @@ transport:
   type: httpupgrade
   host: proxy.example.com
   path: /upgrade
-  method: GET
+  # method: GET # HTTPUpgrade transport 不接受 method 字段。
   headers:
     Host: proxy.example.com
