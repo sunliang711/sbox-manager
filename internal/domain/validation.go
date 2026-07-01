@@ -226,6 +226,26 @@ func ValidateBackupFileName(name string) error {
 	return errs.ErrOrNil()
 }
 
+// CollectConfigWarnings 收集不会阻断加载的配置风险提示。
+func CollectConfigWarnings(global GlobalConfig, instances []Instance) []ValidationIssue {
+	warnings := make([]ValidationIssue, 0)
+	for index := range instances {
+		instance := instances[index]
+		ApplyInstanceDefaults(&instance)
+		path := fmt.Sprintf("instances[%s]", instance.Name)
+		collectInstanceWarnings(global, path, instance, &warnings)
+	}
+	return warnings
+}
+
+// CollectInstanceWarnings 收集单个 instance 中不会阻断加载的配置风险提示。
+func CollectInstanceWarnings(global GlobalConfig, instance Instance) []ValidationIssue {
+	warnings := make([]ValidationIssue, 0)
+	ApplyInstanceDefaults(&instance)
+	collectInstanceWarnings(global, "instance", instance, &warnings)
+	return warnings
+}
+
 // mergeValidationError 将另一个聚合校验错误合并到目标错误集合。
 func mergeValidationError(err error, target *ValidationErrors) {
 	if err == nil {
@@ -693,7 +713,7 @@ func validateTLSReality(path string, reality RealityConfig, inbound bool, errs *
 	}
 }
 
-// validateInboundAuth 校验 socks5/http 的公开监听鉴权规则。
+// validateInboundAuth 校验 socks5/http 的认证字段格式和强制鉴权规则。
 func validateInboundAuth(global GlobalConfig, path string, inbound Inbound, errs *ValidationErrors) {
 	if inbound.Type != "socks5" && inbound.Type != "http" {
 		return
@@ -711,11 +731,33 @@ func validateInboundAuth(global GlobalConfig, path string, inbound Inbound, errs
 		}
 		return
 	}
-
-	// 公网 socks/http 默认必须显式启用密码鉴权，只有全局安全例外允许 noauth。
-	if global.Security.RequireAuthForPublicSocksHTTP && !global.Security.AllowNoauthPublic && !isLoopbackHost(inbound.Listen) {
-		errs.Add(path+".auth", "public socks/http inbound requires password auth by default")
+	if global.Security.RequireAuthForPublicSocksHTTP && !isLoopbackHost(inbound.Listen) {
+		errs.Add(path+".auth", "public socks/http inbound requires password auth")
 	}
+}
+
+// collectInstanceWarnings 收集单个 instance 中的非阻断风险提示。
+func collectInstanceWarnings(global GlobalConfig, path string, instance Instance, warnings *[]ValidationIssue) {
+	for index, inbound := range instance.Inbounds {
+		collectInboundAuthWarnings(global, fmt.Sprintf("%s.inbounds[%d]", path, index), inbound, warnings)
+	}
+}
+
+// collectInboundAuthWarnings 提示公开 socks5/http noauth 监听的暴露风险。
+func collectInboundAuthWarnings(global GlobalConfig, path string, inbound Inbound, warnings *[]ValidationIssue) {
+	if inbound.Type != "socks5" && inbound.Type != "http" {
+		return
+	}
+	if inbound.Auth.Type != "noauth" {
+		return
+	}
+	if global.Security.RequireAuthForPublicSocksHTTP || isLoopbackHost(inbound.Listen) {
+		return
+	}
+	*warnings = append(*warnings, ValidationIssue{
+		Path:    path + ".auth",
+		Message: "public socks/http inbound uses noauth; set auth.type=password to restrict access",
+	})
 }
 
 // validateInboundUsers 校验 inbound 用户凭据。

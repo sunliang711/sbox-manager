@@ -46,15 +46,37 @@ func newSboxctlValidateCommand() *cobra.Command {
 				return err
 			}
 			if len(args) == 1 {
-				if _, ok := set.FindInstance(args[0]); !ok {
+				instance, ok := set.FindInstance(args[0])
+				if !ok {
 					return fmt.Errorf("instance %q does not exist", args[0])
 				}
+				if err := writeStatus(cmd, outputStatusOK, "Configuration validation passed."); err != nil {
+					return err
+				}
+				return writeValidationWarnings(cmd, domain.CollectInstanceWarnings(set.Global, instance))
 			}
-			return writeStatus(cmd, outputStatusOK, "Configuration validation passed.")
+			if err := writeStatus(cmd, outputStatusOK, "Configuration validation passed."); err != nil {
+				return err
+			}
+			return writeValidationWarnings(cmd, domain.CollectConfigWarnings(set.Global, set.Instances))
 		},
 	}
 	cmd.Flags().Bool("skip-system-ports", false, "skip system port checks")
 	return cmd
+}
+
+// writeValidationWarnings 输出不会阻断配置加载的校验风险提示。
+func writeValidationWarnings(cmd *cobra.Command, warnings []domain.ValidationIssue) error {
+	for _, warning := range warnings {
+		fields := []outputField{}
+		if warning.Path != "" {
+			fields = append(fields, outputKV("Path", warning.Path))
+		}
+		if err := writeStatus(cmd, outputStatusWarn, warning.Message, fields...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // newSboxctlCheckCommand 创建 T03 已实现的 check 命令。

@@ -61,7 +61,6 @@ defaults:
 
 security:
   require_auth_for_public_socks_http: true
-  allow_noauth_public: false
 ```
 
 | 字段 | 类型 | 必填 | 默认值 | 校验 |
@@ -82,8 +81,7 @@ security:
 | `defaults.traffic.monthly_retention_months` | int | 否 | `36` | monthly 保留月数，必须大于 0 |
 | `defaults.traffic.timeout_seconds` | int | 否 | `30` | stats 请求超时，必须大于 0 |
 | `defaults.traffic.timer.*` | string | 否 | 见示例 | cron 风格配置，生成 systemd/launchd 调度时转换 |
-| `security.require_auth_for_public_socks_http` | bool | 否 | `true` | bool |
-| `security.allow_noauth_public` | bool | 否 | `false` | 只有显式为 true 才允许公网 noauth |
+| `security.require_auth_for_public_socks_http` | bool | 否 | `true` | 为 true 时公网 socks5/http noauth 校验失败；为 false 时允许通过并输出 warning |
 
 `paths` 默认值：
 
@@ -302,7 +300,7 @@ traffic:
 - instance 名、inbound/outbound/group/tag 名称必须稳定、可用于文件名或服务名。
 - `ALL` 是 traffic 特殊值，不能作为 instance 名。
 - 同一 instance 内 inbound、outbound、group、route 目标引用必须存在。
-- 公开监听的 socks5/http inbound 默认必须启用密码鉴权，除非全局显式 `allow_noauth_public=true`。
+- 公开监听的 socks5/http inbound 默认必须启用密码鉴权；关闭 `require_auth_for_public_socks_http` 后允许 noauth 通过但会输出 warning。
 - API 非 loopback 监听必须配置 token。
 - 端口不能在所有 enabled instance 中冲突；`validate --skip-system-ports` 只跳过系统占用探测，不跳过配置内冲突。
 

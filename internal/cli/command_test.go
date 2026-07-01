@@ -1024,6 +1024,47 @@ func TestReadOnlyCommandsDoNotWriteManagedOutputs(t *testing.T) {
 	}
 }
 
+// TestSboxctlValidateWarnsPublicNoauth 验证公开 socks/http noauth 只输出 warning，不阻断 validate。
+func TestSboxctlValidateWarnsPublicNoauth(t *testing.T) {
+	baseDir := writeAgentFixture(t)
+	if err := os.WriteFile(filepath.Join(baseDir, "config.yaml"), []byte(`version: 1
+external_host: proxy.example.com
+security:
+  require_auth_for_public_socks_http: false
+`), 0640); err != nil {
+		t.Fatalf("write relaxed security config: %v", err)
+	}
+	instancePath := filepath.Join(baseDir, "instances", "edge-us.yaml")
+	if err := os.WriteFile(instancePath, []byte(`name: edge-us
+api:
+  enabled: false
+inbounds:
+  - name: public-socks
+    type: socks5
+    listen: 0.0.0.0
+    port: 17000
+    auth:
+      type: noauth
+outbounds:
+  - name: direct
+    type: direct
+route:
+  default: direct
+`), 0640); err != nil {
+		t.Fatalf("write public noauth instance: %v", err)
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", baseDir, "validate")
+	if err != nil {
+		t.Fatalf("public noauth validate should pass: %v\n%s", err, output)
+	}
+	for _, want := range []string{"Configuration validation passed.", "WARN", "public socks/http", "instances[edge-us].inbounds[0].auth"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("validate warning output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 // TestSboxctlE2EFakeLifecycle 覆盖 setup local/add/check/start/status/logs/stop 的 fake 端到端路径。
 func TestSboxctlE2EFakeLifecycle(t *testing.T) {
 	baseDir := t.TempDir()

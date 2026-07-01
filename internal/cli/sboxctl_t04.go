@@ -162,10 +162,14 @@ func newSboxctlConfigCommand() *cobra.Command {
 			checkOnly, _ := cmd.Flags().GetBool("check-only")
 			editor, _ := cmd.Flags().GetString("editor")
 			if checkOnly {
-				if err := checkConfigCommand(cmd, args); err != nil {
+				warnings, err := checkConfigCommand(cmd, args)
+				if err != nil {
 					return err
 				}
-				return writeStatus(cmd, outputStatusOK, "Configuration validation passed.")
+				if err := writeStatus(cmd, outputStatusOK, "Configuration validation passed."); err != nil {
+					return err
+				}
+				return writeValidationWarnings(cmd, warnings)
 			}
 			return editConfigCommand(cmd, args, editor)
 		},
@@ -779,25 +783,31 @@ func runSboxctlRuntimeLifecycle(cmd *cobra.Command, action string, args []string
 	return lifecycle.Execute()
 }
 
-func checkConfigCommand(cmd *cobra.Command, args []string) error {
+func checkConfigCommand(cmd *cobra.Command, args []string) ([]domain.ValidationIssue, error) {
 	options, err := getRootOptions(cmd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(args) == 0 {
-		_, err := config.LoadAgentConfigSet(options.baseDir)
-		return err
+		set, err := config.LoadAgentConfigSet(options.baseDir)
+		if err != nil {
+			return nil, err
+		}
+		return domain.CollectConfigWarnings(set.Global, set.Instances), nil
 	}
 	set, err := config.LoadAgentConfigSet(options.baseDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	path, err := instancemgr.FindInstancePath(set.Global, args[0])
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = config.LoadInstance(path, set.Global)
-	return err
+	instance, err := config.LoadInstance(path, set.Global)
+	if err != nil {
+		return nil, err
+	}
+	return domain.CollectInstanceWarnings(set.Global, *instance), nil
 }
 
 // editConfigCommand 编辑全局或实例配置，校验通过后才替换正式文件。
@@ -1140,8 +1150,7 @@ defaults:
       monthly: "20 0 1 * *" # 月聚合 cron。
 
 security:
-  require_auth_for_public_socks_http: true # 公网 socks5/http inbound 默认要求密码鉴权。
-  allow_noauth_public: false # 只有明确放开时才允许公网 noauth。
+  require_auth_for_public_socks_http: true # 公网 socks5/http noauth 默认校验失败；关闭后仅输出 warning。
 `
 }
 

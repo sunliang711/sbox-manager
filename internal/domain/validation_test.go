@@ -19,8 +19,8 @@ func TestDefaultConfigsValidate(t *testing.T) {
 	}
 }
 
-// TestPublicSocksHTTPNoauthFails 验证public socks/http 默认禁止 noauth。
-func TestPublicSocksHTTPNoauthFails(t *testing.T) {
+// TestPublicSocksHTTPNoauthRequiresOrWarns 验证 public socks/http noauth 受全局安全开关控制。
+func TestPublicSocksHTTPNoauthRequiresOrWarns(t *testing.T) {
 	global := DefaultGlobalConfig()
 	instance := validInstance("edge-us", 24000)
 	instance.Inbounds[0] = Inbound{
@@ -39,6 +39,17 @@ func TestPublicSocksHTTPNoauthFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "public socks/http") {
 		t.Fatalf("expected public noauth error, got %v", err)
+	}
+	global.Security.RequireAuthForPublicSocksHTTP = false
+	if err := ValidateInstance(global, &instance); err != nil {
+		t.Fatalf("public noauth should validate when auth is not required: %v", err)
+	}
+	warnings := CollectInstanceWarnings(global, instance)
+	if len(warnings) != 1 {
+		t.Fatalf("expected one public noauth warning, got %d", len(warnings))
+	}
+	if !strings.Contains(warnings[0].Message, "public socks/http") {
+		t.Fatalf("expected public noauth warning, got %+v", warnings[0])
 	}
 }
 

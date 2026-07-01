@@ -166,7 +166,7 @@ docs/
 
 - API 默认监听 `127.0.0.1`。
 - 非 loopback 管理 API 必须配置 token 或 secret。
-- 公开 socks/http inbound 默认要求鉴权。
+- 公开 socks/http inbound 默认要求鉴权；关闭强制要求后 noauth 会提示风险。
 - 内置下载源必须具备可信 checksum 元数据；自定义远端 URL 必须显式提供 sha256。
 - 解压归档必须校验成员路径。
 - zip/tar 拒绝绝对路径、`..`、反斜杠路径和未知成员。

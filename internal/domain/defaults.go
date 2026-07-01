@@ -65,7 +65,6 @@ func DefaultGlobalConfig() GlobalConfig {
 		},
 		Security: SecurityConfig{
 			RequireAuthForPublicSocksHTTP: true,
-			AllowNoauthPublic:             false,
 		},
 	}
 }

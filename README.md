@@ -494,7 +494,7 @@ sboxsub status
 ## 安全边界
 
 - `sboxsub` 默认建议监听 loopback；公网部署必须显式配置监听地址和 token。
-- 公开 socks/http inbound 默认要求鉴权。
+- 公开 socks/http inbound 默认要求鉴权；关闭强制要求后 noauth 会提示风险。
 - 安装脚本不执行 `setup`、不安装 systemd/launchd 服务、不启动进程。
 - release 归档安装前会校验 checksum，并拒绝绝对路径、`..`、反斜杠路径和未知成员。
 - 日志和默认展示会避免输出 token、password、secret、UUID 明文和完整订阅内容。

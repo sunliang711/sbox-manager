@@ -75,7 +75,6 @@ type TrafficTimerConfig struct {
 // SecurityConfig 表示安全相关的全局开关。
 type SecurityConfig struct {
 	RequireAuthForPublicSocksHTTP bool `yaml:"require_auth_for_public_socks_http" json:"require_auth_for_public_socks_http"`
-	AllowNoauthPublic             bool `yaml:"allow_noauth_public" json:"allow_noauth_public"`
 }
 
 // Instance 表示单个 sing-box 实例配置。

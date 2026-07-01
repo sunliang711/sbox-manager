@@ -132,7 +132,6 @@ defaults:
 
 security:
   require_auth_for_public_socks_http: true
-  allow_noauth_public: false
 ```
 
 ### 6.2 实例配置
