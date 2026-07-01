@@ -3,6 +3,7 @@ module github.com/sunliang711/sbox-manager
 go 1.25.0
 
 require (
+	github.com/flosch/pongo2/v6 v6.1.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2

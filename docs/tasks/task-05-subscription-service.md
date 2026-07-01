@@ -25,12 +25,12 @@
 HTTP 路由：
 
 - `/health`
-- `/clash/:user`
-- `/clash/:token/:user`
-- `/premium-clash/:user`
-- `/premium-clash/:token/:user`
-- `/surge/:user`
-- `/surge/:token/:user`
+- `/sub/:user`
+- `/sub/:token/:user`
+- `/premium_sub/:user`
+- `/premium_sub/:token/:user`
+- `/surge_sub/:user`
+- `/surge_sub/:token/:user`
 - `/sing-box/:user`
 - `/sing-box/:token/:user`
 

@@ -383,12 +383,12 @@ HTTP 路由：
 | 方法 | 路径 | 输出 |
 | --- | --- | --- |
 | GET | `/health` | JSON 健康状态 |
-| GET | `/clash/:user` | Clash 订阅 |
-| GET | `/clash/:token/:user` | Clash 订阅 |
-| GET | `/premium-clash/:user` | Premium Clash 订阅 |
-| GET | `/premium-clash/:token/:user` | Premium Clash 订阅 |
-| GET | `/surge/:user` | Surge 订阅 |
-| GET | `/surge/:token/:user` | Surge 订阅 |
+| GET | `/sub/:user` | Clash 订阅 |
+| GET | `/sub/:token/:user` | Clash 订阅 |
+| GET | `/premium_sub/:user` | Premium Clash 订阅 |
+| GET | `/premium_sub/:token/:user` | Premium Clash 订阅 |
+| GET | `/surge_sub/:user` | Surge 订阅 |
+| GET | `/surge_sub/:token/:user` | Surge 订阅 |
 | GET | `/sing-box/:user` | sing-box 订阅 |
 | GET | `/sing-box/:token/:user` | sing-box 订阅 |
 
@@ -411,10 +411,10 @@ HTTP 路由：
 
 | 模板 | 默认文件名 | 说明 |
 | --- | --- | --- |
-| Clash | `clash.yaml.tmpl` | Go 标准模板 |
-| Premium Clash | `premium-clash.yaml.tmpl` | Go 标准模板 |
-| Surge | `surge.conf.tmpl` | Go 标准模板 |
-| sing-box | `sing-box.json.tmpl` | Go 标准模板 |
+| Clash | `clash.yaml.j2` | Jinja 模板 |
+| Premium Clash | `premium-clash.yaml.j2` | Jinja 模板 |
+| Surge | `surge.conf.j2` | Jinja 模板 |
+| sing-box | `sing-box.json.j2` | Jinja 模板 |
 
 模板查找顺序：
 
@@ -423,33 +423,34 @@ HTTP 路由：
 3. `<sub-base-dir>/templates/sub/<name>`。
 4. 内置模板。
 
-模板上下文使用导出字段命名，至少包含：
+模板上下文使用 snake_case 命名，至少包含：
 
-- `User`。
-- `GeneratedAt`。
-- `Sources`。
-- `Nodes`。
-- `ProxyNames`。
-- `ClashProxies`。
-- `ClashProxyGroups`。
-- `ClashRules`。
-- `SurgeProxyLines`。
-- `SurgeProxyNames`。
-- `SurgeRegionGroups`。
-- `SurgeRules`。
-- `ManagedConfigURL`。
-- `ManagedConfigInterval`。
-- `ManagedConfigStrict`。
-- `TestURL`。
+- `user`。
+- `generated_at`。
+- `sources`。
+- `nodes`。
+- `proxies`。
+- `proxy_names`。
+- `proxy_groups`。
+- `clash_rules`。
+- `surge_proxy_lines`。
+- `surge_proxy_names`。
+- `surge_region_groups`。
+- `surge_rules`。
+- `managed_config_url`。
+- `managed_config_interval`。
+- `managed_config_strict`。
+- `test_url`。
+- `sing_box_outbounds_json`。
 
-模板执行必须启用缺失 key 报错。自定义模板文件名必须是安全 basename，不允许路径分隔符。
+模板渲染前必须校验未知变量。自定义模板文件名必须是安全 basename，不允许路径分隔符。
 
 Surge Managed Config：
 
 - `managed_config.enabled=true` 时，Surge 输出第一行 `#!MANAGED-CONFIG <url> interval=<seconds> strict=<true|false>`。
 - `public_base_url` 为空时使用当前请求 URL。
-- `public_base_url` 非空且 token 模式时使用 `/surge/:token/:user`。
-- `public_base_url` 非空且 none 模式时使用 `/surge/:user`。
+- `public_base_url` 非空且 token 模式时使用 `/surge_sub/:token/:user`。
+- `public_base_url` 非空且 none 模式时使用 `/surge_sub/:user`。
 - Surge 输出仅保留 Surge 支持的协议；当前会输出 `vmess`、`anytls`、`shadowsocks`、`socks5`、`http`，并跳过 `vless` 等不支持协议。VMess WebSocket 会输出 `ws`、`ws-path`、`ws-headers`，`alter_id=0` 时输出 `vmess-aead=true`。
 
 Watcher：

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -109,7 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/", s.handleSubscription)
-	return mux
+	return s.requestLogger(mux)
 }
 
 // ListenAndServe 启动 HTTP server 和轮询 watcher。
@@ -122,18 +123,233 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	defer cancelWatcher()
 	go s.watchInputs(watcherCtx)
 
+	listener, err := net.Listen("tcp", s.config.Listen)
+	if err != nil {
+		return err
+	}
+	s.logLoaded(listener.Addr().String())
+
+	errCh := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
+		errCh <- server.Serve(listener)
+	}()
+
+	select {
+	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	err := server.ListenAndServe()
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
+		err := <-errCh
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	}
-	return err
+}
+
+// requestLogger 记录不包含 token 和 query 的 HTTP 访问日志。
+func (s *Server) requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		recorder := &responseRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+		s.logRequest(r, recorder, startedAt)
+	})
+}
+
+// logRequest 输出一次 HTTP 请求摘要，避免记录原始 path 中的 token。
+func (s *Server) logRequest(r *http.Request, recorder *responseRecorder, startedAt time.Time) {
+	route, user := subscriptionLogRoute(r.URL.Path)
+	status := recorder.Status()
+	event := s.logger.Info()
+	if status >= http.StatusInternalServerError {
+		event = s.logger.Error()
+	} else if status >= http.StatusBadRequest {
+		event = s.logger.Warn()
+	}
+	if user != "" {
+		event = event.Str("user", user)
+	}
+	event.
+		Str("method", r.Method).
+		Str("route", route).
+		Int("status", status).
+		Str("client_ip", requestClientIP(r)).
+		Dur("latency", time.Since(startedAt)).
+		Int("bytes", recorder.Bytes()).
+		Msg("HTTP request completed")
+}
+
+// logLoaded 输出订阅服务启动摘要，便于 systemd 或 launchd 日志确认加载状态。
+func (s *Server) logLoaded(listen string) {
+	index, _ := s.state.Snapshot()
+	sources := 0
+	nodes := 0
+	users := 0
+	if index != nil {
+		sources = len(index.Sources)
+		nodes = len(index.Nodes)
+		users = index.UserCount()
+	}
+	access := s.config.Access.Type
+	if access == "" {
+		access = "none"
+	}
+	s.logger.Info().
+		Str("data_dir", s.baseDir).
+		Str("input_dir", subscription.InputsDir(s.baseDir)).
+		Str("listen", listen).
+		Str("access", access).
+		Int("inputs", sources).
+		Int("sources", sources).
+		Int("nodes", nodes).
+		Int("users", users).
+		Msg("Subscription server loaded")
+}
+
+// subscriptionLogRoute 返回脱敏后的路由名称和用户。
+func subscriptionLogRoute(rawPath string) (string, string) {
+	if rawPath == "/health" {
+		return "health", ""
+	}
+	route, ok := parseSubscriptionRoute(rawPath)
+	if !ok {
+		return "unmatched", ""
+	}
+	return "subscription", route.user
+}
+
+// requestClientIP 返回请求来源 IP，优先使用反向代理转发头。
+func requestClientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// Status 返回最终 HTTP 状态码，未显式写入时按 200 处理。
+func (r *responseRecorder) Status() int {
+	if r.status == 0 {
+		return http.StatusOK
+	}
+	return r.status
+}
+
+// Bytes 返回响应正文写入字节数。
+func (r *responseRecorder) Bytes() int {
+	return r.bytes
+}
+
+// WriteHeader 记录 HTTP 状态码并转发给底层 ResponseWriter。
+func (r *responseRecorder) WriteHeader(status int) {
+	if r.status != 0 {
+		return
+	}
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+// Write 记录响应字节数并确保默认状态码存在。
+func (r *responseRecorder) Write(data []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	written, err := r.ResponseWriter.Write(data)
+	r.bytes += written
+	return written, err
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+// isSubscriptionPrefix 将 proxystack-go 订阅路径前缀映射到内部格式。
+func isSubscriptionPrefix(prefix string) (string, bool) {
+	switch prefix {
+	case "sub":
+		return string(subscription.FormatClash), true
+	case "premium_sub":
+		return string(subscription.FormatPremiumClash), true
+	case "surge_sub":
+		return string(subscription.FormatSurge), true
+	case "sing-box":
+		return string(subscription.FormatSingBox), true
+	default:
+		return "", false
+	}
+}
+
+// isEmptyPathToken 判断三段路由中的 path token 是否为空。
+func isEmptyPathToken(token string) bool {
+	return token == ""
+}
+
+// validateSubscriptionRouteParts 校验订阅路径段数量。
+func validateSubscriptionRouteParts(parts []string) bool {
+	return len(parts) == 2 || len(parts) == 3
+}
+
+// parseRouteUser 解码路由中的 user 字段。
+func parseRouteUser(part string) (string, bool) {
+	user, err := url.PathUnescape(part)
+	if err != nil || user == "" {
+		return "", false
+	}
+	return user, true
+}
+
+// parseRouteToken 解码路由中的 path token 字段。
+func parseRouteToken(part string) (string, bool) {
+	token, err := url.PathUnescape(part)
+	if err != nil || isEmptyPathToken(token) {
+		return "", false
+	}
+	return token, true
+}
+
+// parseRoutePrefix 解码并映射路由前缀。
+func parseRoutePrefix(part string) (string, bool) {
+	prefix, err := url.PathUnescape(part)
+	if err != nil || prefix == "" {
+		return "", false
+	}
+	return isSubscriptionPrefix(prefix)
+}
+
+// buildSubscriptionRoute 按路径段构造订阅路由。
+func buildSubscriptionRoute(parts []string) (subscriptionRoute, bool) {
+	format, ok := parseRoutePrefix(parts[0])
+	if !ok {
+		return subscriptionRoute{}, false
+	}
+	if len(parts) == 2 {
+		user, ok := parseRouteUser(parts[1])
+		if !ok {
+			return subscriptionRoute{}, false
+		}
+		return subscriptionRoute{format: format, user: user}, true
+	}
+	token, ok := parseRouteToken(parts[1])
+	if !ok {
+		return subscriptionRoute{}, false
+	}
+	user, ok := parseRouteUser(parts[2])
+	if !ok {
+		return subscriptionRoute{}, false
+	}
+	return subscriptionRoute{format: format, pathToken: token, user: user}, true
 }
 
 // handleHealth 输出健康状态、索引摘要和 reload 错误。
@@ -334,33 +550,14 @@ func sleepWithContext(ctx context.Context, duration time.Duration) bool {
 	}
 }
 
-// parseSubscriptionRoute 解析 /format/user 和 /format/token/user。
+// parseSubscriptionRoute 解析 /sub/user、/sub/token/user 等 proxystack-go 兼容订阅路径。
 func parseSubscriptionRoute(rawPath string) (subscriptionRoute, bool) {
 	trimmed := strings.Trim(rawPath, "/")
 	parts := strings.Split(trimmed, "/")
-	if len(parts) != 2 && len(parts) != 3 {
+	if !validateSubscriptionRouteParts(parts) {
 		return subscriptionRoute{}, false
 	}
-	format, err := url.PathUnescape(parts[0])
-	if err != nil || format == "" {
-		return subscriptionRoute{}, false
-	}
-	if len(parts) == 2 {
-		user, err := url.PathUnescape(parts[1])
-		if err != nil || user == "" {
-			return subscriptionRoute{}, false
-		}
-		return subscriptionRoute{format: format, user: user}, true
-	}
-	token, err := url.PathUnescape(parts[1])
-	if err != nil {
-		return subscriptionRoute{}, false
-	}
-	user, err := url.PathUnescape(parts[2])
-	if err != nil || user == "" {
-		return subscriptionRoute{}, false
-	}
-	return subscriptionRoute{format: format, pathToken: token, user: user}, true
+	return buildSubscriptionRoute(parts)
 }
 
 // requestURL 返回当前请求 URL，供 Surge managed config 使用。

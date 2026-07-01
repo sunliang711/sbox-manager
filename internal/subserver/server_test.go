@@ -45,10 +45,10 @@ func TestSubscriptionHTTPAuthAndErrors(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "missing token", target: "/clash/alice", wantStatus: http.StatusUnauthorized, wantBody: "unauthorized"},
-		{name: "wrong token", target: "/clash/alice?token=bad-token", wantStatus: http.StatusForbidden, wantBody: "forbidden"},
-		{name: "path token wins over query", target: "/clash/good-token/alice?token=bad-token", wantStatus: http.StatusOK, wantBody: "US VMess"},
-		{name: "missing user", target: "/clash/good-token/bob", wantStatus: http.StatusNotFound, wantBody: "user_not_found"},
+		{name: "missing token", target: "/sub/alice", wantStatus: http.StatusUnauthorized, wantBody: "unauthorized"},
+		{name: "wrong token", target: "/sub/alice?token=bad-token", wantStatus: http.StatusForbidden, wantBody: "forbidden"},
+		{name: "path token wins over query", target: "/sub/good-token/alice?token=bad-token", wantStatus: http.StatusOK, wantBody: "US VMess"},
+		{name: "missing user", target: "/sub/good-token/bob", wantStatus: http.StatusNotFound, wantBody: "user_not_found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,11 +66,11 @@ func TestSubscriptionHTTPAuthAndErrors(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(baseDir, "templates", "sub"), 0750); err != nil {
 		t.Fatalf("mkdir templates: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(baseDir, "templates", "sub", "clash.yaml.tmpl"), []byte(`{{ .MissingField }}`), 0640); err != nil {
+	if err := os.WriteFile(filepath.Join(baseDir, "templates", "sub", "clash.yaml.j2"), []byte(`{{ .MissingField }}`), 0640); err != nil {
 		t.Fatalf("write bad template: %v", err)
 	}
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/clash/good-token/alice", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/sub/good-token/alice", nil))
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status got %d want 503 body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -185,7 +185,7 @@ func TestNativeNodeOnlyRendersForSingBox(t *testing.T) {
 	handler := server.Handler()
 
 	clashRecorder := httptest.NewRecorder()
-	handler.ServeHTTP(clashRecorder, httptest.NewRequest(http.MethodGet, "/clash/alice", nil))
+	handler.ServeHTTP(clashRecorder, httptest.NewRequest(http.MethodGet, "/sub/alice", nil))
 	if clashRecorder.Code != http.StatusNotFound {
 		t.Fatalf("clash native-only status got %d want 404 body=%s", clashRecorder.Code, clashRecorder.Body.String())
 	}

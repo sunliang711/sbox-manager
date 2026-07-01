@@ -204,6 +204,6 @@ sboxsub [--base-dir DIR] [--service-manager auto|systemd|launchd] doctor
 
 - `serve` 启动阶段 input 非法则失败；运行期 reload 失败保留上一份可用 index。
 - `sboxsub init` 创建订阅服务目录和默认配置，完成后输出导入 bundle、安装服务和 doctor 建议。
-- 订阅 HTTP 路由同时支持 `/clash/:user` 和 `/clash/:token/:user` 等形式；token 模式下 path token 优先，也允许 `?token=`。
+- 订阅 HTTP 路由同时支持 `/sub/:user`、`/sub/:token/:user`、`/premium_sub/...` 和 `/surge_sub/...` 等形式；token 模式下 path token 优先，也允许 `?token=`。
 - `service install` 只安装订阅服务自身的 unit 或 plist。
 - 生命周期命令不得读取 agent 配置，不得读写 agent runtime。
