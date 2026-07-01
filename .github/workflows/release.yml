@@ -12,6 +12,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate tag
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag ${GITHUB_REF_NAME} is not a semantic release tag" >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -48,7 +54,11 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Package
-        run: make package GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" VERSION="${{ github.ref_name }}"
+        run: |
+          set -euo pipefail
+          build_commit="$(git rev-parse --short HEAD)"
+          build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          make package GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" VERSION="${GITHUB_REF_NAME}" COMMIT="${build_commit}" BUILD_TIME="${build_time}"
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:

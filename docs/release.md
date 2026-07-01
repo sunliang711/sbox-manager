@@ -69,6 +69,12 @@ on:
 | `darwin` | `amd64` | `sbox-manager_<version>_darwin_amd64.tar.gz` |
 | `darwin` | `arm64` | `sbox-manager_<version>_darwin_arm64.tar.gz` |
 
+构建元信息：
+
+- `VERSION` 必须使用当前 tag，即 `${GITHUB_REF_NAME}`。
+- `COMMIT` 必须使用 `git rev-parse --short HEAD`。
+- `BUILD_TIME` 必须使用 UTC RFC3339 时间。
+
 流程：
 
 1. checkout 完整 tag 历史。
