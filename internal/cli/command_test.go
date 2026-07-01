@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sunliang711/sbox-manager/internal/backup"
 	"github.com/sunliang711/sbox-manager/internal/domain"
 	installer "github.com/sunliang711/sbox-manager/internal/install"
 	runtimeplan "github.com/sunliang711/sbox-manager/internal/runtime"
@@ -396,6 +397,111 @@ func TestSboxctlDoctorAfterSetupLocalSucceeds(t *testing.T) {
 	}
 	if !strings.Contains(output, "setup local") {
 		t.Fatalf("doctor output missing traffic timer hint:\n%s", output)
+	}
+}
+
+// TestSboxctlImportForceStopsRunningInstanceBeforeWrite 验证 force import 覆盖前会先停止运行中的同名实例。
+func TestSboxctlImportForceStopsRunningInstanceBeforeWrite(t *testing.T) {
+	archive := writeAgentBackupArchive(t, "imported.example.com")
+	target := writeAgentFixture(t)
+	configPath := filepath.Join(target, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("version: 1\nexternal_host: old.example.com\n"), 0640); err != nil {
+		t.Fatalf("write old config: %v", err)
+	}
+
+	runner := &cliRecordingRunner{
+		outputs: map[string][]byte{
+			"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+		},
+	}
+	runner.onRun = func(call string) {
+		if call != "systemctl stop sbox@edge-us.service" {
+			return
+		}
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatalf("read config before stop: %v", err)
+		}
+		if strings.Contains(string(data), "imported.example.com") {
+			t.Fatalf("import should stop running instance before replacing config:\n%s", data)
+		}
+	}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", target, "--service-manager", "systemd", "import", archive, "--force")
+	if err != nil {
+		t.Fatalf("import failed: %v\n%s", err, output)
+	}
+	for _, want := range []string{
+		"WARN",
+		"Running instance will be stopped before import.",
+		"edge-us",
+		"sbox@edge-us.service",
+		"Agent backup imported.",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("import output missing %q:\n%s", want, output)
+		}
+	}
+	for _, want := range []string{
+		"systemctl is-active sbox@edge-us.service",
+		"systemctl stop sbox@edge-us.service",
+	} {
+		if !strings.Contains(runner.joined(), want) {
+			t.Fatalf("import should run %q:\n%s", want, runner.joined())
+		}
+	}
+	if strings.Contains(runner.joined(), "restart") {
+		t.Fatalf("import should not restart stopped instances:\n%s", runner.joined())
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read imported config: %v", err)
+	}
+	if !strings.Contains(string(data), "imported.example.com") {
+		t.Fatalf("config should be imported:\n%s", data)
+	}
+}
+
+// TestSboxctlImportForceAbortsWhenStopFails 验证停止运行实例失败时不会覆盖旧配置。
+func TestSboxctlImportForceAbortsWhenStopFails(t *testing.T) {
+	archive := writeAgentBackupArchive(t, "imported.example.com")
+	target := writeAgentFixture(t)
+	configPath := filepath.Join(target, "config.yaml")
+	oldConfig := []byte("version: 1\nexternal_host: old.example.com\n")
+	if err := os.WriteFile(configPath, oldConfig, 0640); err != nil {
+		t.Fatalf("write old config: %v", err)
+	}
+
+	runner := &cliRecordingRunner{
+		outputs: map[string][]byte{
+			"systemctl is-active sbox@edge-us.service": []byte("active\n"),
+		},
+		errors: map[string]error{
+			"systemctl stop sbox@edge-us.service": fmt.Errorf("stop failed"),
+		},
+	}
+	restoreRuntimeHooks(t)
+	newSboxctlServiceManager = func(options *rootOptions) (*service.Manager, error) {
+		return service.NewManager(service.Options{Kind: service.KindSystemd, Runner: runner})
+	}
+
+	output, err := executeCommand(newSboxctlCommand(), "--base-dir", target, "--service-manager", "systemd", "import", archive, "--force")
+	if err == nil {
+		t.Fatalf("import should fail when stop fails:\n%s", output)
+	}
+	if !strings.Contains(err.Error(), "stop running instance") {
+		t.Fatalf("unexpected import error: %v\n%s", err, output)
+	}
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read old config: %v", readErr)
+	}
+	if string(data) != string(oldConfig) {
+		t.Fatalf("config should remain unchanged after stop failure:\n%s", data)
 	}
 }
 
@@ -1397,6 +1503,26 @@ route:
 		t.Fatalf("write instance: %v", err)
 	}
 	return baseDir
+}
+
+// writeAgentBackupArchive 写入指定 external_host 的 agent 备份包。
+func writeAgentBackupArchive(t *testing.T, externalHost string) string {
+	t.Helper()
+
+	baseDir := writeAgentFixture(t)
+	config := fmt.Sprintf("version: 1\nexternal_host: %s\n", externalHost)
+	if err := os.WriteFile(filepath.Join(baseDir, "config.yaml"), []byte(config), 0640); err != nil {
+		t.Fatalf("write backup config: %v", err)
+	}
+	result, err := backup.Build(baseDir, time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("build backup: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "backup.zip")
+	if err := os.WriteFile(path, result.Data, 0640); err != nil {
+		t.Fatalf("write backup archive: %v", err)
+	}
+	return path
 }
 
 // restoreRuntimeHooks 在测试结束后恢复 CLI 生命周期注入点。

@@ -38,6 +38,19 @@ type ImportResult struct {
 	Force bool
 }
 
+// ImportOptions 描述 agent 配置备份导入时的覆盖策略和写入前动作。
+type ImportOptions struct {
+	Force       bool
+	BeforeWrite func(ImportPlan) error
+}
+
+// ImportPlan 表示已完成校验、即将写入目标目录的导入计划。
+type ImportPlan struct {
+	Global    domain.GlobalConfig
+	Instances []domain.Instance
+	Files     []string
+}
+
 type importFile struct {
 	Target    string
 	Data      []byte
@@ -80,6 +93,11 @@ func Build(baseDir string, generatedAt time.Time) (*ExportResult, error) {
 
 // Import 完整校验备份包后写入 agent 配置文件。
 func Import(baseDir string, backupPath string, force bool) (*ImportResult, error) {
+	return ImportWithOptions(baseDir, backupPath, ImportOptions{Force: force})
+}
+
+// ImportWithOptions 完整校验备份包，执行写入前动作后写入 agent 配置文件。
+func ImportWithOptions(baseDir string, backupPath string, options ImportOptions) (*ImportResult, error) {
 	files, _, err := Read(backupPath)
 	if err != nil {
 		return nil, err
@@ -88,22 +106,28 @@ func Import(baseDir string, backupPath string, force bool) (*ImportResult, error
 	if err != nil {
 		return nil, err
 	}
-	global, _, err := validateConfigFiles(resolvedBase, files)
+	global, instances, err := validateConfigFiles(resolvedBase, files)
 	if err != nil {
 		return nil, err
 	}
 	if err := validateImportTarget(resolvedBase, global.Paths.Instances, "paths.instances"); err != nil {
 		return nil, err
 	}
-	if !force {
+	if !options.Force {
 		if err := ensureNoExistingConfig(resolvedBase, global.Paths.Instances); err != nil {
+			return nil, err
+		}
+	}
+	plan := ImportPlan{Global: global, Instances: instances, Files: sortedNames(files)}
+	if options.BeforeWrite != nil {
+		if err := options.BeforeWrite(plan); err != nil {
 			return nil, err
 		}
 	}
 	if err := writeImportedFiles(resolvedBase, global.Paths.Instances, files); err != nil {
 		return nil, err
 	}
-	return &ImportResult{Files: sortedNames(files), Force: force}, nil
+	return &ImportResult{Files: plan.Files, Force: options.Force}, nil
 }
 
 // Read 读取并校验 agent 配置备份 zip，返回已校验的成员文件。

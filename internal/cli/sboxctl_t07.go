@@ -10,6 +10,7 @@ import (
 	"github.com/sunliang711/sbox-manager/internal/backup"
 	"github.com/sunliang711/sbox-manager/internal/config"
 	"github.com/sunliang711/sbox-manager/internal/diagnostics"
+	"github.com/sunliang711/sbox-manager/internal/service"
 )
 
 // newSboxctlExportCommandT07 创建 agent 配置备份导出命令。
@@ -66,7 +67,13 @@ func newSboxctlImportCommandT07() *cobra.Command {
 				return err
 			}
 			force, _ := cmd.Flags().GetBool("force")
-			result, err := backup.Import(options.baseDir, args[0], force)
+			importOptions := backup.ImportOptions{Force: force}
+			if force {
+				importOptions.BeforeWrite = func(plan backup.ImportPlan) error {
+					return stopRunningImportInstances(cmd, options, plan)
+				}
+			}
+			result, err := backup.ImportWithOptions(options.baseDir, args[0], importOptions)
 			if err != nil {
 				return err
 			}
@@ -83,6 +90,37 @@ func newSboxctlImportCommandT07() *cobra.Command {
 			return writeTable(cmd, []string{"IMPORTED FILE"}, rows)
 		},
 	}
+}
+
+// stopRunningImportInstances 在 force import 覆盖配置前停止仍在运行的同名实例。
+func stopRunningImportInstances(cmd *cobra.Command, options *rootOptions, plan backup.ImportPlan) error {
+	if len(plan.Instances) == 0 {
+		return nil
+	}
+	manager, err := newSboxctlServiceManager(options)
+	if err != nil {
+		return err
+	}
+	for _, instance := range plan.Instances {
+		serviceName := service.ServiceNameForKind(manager.Kind(), instance.Name)
+		running, err := manager.IsRunning(cmd.Context(), serviceName)
+		if err != nil {
+			return err
+		}
+		if !running {
+			continue
+		}
+		if err := writeStatus(cmd, outputStatusWarn, "Running instance will be stopped before import.",
+			outputKV("Instance", instance.Name),
+			outputKV("Service", serviceName),
+		); err != nil {
+			return err
+		}
+		if _, err := manager.Run(cmd.Context(), "stop", []string{serviceName}, false); err != nil {
+			return fmt.Errorf("stop running instance %q before import: %w", instance.Name, err)
+		}
+	}
+	return nil
 }
 
 // newSboxctlDoctorCommandT07 创建 agent 诊断命令。
